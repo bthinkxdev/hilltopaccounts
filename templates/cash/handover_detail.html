@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Handover #{{ handover.pk }} — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <h1>Handover #{{ handover.pk }}</h1>
+    {% if can_confirm %}
+      <div class="quick-actions">
+        <a class="btn btn--primary" href="{% url 'cash:handover_confirm' handover.pk %}">Confirm</a>
+        <a class="btn btn--ghost" href="{% url 'cash:handover_reject' handover.pk %}">Reject</a>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="grid--kpi">
+      <div class="kpi"><div class="kpi__label">Staff</div><div class="kpi__value">{{ handover.staff.get_full_name|default:handover.staff.username }}</div></div>
+      <div class="kpi"><div class="kpi__label">Declared</div><div class="kpi__value">QAR {{ handover.declared_amount }}</div></div>
+      {% if handover.confirmed_amount is not None %}
+        <div class="kpi"><div class="kpi__label">Confirmed</div><div class="kpi__value">QAR {{ handover.confirmed_amount }}</div></div>
+        <div class="kpi"><div class="kpi__label">Discrepancy</div><div class="kpi__value {% if handover.discrepancy != 0 %}kpi__value--warning{% endif %}">QAR {{ handover.discrepancy }}</div></div>
+      {% endif %}
+    </div>
+    <div class="list-row__meta" style="margin-top: var(--space-3);">
+      {% if handover.status == "confirmed" %}<span class="pill pill--success">Confirmed by {{ handover.confirmed_by.get_full_name|default:handover.confirmed_by.username }}</span>
+      {% elif handover.status == "rejected" %}<span class="pill pill--danger">Rejected — {{ handover.rejection_reason }}</span>
+      {% else %}<span class="pill pill--warning">Awaiting confirmation</span>{% endif %}
+    </div>
+  </div>
+
+  <div class="detail-section">
+    <div class="detail-section__title">Included collections</div>
+    <div class="card">
+      {% for payment in payments %}
+        <div class="list-row">
+          <span class="list-row__title">{{ payment.invoice.invoice_number }}</span>
+          <span class="list-row__meta">QAR {{ payment.amount }} — {{ payment.collected_at }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endblock %}

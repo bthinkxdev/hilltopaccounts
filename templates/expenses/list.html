@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Expenses — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <h1>Expenses</h1>
+    {% if businesses %}
+      <a class="btn btn--primary" href="{% url 'expenses:create' %}?business={{ businesses.0.pk }}">+ Add Expense</a>
+    {% endif %}
+  </div>
+
+  <form class="filter-bar" method="get">
+    <select name="business" onchange="this.form.submit()">
+      <option value="">All businesses</option>
+      {% for business in businesses %}
+        <option value="{{ business.pk }}" {% if selected_business == business.pk|stringformat:"s" %}selected{% endif %}>{{ business.name }}</option>
+      {% endfor %}
+    </select>
+    <select name="status" onchange="this.form.submit()">
+      <option value="active" {% if status == "active" %}selected{% endif %}>Active</option>
+      <option value="cancelled" {% if status == "cancelled" %}selected{% endif %}>Cancelled</option>
+      <option value="reversed" {% if status == "reversed" %}selected{% endif %}>Reversed</option>
+      <option value="" {% if not status %}selected{% endif %}>All</option>
+    </select>
+    <button class="btn btn--ghost" type="submit">Filter</button>
+  </form>
+
+  <div class="card">
+    {% if page_obj %}
+      {% for expense in page_obj %}
+        <div class="list-row">
+          <span class="list-row__title">{{ expense.category }} — QAR {{ expense.amount }}</span>
+          <span class="list-row__meta">{{ expense.business.name }}{% if expense.villa %} — {{ expense.villa.name }}{% endif %} — {{ expense.date }}</span>
+          {% if expense.status == "active" %}
+            <span class="quick-actions" style="margin:0;">
+              <a class="btn btn--ghost" href="{% url 'expenses:cancel' expense.pk %}">Cancel</a>
+              <a class="btn btn--ghost" href="{% url 'expenses:reverse' expense.pk %}">Reverse</a>
+            </span>
+          {% else %}
+            <span class="pill pill--neutral">{{ expense.get_status_display }}</span>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state__title">No expenses recorded yet.</div>
+        <p>Add an expense to keep P&L accurate.</p>
+        {% if businesses %}<a class="btn btn--primary" href="{% url 'expenses:create' %}?business={{ businesses.0.pk }}">+ Add Expense</a>{% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  {% include "components/pagination.html" %}
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Partitions — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <h1>Partitions</h1>
+    {% if can_create_partition %}<a class="btn btn--primary" href="{% url 'villas:partition_create' %}">+ Add Partition</a>{% endif %}
+  </div>
+
+  <form class="filter-bar" method="get">
+    <input type="search" name="q" placeholder="Search partitions…" value="{{ q }}">
+    <select name="villa" onchange="this.form.submit()">
+      <option value="">All villas</option>
+      {% for villa in villas %}
+        <option value="{{ villa.pk }}" {% if selected_villa == villa.pk|stringformat:"s" %}selected{% endif %}>{{ villa.name }}</option>
+      {% endfor %}
+    </select>
+    <select name="occupancy" onchange="this.form.submit()">
+      <option value="">Any occupancy</option>
+      <option value="occupied" {% if selected_occupancy == "occupied" %}selected{% endif %}>Occupied</option>
+      <option value="vacant" {% if selected_occupancy == "vacant" %}selected{% endif %}>Vacant</option>
+    </select>
+    <button class="btn btn--ghost" type="submit">Filter</button>
+  </form>
+
+  <div class="card">
+    {% if page_obj %}
+      {% for partition in page_obj %}
+        <div class="list-row">
+          <a class="list-row__title" href="{% url 'villas:partition_detail' partition.pk %}">{{ partition.name }}</a>
+          <span class="list-row__meta">{{ partition.villa.name }} — {{ partition.villa.business.name }}</span>
+          {% if partition.occupied %}<span class="pill pill--success">Occupied</span>{% else %}<span class="pill pill--neutral">Vacant</span>{% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state__title">No partitions match these filters.</div>
+        <p>Try clearing the filters, or add a partition from a villa's page.</p>
+        {% if can_create_partition %}<a class="btn btn--primary" href="{% url 'villas:partition_create' %}">+ Add Partition</a>{% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  {% include "components/pagination.html" %}
+{% endblock %}

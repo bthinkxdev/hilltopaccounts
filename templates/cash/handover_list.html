@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Cash Handover — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <h1>Cash Handover</h1>
+    {% if my_unclaimed_payments %}<a class="btn btn--primary" href="{% url 'cash:handover_submit' %}">Submit Handover</a>{% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card__title">My cash</div>
+    <div class="grid--kpi">
+      <div class="kpi"><div class="kpi__label">Outstanding (accountable to me)</div><div class="kpi__value {% if my_outstanding_cash > 0 %}kpi__value--warning{% endif %}">QAR {{ my_outstanding_cash }}</div></div>
+      <div class="kpi"><div class="kpi__label">Pending confirmation</div><div class="kpi__value">QAR {{ my_pending_amount }}</div></div>
+      <div class="kpi"><div class="kpi__label">Ready to hand over</div><div class="kpi__value">{{ my_unclaimed_payments|length }} collection{{ my_unclaimed_payments|length|pluralize }}</div></div>
+    </div>
+  </div>
+
+  <form class="filter-bar" method="get">
+    <select name="status" onchange="this.form.submit()">
+      <option value="">Any status</option>
+      {% for value, label in status_choices %}
+        <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn--ghost" type="submit">Filter</button>
+  </form>
+
+  <div class="card">
+    {% if page_obj %}
+      {% for handover in page_obj %}
+        <div class="list-row">
+          <a class="list-row__title" href="{% url 'cash:handover_detail' handover.pk %}">#{{ handover.pk }} — {{ handover.staff.get_full_name|default:handover.staff.username }}</a>
+          <span class="list-row__meta">QAR {{ handover.declared_amount }} declared — {{ handover.submitted_at|date:"d M Y" }}</span>
+          {% if handover.status == "confirmed" %}<span class="pill pill--success">Confirmed</span>
+          {% elif handover.status == "rejected" %}<span class="pill pill--danger">Rejected</span>
+          {% else %}<span class="pill pill--warning">Awaiting confirmation</span>{% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state__title">No cash handovers yet.</div>
+      </div>
+    {% endif %}
+  </div>
+
+  {% include "components/pagination.html" %}
+{% endblock %}

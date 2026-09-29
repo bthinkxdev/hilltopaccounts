@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ staff.username }} — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{{ staff.get_full_name|default:staff.username }}</h1>
+      <div class="page-header__meta">{{ staff.email|default:"No email on file" }} · Last login: {{ staff.last_login|date:"d M Y H:i"|default:"Never" }}</div>
+    </div>
+    {% if staff.is_active %}
+      <a class="btn btn--ghost" href="{% url 'accounts:staff_deactivate' staff.pk %}">Deactivate</a>
+    {% else %}
+      <span class="pill pill--neutral">Inactive</span>
+    {% endif %}
+  </div>
+
+  <div class="detail-section">
+    <div class="detail-section__title">Assignments</div>
+    <div class="card">
+      {% if assignments %}
+        {% for assignment in assignments %}
+          <div class="list-row">
+            <span class="list-row__title">{{ assignment.get_role_display }}</span>
+            <span class="list-row__meta">{{ assignment.business|default:assignment.villa }}</span>
+            <a class="btn btn--ghost" href="{% url 'accounts:assignment_remove' assignment.pk %}">Remove</a>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state__title">No assignments yet.</div>
+          <p>Assign this person to a business or villa so they can access it.</p>
+        </div>
+      {% endif %}
+      <a class="btn btn--primary" href="{% url 'accounts:assignment_create' staff.pk %}">+ Add Assignment</a>
+    </div>
+  </div>
+{% endblock %}

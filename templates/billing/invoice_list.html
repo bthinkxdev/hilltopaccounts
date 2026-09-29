@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Invoices — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header"><h1>Invoices</h1></div>
+
+  <form class="filter-bar" method="get">
+    <input type="search" name="q" placeholder="Invoice number or tenant…" value="{{ q }}">
+    <select name="status" onchange="this.form.submit()">
+      <option value="">Any status</option>
+      {% for value, label in status_choices %}
+        <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn--ghost" type="submit">Filter</button>
+  </form>
+
+  <div class="card">
+    {% if page_obj %}
+      {% for invoice in page_obj %}
+        <div class="list-row">
+          <a class="list-row__title" href="{% url 'billing:invoice_detail' invoice.pk %}">{{ invoice.invoice_number }}</a>
+          <span class="list-row__meta">{{ invoice.tenant.name }} — {{ invoice.partition.villa.name }}</span>
+          {% if invoice.computed_status == "paid" %}<span class="pill pill--success">Paid</span>
+          {% elif invoice.computed_status == "overdue" %}<span class="pill pill--danger">Overdue — QAR {{ invoice.computed_outstanding }}</span>
+          {% elif invoice.computed_status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
+          {% elif invoice.computed_status == "partially_paid" %}<span class="pill pill--warning">QAR {{ invoice.computed_outstanding }} due</span>
+          {% else %}<span class="pill pill--neutral">Pending — QAR {{ invoice.computed_outstanding }}</span>{% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state__title">No invoices generated yet.</div>
+        <p>Generate an invoice from a tenant's partition page.</p>
+      </div>
+    {% endif %}
+  </div>
+
+  {% include "components/pagination.html" %}
+{% endblock %}

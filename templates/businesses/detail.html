@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ business.name }} — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{{ business.name }}</h1>
+      {% if business.description %}<div class="page-header__meta">{{ business.description }}</div>{% endif %}
+    </div>
+    {% if user.is_owner %}
+      <div class="quick-actions">
+        <a class="btn btn--primary" href="{% url 'villas:villa_create' %}?business={{ business.pk }}">+ Add Villa</a>
+        <a class="btn btn--ghost" href="{% url 'businesses:archive' business.pk %}">Archive</a>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if can_view_financials %}
+    <div class="card">
+      <div class="card__title">Financial summary</div>
+      <div class="grid--kpi">
+        <div class="kpi"><div class="kpi__label">Expected Revenue</div><div class="kpi__value">QAR {{ expected_revenue }}</div></div>
+        <div class="kpi"><div class="kpi__label">Collected</div><div class="kpi__value kpi__value--success">QAR {{ collected }}</div></div>
+        <div class="kpi"><div class="kpi__label">Outstanding</div><div class="kpi__value kpi__value--warning">QAR {{ outstanding }}</div></div>
+        <div class="kpi"><div class="kpi__label">Expenses</div><div class="kpi__value kpi__value--danger">QAR {{ total_expenses }}</div></div>
+        <div class="kpi"><div class="kpi__label">Net Profit</div><div class="kpi__value {% if net_profit >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">QAR {{ net_profit }}</div></div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="detail-section">
+    <div class="detail-section__title">Villas</div>
+    <div class="card">
+      {% if villas %}
+        {% for villa in villas %}
+          <div class="list-row">
+            <a class="list-row__title" href="{% url 'villas:villa_detail' villa.pk %}">{{ villa.name }}</a>
+            <span class="list-row__meta">{{ villa.partitions.count }} partition{{ villa.partitions.count|pluralize }}</span>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state__title">No villas in this business yet.</div>
+          <p>Add a villa to start tracking partitions, tenants and billing.</p>
+          {% if user.is_owner %}<a class="btn btn--primary" href="{% url 'villas:villa_create' %}?business={{ business.pk }}">+ Add Villa</a>{% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}

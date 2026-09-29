@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Search — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header"><h1>Search results for &ldquo;{{ q }}&rdquo;</h1></div>
+
+  {% if not q %}
+    <div class="empty-state"><div class="empty-state__title">Type something in the search box above.</div></div>
+  {% else %}
+    {% if results.businesses %}
+      <div class="detail-section">
+        <div class="detail-section__title">Businesses</div>
+        <div class="card">
+          {% for business in results.businesses %}
+            <div class="list-row"><a class="list-row__title" href="{% url 'businesses:detail' business.pk %}">{{ business.name }}</a></div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+    {% if results.villas %}
+      <div class="detail-section">
+        <div class="detail-section__title">Villas</div>
+        <div class="card">
+          {% for villa in results.villas %}
+            <div class="list-row"><a class="list-row__title" href="{% url 'villas:villa_detail' villa.pk %}">{{ villa.name }}</a><span class="list-row__meta">{{ villa.business.name }}</span></div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+    {% if results.partitions %}
+      <div class="detail-section">
+        <div class="detail-section__title">Partitions</div>
+        <div class="card">
+          {% for partition in results.partitions %}
+            <div class="list-row"><a class="list-row__title" href="{% url 'villas:partition_detail' partition.pk %}">{{ partition.name }}</a><span class="list-row__meta">{{ partition.villa.name }}</span></div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+    {% if results.tenants %}
+      <div class="detail-section">
+        <div class="detail-section__title">Tenants</div>
+        <div class="card">
+          {% for tenant in results.tenants %}
+            <div class="list-row"><a class="list-row__title" href="{% url 'tenancy:detail' tenant.pk %}">{{ tenant.name }}</a><span class="list-row__meta">{{ tenant.partition.name }}</span></div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+    {% if results.invoices %}
+      <div class="detail-section">
+        <div class="detail-section__title">Invoices</div>
+        <div class="card">
+          {% for invoice in results.invoices %}
+            <div class="list-row"><a class="list-row__title" href="{% url 'billing:invoice_detail' invoice.pk %}">{{ invoice.invoice_number }}</a><span class="list-row__meta">{{ invoice.tenant.name }}</span></div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+    {% if results.staff %}
+      <div class="detail-section">
+        <div class="detail-section__title">Staff</div>
+        <div class="card">
+          {% for staff in results.staff %}
+            <div class="list-row"><a class="list-row__title" href="{% url 'accounts:staff_detail' staff.pk %}">{{ staff.get_full_name|default:staff.username }}</a></div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+    {% if not results.businesses and not results.villas and not results.partitions and not results.tenants and not results.invoices and not results.staff %}
+      <div class="empty-state">
+        <div class="empty-state__title">No results for &ldquo;{{ q }}&rdquo;.</div>
+        <p>Try a different name, invoice number, or mobile number.</p>
+      </div>
+    {% endif %}
+  {% endif %}
+{% endblock %}

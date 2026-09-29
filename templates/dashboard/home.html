@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — Faisal Accounting{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Welcome back, {{ user.get_full_name|default:user.username }}</h1>
+      <div class="page-header__meta">
+        {% for label in role_labels %}<span class="pill pill--neutral">{{ label }}</span>{% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {% if quick_actions %}
+    <div class="quick-actions">
+      {% for action in quick_actions %}
+        <a class="btn btn--primary" href="{{ action.url }}">{{ action.label }}</a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if needs_attention %}
+    <div class="card">
+      <div class="card__title">Needs attention</div>
+      {% for item in needs_attention %}
+        <a class="attention-item" href="{{ item.url }}" style="color: inherit; text-decoration: none;">
+          <div>
+            <div class="attention-item__label">{{ item.label }}</div>
+            <div class="attention-item__meta">{{ item.meta }}</div>
+          </div>
+          <span class="pill pill--warning">{{ item.count }} &rarr;</span>
+        </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card__title">Overview</div>
+    <div class="grid--kpi">
+      <div class="kpi">
+        <div class="kpi__label">Businesses</div>
+        <div class="kpi__value">{{ business_count }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Villas</div>
+        <div class="kpi__value">{{ villa_count }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Partitions</div>
+        <div class="kpi__value">{{ partition_count }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Occupied</div>
+        <div class="kpi__value kpi__value--success">{{ occupied_count }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Vacant</div>
+        <div class="kpi__value kpi__value--warning">{{ vacant_count }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">My outstanding cash</div>
+        <div class="kpi__value {% if outstanding_cash > 0 %}kpi__value--warning{% endif %}">QAR {{ outstanding_cash }}</div>
+      </div>
+    </div>
+  </div>
+
+  {% if can_view_financials %}
+  <div class="card">
+    <div class="card__title">Financial summary</div>
+    <div class="grid--kpi">
+      <div class="kpi">
+        <div class="kpi__label">Expected Revenue</div>
+        <div class="kpi__value">QAR {{ expected_revenue }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Collected</div>
+        <div class="kpi__value kpi__value--success">QAR {{ collected }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Outstanding</div>
+        <div class="kpi__value kpi__value--warning">QAR {{ outstanding }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Collection Rate</div>
+        <div class="kpi__value">{{ collection_rate }}%</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Expenses</div>
+        <div class="kpi__value kpi__value--danger">QAR {{ total_expenses }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Net Profit</div>
+        <div class="kpi__value {% if net_profit >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">QAR {{ net_profit }}</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="grid grid--2">
+    <div class="card">
+      <div class="card__title">Businesses</div>
+      {% if businesses %}
+        {% for business in businesses %}
+          <div class="list-row">
+            <a class="list-row__title" href="{% url 'businesses:detail' business.pk %}">{{ business.name }}</a>
+          </div>
+        {% endfor %}
+        <a class="btn btn--ghost" href="{% url 'businesses:list' %}">View all businesses</a>
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state__title">No businesses yet.</div>
+          <p>Businesses you're assigned to will appear here.</p>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card__title">Villas</div>
+      {% if villas %}
+        {% for villa in villas %}
+          <div class="list-row">
+            <a class="list-row__title" href="{% url 'villas:villa_detail' villa.pk %}">{{ villa.name }}</a>
+            <span class="list-row__meta">{{ villa.business.name }}</span>
+          </div>
+        {% endfor %}
+        <a class="btn btn--ghost" href="{% url 'villas:villa_list' %}">View all villas</a>
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state__title">No villas yet.</div>
+          <p>Villas you're assigned to will appear here.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}

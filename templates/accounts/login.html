@@ -1,0 +1,53 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Sign in — Faisal Accounting</title>
+  <script>
+    (function () {
+      try {
+        var stored = localStorage.getItem("theme");
+        if (stored === "light" || stored === "dark") {
+          document.documentElement.setAttribute("data-theme", stored);
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="{% static 'css/design-system.css' %}">
+</head>
+<body>
+  <div class="auth-screen">
+    <button class="btn btn--icon" type="button" data-theme-toggle aria-label="Toggle dark mode"
+            style="position: fixed; top: var(--space-4); right: var(--space-4);">&#9680;</button>
+    <div class="auth-card">
+      <div class="card">
+        <div class="auth-card__brand">Faisal Accounting</div>
+
+        {% if form.non_field_errors %}
+          <div class="form-error">{{ form.non_field_errors.0 }}</div>
+        {% endif %}
+
+        <form method="post" novalidate>
+          {% csrf_token %}
+          <div class="field">
+            <label for="{{ form.username.id_for_label }}">Username</label>
+            {{ form.username }}
+            {% if form.username.errors %}<div class="field__error">{{ form.username.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="field">
+            <label for="{{ form.password.id_for_label }}">Password</label>
+            {{ form.password }}
+            {% if form.password.errors %}<div class="field__error">{{ form.password.errors.0 }}</div>{% endif %}
+          </div>
+          <input type="hidden" name="next" value="{{ next }}">
+          <button class="btn btn--primary" type="submit" style="width: 100%;">Sign in</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <script src="{% static 'js/theme.js' %}"></script>
+  <script src="{% static 'js/app.js' %}"></script>
+</body>
+</html>

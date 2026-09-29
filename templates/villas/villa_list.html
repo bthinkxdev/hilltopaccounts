@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Villas — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <h1>Villas</h1>
+    {% if can_create_villa %}<a class="btn btn--primary" href="{% url 'villas:villa_create' %}">+ Add Villa</a>{% endif %}
+  </div>
+
+  <form class="filter-bar" method="get">
+    <input type="search" name="q" placeholder="Search villas…" value="{{ q }}">
+    <select name="business" onchange="this.form.submit()">
+      <option value="">All businesses</option>
+      {% for business in businesses %}
+        <option value="{{ business.pk }}" {% if selected_business == business.pk|stringformat:"s" %}selected{% endif %}>{{ business.name }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn--ghost" type="submit">Search</button>
+  </form>
+
+  <div class="card">
+    {% if page_obj %}
+      {% for villa in page_obj %}
+        <div class="list-row">
+          <a class="list-row__title" href="{% url 'villas:villa_detail' villa.pk %}">{{ villa.name }}</a>
+          <span class="list-row__meta">{{ villa.business.name }}</span>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state__title">No villas yet.</div>
+        <p>Add a villa under one of your businesses to get started.</p>
+        {% if can_create_villa %}<a class="btn btn--primary" href="{% url 'villas:villa_create' %}">+ Add Villa</a>{% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  {% include "components/pagination.html" %}
+{% endblock %}

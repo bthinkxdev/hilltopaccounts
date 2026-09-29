@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}{{ invoice.invoice_number }} — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{{ invoice.invoice_number }}</h1>
+      <div class="page-header__meta">{{ invoice.tenant.name }} — {{ invoice.partition.name }}, {{ invoice.partition.villa.name }}</div>
+    </div>
+    {% if can_manage and computed_status != "cancelled" %}
+      <div class="quick-actions">
+        {% if computed_outstanding > 0 %}
+          <a class="btn btn--primary" href="{% url 'billing:payment_record' invoice.pk %}">Record Payment</a>
+        {% endif %}
+        <a class="btn btn--ghost" href="{% url 'billing:invoice_cancel' invoice.pk %}">Cancel Invoice</a>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="grid--kpi">
+      <div class="kpi"><div class="kpi__label">Total</div><div class="kpi__value">QAR {{ computed_total }}</div></div>
+      <div class="kpi"><div class="kpi__label">Paid</div><div class="kpi__value kpi__value--success">QAR {{ computed_paid }}</div></div>
+      <div class="kpi"><div class="kpi__label">Outstanding</div><div class="kpi__value kpi__value--warning">QAR {{ computed_outstanding }}</div></div>
+      <div class="kpi">
+        <div class="kpi__label">Status</div>
+        <div class="kpi__value">
+          {% if computed_status == "paid" %}<span class="pill pill--success">Paid</span>
+          {% elif computed_status == "overdue" %}<span class="pill pill--danger">Overdue</span>
+          {% elif computed_status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
+          {% elif computed_status == "partially_paid" %}<span class="pill pill--warning">Partially Paid</span>
+          {% else %}<span class="pill pill--neutral">Pending</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="list-row__meta" style="margin-top: var(--space-3);">
+      Billing period {{ invoice.billing_period_start }} – {{ invoice.billing_period_end }} · Due {{ invoice.due_date }}
+    </div>
+  </div>
+
+  <div class="detail-section">
+    <div class="detail-section__title">Line items</div>
+    <div class="card">
+      {% for item in items %}
+        <div class="list-row">
+          <span class="list-row__title">{{ item.description }}</span>
+          <span class="list-row__meta">QAR {{ item.amount }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="detail-section">
+    <div class="detail-section__title">Payment history</div>
+    <div class="card">
+      {% if payments %}
+        {% for payment in payments %}
+          <div class="list-row">
+            <span class="list-row__title">QAR {{ payment.amount }} — {{ payment.get_method_display }}</span>
+            <span class="list-row__meta">{{ payment.collected_at }} by {{ payment.collected_by.get_full_name|default:payment.collected_by.username }}</span>
+            {% if payment.is_cancelled %}
+              <span class="pill pill--neutral">Cancelled</span>
+            {% elif can_manage %}
+              <span class="quick-actions" style="margin:0;">
+                <a class="btn btn--ghost" href="{% url 'billing:payment_correct' payment.pk %}">Correct</a>
+                <a class="btn btn--ghost" href="{% url 'billing:payment_cancel' payment.pk %}">Cancel</a>
+              </span>
+            {% endif %}
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state__title">No payments recorded yet.</div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}

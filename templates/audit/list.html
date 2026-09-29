@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Audit Log — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header"><h1>Audit Log</h1></div>
+
+  <form class="filter-bar" method="get">
+    <input type="search" name="q" placeholder="Filter by username…" value="{{ q }}">
+    <select name="action" onchange="this.form.submit()">
+      <option value="">Any action</option>
+      {% for value, label in action_choices %}
+        <option value="{{ value }}" {% if action == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn--ghost" type="submit">Filter</button>
+  </form>
+
+  <div class="card">
+    {% if page_obj %}
+      {% for entry in page_obj %}
+        <div class="list-row">
+          <span class="list-row__title">{{ entry.get_action_display }}</span>
+          <span class="list-row__meta">{{ entry.user }} — {{ entry.timestamp|date:"d M Y H:i" }}{% if entry.reason %} — {{ entry.reason }}{% endif %}</span>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state__title">No audit entries match these filters.</div>
+      </div>
+    {% endif %}
+  </div>
+
+  {% include "components/pagination.html" %}
+{% endblock %}

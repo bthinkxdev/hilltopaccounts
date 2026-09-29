@@ -1,0 +1,101 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{% block title %}Faisal Accounting{% endblock %}</title>
+  <script>
+    (function () {
+      try {
+        var stored = localStorage.getItem("theme");
+        if (stored === "light" || stored === "dark") {
+          document.documentElement.setAttribute("data-theme", stored);
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="{% static 'css/design-system.css' %}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <input type="checkbox" id="nav-toggle" class="nav-toggle-checkbox">
+  <label for="nav-toggle" class="sidebar__scrim" aria-hidden="true"></label>
+
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Main navigation">
+      <div class="sidebar__brand">Faisal Accounting</div>
+
+      {% if user.is_authenticated %}
+        <a class="sidebar__link{% if request.resolver_match.app_name == 'dashboard' %} sidebar__link--active{% endif %}" href="{% url 'dashboard:home' %}">Dashboard</a>
+
+        {% if nav_has_scope %}
+          <div class="sidebar__section">Organization</div>
+          <a class="sidebar__link{% if request.resolver_match.app_name == 'businesses' %} sidebar__link--active{% endif %}" href="{% url 'businesses:list' %}">Businesses</a>
+          <a class="sidebar__link{% if request.resolver_match.url_name == 'villa_list' %} sidebar__link--active{% endif %}" href="{% url 'villas:villa_list' %}">Villas</a>
+          <a class="sidebar__link{% if request.resolver_match.url_name == 'partition_list' %} sidebar__link--active{% endif %}" href="{% url 'villas:partition_list' %}">Partitions</a>
+          <a class="sidebar__link{% if request.resolver_match.app_name == 'tenancy' %} sidebar__link--active{% endif %}" href="{% url 'tenancy:list' %}">Tenants</a>
+
+          <div class="sidebar__section">Finance</div>
+          <a class="sidebar__link{% if request.resolver_match.url_name == 'invoice_list' or request.resolver_match.url_name == 'invoice_detail' %} sidebar__link--active{% endif %}" href="{% url 'billing:invoice_list' %}">Invoices</a>
+          <a class="sidebar__link{% if request.resolver_match.url_name == 'payment_list' %} sidebar__link--active{% endif %}" href="{% url 'billing:payment_list' %}">Collections</a>
+          <a class="sidebar__link{% if request.resolver_match.app_name == 'expenses' %} sidebar__link--active{% endif %}" href="{% url 'expenses:list' %}">Expenses</a>
+          <a class="sidebar__link{% if request.resolver_match.app_name == 'cash' %} sidebar__link--active{% endif %}" href="{% url 'cash:handover_list' %}">
+            <span>Cash Handover</span>
+            {% if nav_pending_handover_count %}<span class="badge-dot">{{ nav_pending_handover_count }}</span>{% endif %}
+          </a>
+        {% endif %}
+
+        {% if nav_can_manage_users %}
+          <div class="sidebar__section">People</div>
+          <a class="sidebar__link{% if request.resolver_match.url_name == 'staff_list' %} sidebar__link--active{% endif %}" href="{% url 'accounts:staff_list' %}">Staff</a>
+        {% endif %}
+
+        {% if user.is_owner %}
+          <div class="sidebar__section">System</div>
+          <a class="sidebar__link{% if request.resolver_match.app_name == 'audit' %} sidebar__link--active{% endif %}" href="{% url 'audit:list' %}">Audit Log</a>
+        {% endif %}
+      {% endif %}
+    </aside>
+
+    <div class="content-area">
+      <header class="topbar">
+        <label for="nav-toggle" class="btn btn--icon sidebar-toggle-label" aria-label="Open menu">&#9776;</label>
+
+        {% if user.is_authenticated and nav_has_scope %}
+          <form class="topbar__search" method="get" action="{% url 'dashboard:search' %}" role="search">
+            <input type="search" name="q" placeholder="Search tenants, invoices, villas…" value="{{ request.GET.q|default:'' }}" aria-label="Global search">
+          </form>
+        {% endif %}
+
+        <div class="topbar__actions">
+          {% if user.is_authenticated %}
+            <span class="pill pill--neutral">{{ user.get_full_name|default:user.username }}</span>
+          {% endif %}
+          <button class="btn btn--icon" type="button" data-theme-toggle aria-label="Toggle dark mode">&#9680;</button>
+          {% if user.is_authenticated %}
+            <form method="post" action="{% url 'accounts:logout' %}">
+              {% csrf_token %}
+              <button class="btn btn--ghost" type="submit">Sign out</button>
+            </form>
+          {% endif %}
+        </div>
+      </header>
+
+      <main class="main">
+        {% if breadcrumbs %}{% include "components/breadcrumbs.html" %}{% endif %}
+        {% if messages %}
+          {% for message in messages %}
+            <div class="form-error">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <script src="{% static 'js/theme.js' %}"></script>
+  <script src="{% static 'js/app.js' %}"></script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

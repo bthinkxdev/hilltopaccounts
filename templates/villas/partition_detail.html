@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{{ partition.name }} — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{{ partition.name }}</h1>
+      <div class="page-header__meta">{{ partition.villa.name }} — {{ partition.villa.business.name }}</div>
+    </div>
+    {% if can_manage %}
+      <a class="btn btn--ghost" href="{% url 'villas:partition_archive' partition.pk %}">Archive</a>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card__title">Tenant</div>
+    {% if current_tenant %}
+      <div class="list-row">
+        <a class="list-row__title" href="{% url 'tenancy:detail' current_tenant.pk %}">{{ current_tenant.name }}</a>
+        <span class="list-row__meta">QAR {{ current_tenant.monthly_rent }}/mo since {{ current_tenant.move_in_date }}</span>
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state__title">This partition is vacant.</div>
+        <p>Move in a tenant to start billing.</p>
+        {% if can_manage %}<a class="btn btn--primary" href="{% url 'tenancy:create' partition.pk %}">+ Move In Tenant</a>{% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="detail-section">
+    <div class="detail-section__title">Active Charges</div>
+    <div class="card">
+      {% if charges %}
+        {% for charge in charges %}
+          <div class="list-row">
+            <span class="list-row__title">{{ charge.charge_type }}</span>
+            <span class="list-row__meta">QAR {{ charge.amount }} / {{ charge.get_frequency_display }}</span>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state__title">No charges configured yet.</div>
+          <p>Add rent and utility charges so invoices can be generated.</p>
+          {% if can_manage %}<a class="btn btn--primary" href="{% url 'billing:charge_create' partition.pk %}">+ Add Charge</a>{% endif %}
+        </div>
+      {% endif %}
+      {% if charges and can_manage %}
+        <a class="btn btn--ghost" href="{% url 'billing:charge_create' partition.pk %}">+ Add Charge</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="detail-section">
+    <div class="detail-section__title">Invoices</div>
+    <div class="card">
+      {% if invoices %}
+        {% for invoice in invoices %}
+          <div class="list-row">
+            <a class="list-row__title" href="{% url 'billing:invoice_detail' invoice.pk %}">{{ invoice.invoice_number }}</a>
+            <span class="list-row__meta">{{ invoice.billing_period_start }} – {{ invoice.billing_period_end }}</span>
+            {% if invoice.computed_status == "paid" %}<span class="pill pill--success">Paid</span>
+            {% elif invoice.computed_status == "overdue" %}<span class="pill pill--danger">Overdue</span>
+            {% elif invoice.computed_status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
+            {% else %}<span class="pill pill--warning">QAR {{ invoice.computed_outstanding }} due</span>{% endif %}
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state__title">No invoices generated yet.</div>
+          <p>Generate a monthly invoice from this partition's active charges.</p>
+        </div>
+      {% endif %}
+      {% if current_tenant and can_manage %}
+        <a class="btn btn--primary" href="{% url 'billing:invoice_generate' partition.pk %}">+ Generate Invoice</a>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}

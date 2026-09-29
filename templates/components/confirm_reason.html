@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header"><h1>{{ title }}</h1></div>
+  <div class="card card--narrow">
+    <p class="page-header__meta" style="margin-bottom: var(--space-4);">{{ message }}</p>
+    <form method="post" novalidate>
+      {% csrf_token %}
+      <div class="field">
+        <label for="{{ form.reason.id_for_label }}">Reason <span class="field__required">*</span></label>
+        {{ form.reason }}
+        {% if form.reason.help_text %}<div class="list-row__meta">{{ form.reason.help_text }}</div>{% endif %}
+        {% if form.reason.errors %}<div class="field__error">{{ form.reason.errors.0 }}</div>{% endif %}
+      </div>
+      <div class="form-actions">
+        <button class="btn btn--danger" type="submit">{{ submit_label|default:"Confirm" }}</button>
+        {% if cancel_url %}<a class="btn btn--ghost" href="{{ cancel_url }}">Cancel</a>{% endif %}
+      </div>
+    </form>
+  </div>
+{% endblock %}

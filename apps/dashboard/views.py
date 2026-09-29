@@ -1,0 +1,84 @@
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db.models import Q
+from django.shortcuts import render
+from django.urls import reverse
+from django.views.generic import TemplateView
+from apps.accounts import selectors
+from apps.billing import selectors as billing_selectors
+from apps.cash import selectors as cash_selectors
+from apps.cash.models import CashHandover
+from apps.expenses import selectors as expenses_selectors
+from apps.tenancy.models import Tenant
+
+class HomeView(LoginRequiredMixin, TemplateView):
+    template_name = 'dashboard/home.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        user = self.request.user
+        businesses = selectors.businesses_visible_to(user).filter(is_archived=False)
+        villas = selectors.villas_visible_to(user).filter(is_archived=False).select_related('business')
+        partitions = selectors.partitions_visible_to(user)
+        ctx['businesses'] = businesses
+        ctx['villas'] = villas
+        ctx['role_labels'] = selectors.role_labels_for(user)
+        ctx['business_count'] = businesses.count()
+        ctx['villa_count'] = villas.count()
+        partition_count = partitions.count()
+        occupied_count = partitions.filter(tenancies__status=Tenant.Status.ACTIVE).distinct().count()
+        ctx['partition_count'] = partition_count
+        ctx['occupied_count'] = occupied_count
+        ctx['vacant_count'] = partition_count - occupied_count
+        needs_attention = []
+        quick_actions = []
+        ctx['can_view_financials'] = selectors.can_view_financial_kpis(user)
+        if ctx['can_view_financials']:
+            invoices = selectors.invoices_visible_to(user)
+            expenses = selectors.expenses_visible_to(user)
+            ctx['expected_revenue'] = billing_selectors.expected_revenue(invoices)
+            ctx['collected'] = billing_selectors.collected_amount(invoices)
+            ctx['outstanding'] = billing_selectors.outstanding_amount(invoices)
+            ctx['collection_rate'] = billing_selectors.collection_rate(invoices)
+            ctx['total_expenses'] = expenses_selectors.valid_expense_total(expenses)
+            ctx['net_profit'] = billing_selectors.profit(invoices, expenses)
+            overdue = billing_selectors.overdue_invoices(invoices)
+            if overdue:
+                overdue_total = sum((billing_selectors.invoice_outstanding(i) for i in overdue), start=0)
+                needs_attention.append({'label': 'Overdue invoices', 'count': len(overdue), 'meta': f'QAR {overdue_total} outstanding', 'url': reverse('billing:invoice_list') + '?status=overdue'})
+            pending_handovers = selectors.cash_handovers_visible_to(user).filter(status=CashHandover.Status.SUBMITTED)
+            if pending_handovers.exists():
+                needs_attention.append({'label': 'Pending cash handovers', 'count': pending_handovers.count(), 'meta': 'Awaiting your confirmation', 'url': reverse('cash:handover_list') + '?status=submitted'})
+            if businesses.exists():
+                quick_actions.append({'label': '+ Add Expense', 'url': reverse('expenses:create') + f'?business={businesses.first().pk}'})
+        if ctx['vacant_count'] > 0:
+            needs_attention.append({'label': 'Vacant partitions', 'count': ctx['vacant_count'], 'meta': 'No tenant assigned', 'url': reverse('villas:partition_list') + '?occupancy=vacant'})
+        my_unclaimed = cash_selectors.unclaimed_cash_payments(user)
+        if my_unclaimed.exists():
+            needs_attention.append({'label': 'Your cash ready to hand over', 'count': my_unclaimed.count(), 'meta': f'QAR {cash_selectors.outstanding_cash_for(user)} to submit', 'url': reverse('cash:handover_submit')})
+            quick_actions.append({'label': 'Submit Cash Handover', 'url': reverse('cash:handover_submit')})
+        if user.is_owner:
+            quick_actions.insert(0, {'label': '+ Add Business', 'url': reverse('businesses:create')})
+        if villas.exists():
+            quick_actions.append({'label': 'Record Collection', 'url': reverse('billing:invoice_list')})
+        ctx['needs_attention'] = needs_attention
+        ctx['quick_actions'] = quick_actions
+        ctx['outstanding_cash'] = cash_selectors.outstanding_cash_for(user)
+        ctx['pending_handover_amount'] = cash_selectors.pending_handover_amount(user)
+        return ctx
+
+@login_required
+def global_search(request):
+    q = request.GET.get('q', '').strip()
+    results = {}
+    if q:
+        user = request.user
+        results['businesses'] = selectors.businesses_visible_to(user).filter(name__icontains=q)[:10]
+        results['villas'] = selectors.villas_visible_to(user).filter(name__icontains=q)[:10]
+        results['partitions'] = selectors.partitions_visible_to(user).filter(name__icontains=q)[:10]
+        results['tenants'] = selectors.tenants_visible_to(user).filter(Q(name__icontains=q) | Q(mobile__icontains=q))[:10]
+        results['invoices'] = selectors.invoices_visible_to(user).filter(invoice_number__icontains=q)[:10]
+        if user.is_owner:
+            from apps.accounts.models import User
+            results['staff'] = User.objects.exclude(username='system').filter(username__icontains=q)[:10]
+    return render(request, 'dashboard/search.html', {'q': q, 'results': results, 'breadcrumbs': [('Search', None)]})

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{{ villa.name }} — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{{ villa.name }}</h1>
+      <div class="page-header__meta">{{ villa.business.name }}{% if villa.address %} · {{ villa.address }}{% endif %}</div>
+    </div>
+    {% if can_manage %}
+      <div class="quick-actions">
+        <a class="btn btn--primary" href="{% url 'villas:partition_create' villa.pk %}">+ Add Partition</a>
+        <a class="btn btn--ghost" href="{% url 'villas:villa_archive' villa.pk %}">Archive</a>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card__title">Occupancy</div>
+    <div class="grid--kpi">
+      <div class="kpi"><div class="kpi__label">Partitions</div><div class="kpi__value">{{ partitions.count }}</div></div>
+      <div class="kpi"><div class="kpi__label">Occupied</div><div class="kpi__value kpi__value--success">{{ occupied_count }}</div></div>
+      <div class="kpi"><div class="kpi__label">Vacant</div><div class="kpi__value kpi__value--warning">{{ vacant_count }}</div></div>
+    </div>
+  </div>
+
+  {% if can_view_financials %}
+    <div class="card">
+      <div class="card__title">Financial summary</div>
+      <div class="grid--kpi">
+        <div class="kpi"><div class="kpi__label">Expected Revenue</div><div class="kpi__value">QAR {{ expected_revenue }}</div></div>
+        <div class="kpi"><div class="kpi__label">Collected</div><div class="kpi__value kpi__value--success">QAR {{ collected }}</div></div>
+        <div class="kpi"><div class="kpi__label">Outstanding</div><div class="kpi__value kpi__value--warning">QAR {{ outstanding }}</div></div>
+        <div class="kpi"><div class="kpi__label">Expenses</div><div class="kpi__value kpi__value--danger">QAR {{ total_expenses }}</div></div>
+        <div class="kpi"><div class="kpi__label">Net Profit</div><div class="kpi__value {% if net_profit >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">QAR {{ net_profit }}</div></div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="detail-section">
+    <div class="detail-section__title">Partitions</div>
+    <div class="card">
+      {% if partitions %}
+        {% for partition in partitions %}
+          <div class="list-row">
+            <a class="list-row__title" href="{% url 'villas:partition_detail' partition.pk %}">{{ partition.name }}</a>
+            {% if partition.is_occupied %}
+              <span class="pill pill--success">Occupied — {{ partition.current_tenant.name }}</span>
+            {% else %}
+              <span class="pill pill--neutral">Vacant</span>
+            {% endif %}
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state__title">No partitions have been created yet.</div>
+          <p>Add a partition to start assigning tenants and billing.</p>
+          {% if can_manage %}<a class="btn btn--primary" href="{% url 'villas:partition_create' villa.pk %}">+ Add Partition</a>{% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}

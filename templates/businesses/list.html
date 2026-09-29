@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Businesses — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <h1>Businesses</h1>
+    {% if user.is_owner %}<a class="btn btn--primary" href="{% url 'businesses:create' %}">+ Add Business</a>{% endif %}
+  </div>
+
+  <form class="filter-bar" method="get">
+    <input type="search" name="q" placeholder="Search businesses…" value="{{ q }}">
+    <button class="btn btn--ghost" type="submit">Search</button>
+  </form>
+
+  <div class="card">
+    {% if page_obj %}
+      {% for business in page_obj %}
+        <div class="list-row">
+          <a class="list-row__title" href="{% url 'businesses:detail' business.pk %}">{{ business.name }}</a>
+          <span class="list-row__meta">{{ business.scoped_villa_count }} villa{{ business.scoped_villa_count|pluralize }}</span>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state__title">No businesses yet.</div>
+        <p>Create your first business to start building your villa portfolio.</p>
+        {% if user.is_owner %}<a class="btn btn--primary" href="{% url 'businesses:create' %}">+ Add Business</a>{% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  {% include "components/pagination.html" %}
+{% endblock %}

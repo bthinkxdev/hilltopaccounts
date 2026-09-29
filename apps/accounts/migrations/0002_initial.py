@@ -1,0 +1,8 @@
+import django.db.models.deletion
+from django.conf import settings
+from django.db import migrations, models
+
+class Migration(migrations.Migration):
+    initial = True
+    dependencies = [('accounts', '0001_initial'), ('businesses', '0001_initial'), ('villas', '0001_initial')]
+    operations = [migrations.AddField(model_name='assignment', name='business', field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='manager_assignments', to='businesses.business')), migrations.AddField(model_name='assignment', name='created_by', field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='+', to=settings.AUTH_USER_MODEL)), migrations.AddField(model_name='assignment', name='user', field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='assignments', to=settings.AUTH_USER_MODEL)), migrations.AddField(model_name='assignment', name='villa', field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='staff_assignments', to='villas.villa')), migrations.AddConstraint(model_name='assignment', constraint=models.CheckConstraint(condition=models.Q(models.Q(('business__isnull', False), ('role', 'business_manager'), ('villa__isnull', True)), models.Q(('business__isnull', True), ('role', 'villa_staff'), ('villa__isnull', False)), models.Q(('business__isnull', False), ('role', 'accountant'), ('villa__isnull', True)), models.Q(('business__isnull', True), ('role', 'accountant'), ('villa__isnull', False)), _connector='OR'), name='assignment_scope_matches_role')), migrations.AddConstraint(model_name='assignment', constraint=models.UniqueConstraint(fields=('user', 'role', 'business', 'villa'), name='unique_assignment'))]

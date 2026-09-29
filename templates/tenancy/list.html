@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Tenants — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header"><h1>Tenants</h1></div>
+
+  <form class="filter-bar" method="get">
+    <input type="search" name="q" placeholder="Search name or mobile…" value="{{ q }}">
+    <select name="status" onchange="this.form.submit()">
+      <option value="active" {% if status == "active" %}selected{% endif %}>Active</option>
+      <option value="moved_out" {% if status == "moved_out" %}selected{% endif %}>Moved out</option>
+      <option value="" {% if not status %}selected{% endif %}>All</option>
+    </select>
+    <button class="btn btn--ghost" type="submit">Search</button>
+  </form>
+
+  <div class="card">
+    {% if page_obj %}
+      {% for tenant in page_obj %}
+        <div class="list-row">
+          <a class="list-row__title" href="{% url 'tenancy:detail' tenant.pk %}">{{ tenant.name }}</a>
+          <span class="list-row__meta">{{ tenant.partition.villa.name }} — {{ tenant.partition.name }}</span>
+          {% if tenant.status == "active" %}<span class="pill pill--success">Active</span>
+          {% elif tenant.status == "moved_out" %}<span class="pill pill--neutral">Moved out</span>
+          {% else %}<span class="pill pill--neutral">{{ tenant.get_status_display }}</span>{% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state__title">No tenants yet.</div>
+        <p>Move in a tenant from a vacant partition to get started.</p>
+      </div>
+    {% endif %}
+  </div>
+
+  {% include "components/pagination.html" %}
+{% endblock %}

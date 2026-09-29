@@ -1,0 +1,4 @@
+from django.urls import path
+from . import views
+app_name = 'billing'
+urlpatterns = [path('invoices/', views.invoice_list, name='invoice_list'), path('invoices/<int:pk>/', views.invoice_detail, name='invoice_detail'), path('invoices/<int:pk>/cancel/', views.invoice_cancel, name='invoice_cancel'), path('partitions/<int:partition_pk>/invoices/generate/', views.invoice_generate, name='invoice_generate'), path('partitions/<int:partition_pk>/charges/new/', views.charge_create, name='charge_create'), path('charges/<int:pk>/deactivate/', views.charge_cancel, name='charge_cancel'), path('collections/', views.payment_list, name='payment_list'), path('invoices/<int:invoice_pk>/collections/record/', views.payment_record, name='payment_record'), path('collections/<int:pk>/cancel/', views.payment_cancel, name='payment_cancel'), path('collections/<int:pk>/correct/', views.payment_correct, name='payment_correct')]
