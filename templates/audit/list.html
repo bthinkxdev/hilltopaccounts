@@ -5,13 +5,14 @@
 
   <form class="filter-bar" method="get">
     <input type="search" name="q" placeholder="Filter by username…" value="{{ q }}">
+    <button class="btn btn--ghost" type="submit">Search</button>
     <select name="action" onchange="this.form.submit()">
       <option value="">Any action</option>
       {% for value, label in action_choices %}
         <option value="{{ value }}" {% if action == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
-    <button class="btn btn--ghost" type="submit">Filter</button>
+    {% if request.GET %}<a class="btn btn--ghost" href="{{ request.path }}">Clear</a>{% endif %}
   </form>
 
   <div class="card">

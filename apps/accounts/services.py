@@ -31,6 +31,13 @@ def disable_user(*, user: User, disabled_by, reason='') -> User:
         audit_services.log(user=disabled_by, action=Action.USER_DISABLED, obj=user, old_value={'is_active': True}, new_value={'is_active': False}, reason=reason)
     return user
 
+def enable_user(*, user: User, enabled_by, reason='') -> User:
+    with transaction.atomic():
+        user.is_active = True
+        user.save(update_fields=['is_active'])
+        audit_services.log(user=enabled_by, action=Action.USER_UPDATED, obj=user, old_value={'is_active': False}, new_value={'is_active': True}, reason=reason or 'reactivated')
+    return user
+
 def _create_assignment(*, user, role, business, villa, assigned_by) -> Assignment:
     with transaction.atomic():
         assignment = Assignment(user=user, role=role, business=business, villa=villa, created_by=assigned_by)

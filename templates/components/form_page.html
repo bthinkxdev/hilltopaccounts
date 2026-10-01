@@ -21,3 +21,50 @@
     </form>
   </div>
 {% endblock %}
+{% block extra_scripts %}
+{% if expense_form or datalist_only %}
+  <datalist id="expense-names">{% for name in expense_names %}<option value="{{ name }}">{% endfor %}</datalist>
+{% endif %}
+{% if expense_form %}
+  <script>
+  (function () {
+    var villa = document.getElementById('{{ form.villa.id_for_label }}');
+    var partition = document.getElementById('{{ form.partition.id_for_label }}');
+    var name = document.getElementById('{{ form.name.id_for_label }}');
+    var amount = document.getElementById('{{ form.amount.id_for_label }}');
+    var paid = document.getElementById('{{ form.mark_paid.id_for_label }}');
+    var method = document.getElementById('{{ form.payment_method.id_for_label }}');
+    var amountEdited = !!amount.value;
+    amount.addEventListener('input', function () { amountEdited = true; });
+
+    function narrowPartitions() {
+      Array.prototype.forEach.call(partition.options, function (opt) {
+        if (!opt.value) return;
+        var show = opt.getAttribute('data-villa') === villa.value;
+        opt.hidden = !show;
+        opt.disabled = !show;
+      });
+      var current = partition.options[partition.selectedIndex];
+      if (current && current.value && current.disabled) partition.value = '';
+    }
+    function togglePaid() {
+      var row = method.closest('.field');
+      if (row) row.style.display = paid.checked ? '' : 'none';
+    }
+    function prefill() {
+      if (amountEdited || !name.value.trim()) return;
+      var url = '{{ suggest_url }}?name=' + encodeURIComponent(name.value.trim()) + '&villa=' + encodeURIComponent(villa.value);
+      fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) { if (data && data.amount && !amountEdited) amount.value = data.amount; });
+    }
+    villa.addEventListener('change', function () { narrowPartitions(); prefill(); });
+    name.addEventListener('change', prefill);
+    name.addEventListener('blur', prefill);
+    paid.addEventListener('change', togglePaid);
+    narrowPartitions();
+    togglePaid();
+  })();
+  </script>
+{% endif %}
+{% endblock %}

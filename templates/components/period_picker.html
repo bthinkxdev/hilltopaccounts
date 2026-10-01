@@ -1,0 +1,17 @@
+{# Month / year selector. Submits by GET, so every period is a shareable URL. Extra params (q, business…) are kept via `keep`. #}
+<form class="filter-bar period-picker" method="get">
+  {% for name, value in keep %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+  <select name="period" onchange="this.form.submit()" aria-label="Period">
+    <option value="month" {% if period == "month" %}selected{% endif %}>Monthly</option>
+    <option value="year" {% if period == "year" %}selected{% endif %}>Yearly</option>
+  </select>
+  {% if period == "month" %}
+    <select name="month" onchange="this.form.submit()" aria-label="Month">
+      {% for value, label in month_choices %}<option value="{{ value }}" {% if month == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  {% endif %}
+  <select name="year" onchange="this.form.submit()" aria-label="Year">
+    {% for y in year_choices %}<option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>{% endfor %}
+  </select>
+  <noscript><button class="btn btn--ghost" type="submit">Apply</button></noscript>
+</form>

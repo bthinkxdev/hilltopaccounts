@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Notifications — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <h1>Notifications</h1>
+    {% if unread_total %}
+      <form method="post" action="{% url 'notifications:read_all' %}">{% csrf_token %}<button class="btn btn--ghost" type="submit">Mark all as read</button></form>
+    {% endif %}
+  </div>
+
+  <form class="filter-bar" method="get">
+    <select name="show" onchange="this.form.submit()" aria-label="Show">
+      <option value="">All</option>
+      <option value="unread" {% if show == "unread" %}selected{% endif %}>Unread only</option>
+    </select>
+    {% if request.GET %}<a class="btn btn--ghost" href="{{ request.path }}">Clear Filter</a>{% endif %}
+  </form>
+
+  <div class="card">
+    {% if page_obj %}
+      {% for n in page_obj %}
+        <div class="list-row">
+          <div>
+            <a class="list-row__title" href="{{ n.url }}">{% if not n.read_at %}<span class="badge-dot" aria-label="Unread">●</span> {% endif %}{{ n.title }}</a>
+            <div class="list-row__meta">{{ n.body }}{% if n.body %} · {% endif %}{{ n.created_at|date:"d M Y H:i" }}</div>
+          </div>
+          {% if not n.read_at %}
+            <form method="post" action="{% url 'notifications:read' n.pk %}">{% csrf_token %}<button class="btn btn--ghost" type="submit">Mark read</button></form>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state__title">{% if show == "unread" %}You're all caught up.{% else %}No notifications right now.{% endif %}</div>
+        <p>You'll be alerted here when expenses fall due, invoices go overdue, or cash handovers need attention.</p>
+      </div>
+    {% endif %}
+  </div>
+
+  {% include "components/pagination.html" %}
+{% endblock %}

@@ -26,3 +26,14 @@ class PartitionForm(forms.Form):
         super().__init__(*args, **kwargs)
         if villa_queryset is not None:
             self.fields['villa'].queryset = villa_queryset
+
+
+class PhotoForm(forms.Form):
+    image = forms.FileField(label='Photo', widget=forms.ClearableFileInput(attrs={'accept': 'image/jpeg,image/png,image/webp'}), help_text='JPG, PNG or WebP, up to 5 MB.')
+    caption = forms.CharField(required=False, max_length=200)
+
+    def clean_image(self):
+        from .photos import validate_photo
+        image = self.cleaned_data['image']
+        validate_photo(image)
+        return image

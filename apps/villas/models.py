@@ -53,3 +53,24 @@ class Partition(models.Model):
 
     def __str__(self):
         return f'{self.name} — {self.villa.name}'
+
+class Photo(models.Model):
+    """A photo of a villa (partition is null) or of one of its partitions."""
+    villa = models.ForeignKey(Villa, on_delete=models.PROTECT, related_name='photos')
+    partition = models.ForeignKey(Partition, on_delete=models.PROTECT, related_name='photos', null=True, blank=True)
+    image = models.FileField(upload_to='photos/%Y/%m/')
+    caption = models.CharField(max_length=200, blank=True)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at', 'id']
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        super().clean()
+        if self.partition_id and self.partition.villa_id != self.villa_id:
+            raise ValidationError('The partition does not belong to this villa.')
+
+    def __str__(self):
+        return f'Photo of {self.partition or self.villa}'

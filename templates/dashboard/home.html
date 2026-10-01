@@ -65,9 +65,26 @@
     </div>
   </div>
 
+  {% if period_pnl %}
+  <div class="period-bar">
+    <span class="period-bar__label">Showing {{ period_label }}</span>
+    {% include "components/period_picker.html" %}
+  </div>
+  <div class="card">
+    <div class="card__title">Income, expenses &amp; profit — {{ period_label }}</div>
+    <div class="grid--kpi">
+      <div class="kpi"><div class="kpi__label">Income</div><div class="kpi__value kpi__value--success">QAR {{ period_pnl.income|floatformat:"2" }}</div></div>
+      <div class="kpi"><div class="kpi__label">Expenses</div><div class="kpi__value kpi__value--danger">QAR {{ period_pnl.expenses|floatformat:"2" }}</div></div>
+      <div class="kpi"><div class="kpi__label">{% if period_pnl.net >= 0 %}Profit{% else %}Loss{% endif %}</div><div class="kpi__value {% if period_pnl.net >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">QAR {{ period_pnl.net|floatformat:"2" }}</div></div>
+      <div class="kpi"><div class="kpi__label">Unpaid expenses</div><div class="kpi__value">QAR {{ period_pnl.unpaid_expenses|floatformat:"2" }}</div></div>
+    </div>
+    <p class="list-row__meta">Open the Villas page to see this broken down villa by villa.</p>
+  </div>
+  {% endif %}
+
   {% if can_view_financials %}
   <div class="card">
-    <div class="card__title">Financial summary</div>
+    <div class="card__title">Financial summary (all time)</div>
     <div class="grid--kpi">
       <div class="kpi">
         <div class="kpi__label">Expected Revenue</div>

@@ -11,3 +11,6 @@ class InvoiceCancelled(DomainError):
 
 class PaymentExceedsOutstanding(DomainError):
     pass
+
+class NothingToCollect(DomainError):
+    pass

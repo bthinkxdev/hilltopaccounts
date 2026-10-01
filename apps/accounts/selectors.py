@@ -96,3 +96,56 @@ def role_labels_for(user) -> list[str]:
         return ['Owner']
     roles = Assignment.objects.filter(user=user).values_list('role', flat=True).distinct()
     return [Assignment.Role(role).label for role in roles]
+
+def can_manage_villa(user, villa) -> bool:
+    """Owner, the villa's Business Manager, or Villa Staff assigned to that villa — object-scoped, never global."""
+    if user.is_owner:
+        return True
+    return Assignment.objects.filter(user=user).filter(Q(role=Assignment.Role.BUSINESS_MANAGER, business_id=villa.business_id) | Q(role=Assignment.Role.VILLA_STAFF, villa=villa)).exists()
+
+def manageable_villas(user) -> QuerySet[Villa]:
+    if user.is_owner:
+        return Villa.objects.all()
+    managed = Assignment.objects.filter(user=user, role=Assignment.Role.BUSINESS_MANAGER).values('business_id')
+    staffed = Assignment.objects.filter(user=user, role=Assignment.Role.VILLA_STAFF).values('villa_id')
+    return Villa.objects.filter(Q(business_id__in=managed) | Q(pk__in=staffed))
+
+def can_view_villa_financials(user, villa) -> bool:
+    """Profit/loss and activity for one villa: Owner, its Business Manager, or an Accountant scoped to it."""
+    if user.is_owner:
+        return True
+    return Assignment.objects.filter(user=user).filter(Q(role=Assignment.Role.BUSINESS_MANAGER, business_id=villa.business_id) | Q(role=Assignment.Role.ACCOUNTANT) & (Q(business_id=villa.business_id) | Q(villa=villa))).exists()
+
+def financial_villas(user) -> QuerySet[Villa]:
+    """Villas whose income/expense/profit this user may see: Owner, the Business Manager, or a scoped Accountant."""
+    if user.is_owner:
+        return Villa.objects.all()
+    rows = Assignment.objects.filter(user=user, role__in=[Assignment.Role.BUSINESS_MANAGER, Assignment.Role.ACCOUNTANT])
+    return Villa.objects.filter(Q(business_id__in=rows.values('business_id')) | Q(pk__in=rows.filter(role=Assignment.Role.ACCOUNTANT).values('villa_id')))
+
+
+class ManageScope:
+    """Who-can-do-what for one user, loaded once so list pages never query permissions per row."""
+
+    def __init__(self, user):
+        self.is_owner = user.is_owner
+        self.admin_business_ids = set()
+        self.staff_villa_ids = set()
+        if not self.is_owner:
+            for role, business_id, villa_id in Assignment.objects.filter(user=user).values_list('role', 'business_id', 'villa_id'):
+                if role == Assignment.Role.BUSINESS_MANAGER:
+                    self.admin_business_ids.add(business_id)
+                elif role == Assignment.Role.VILLA_STAFF:
+                    self.staff_villa_ids.add(villa_id)
+
+    def is_admin(self, business_id) -> bool:
+        return self.is_owner or business_id in self.admin_business_ids
+
+    def can_manage_villa(self, villa_id, business_id) -> bool:
+        return self.is_admin(business_id) or villa_id in self.staff_villa_ids
+
+    def can_pay_expense(self, expense) -> bool:
+        """Mirrors expenses.services.can_pay_expense — owner-account expenses need an admin; staff-paid ones any villa manager."""
+        if self.is_admin(expense.business_id):
+            return True
+        return expense.paid_by == 'staff' and expense.villa_id is not None and expense.villa_id in self.staff_villa_ids

@@ -7,7 +7,7 @@ from apps.shared.forms import ReasonForm
 from apps.shared.pagination import paginate_queryset
 from . import selectors
 from .models import Assignment, User
-from .services import assign_accountant, assign_business_manager, assign_villa_staff, create_user, disable_user, remove_assignment
+from .services import assign_accountant, assign_business_manager, assign_villa_staff, create_user, disable_user, enable_user, remove_assignment
 from .staff_forms import AssignmentForm, StaffCreateForm
 
 def _owner_only(user):
@@ -60,6 +60,15 @@ def staff_deactivate(request, pk):
     else:
         form = ReasonForm()
     return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Deactivate {staff.username}?', 'message': 'They will no longer be able to sign in. Their history and assignments are preserved.', 'cancel_url': reverse('accounts:staff_detail', args=[staff.pk])})
+
+@login_required
+def staff_activate(request, pk):
+    _owner_only(request.user)
+    staff = get_object_or_404(User.objects.exclude(username='system'), pk=pk)
+    if request.method == 'POST':
+        enable_user(user=staff, enabled_by=request.user)
+        messages.success(request, f'“{staff.username}” reactivated.')
+    return redirect(request.POST.get('next') if request.POST.get('next') == reverse('accounts:staff_list') else reverse('accounts:staff_detail', args=[staff.pk]))
 
 @login_required
 def assignment_create(request, staff_pk):

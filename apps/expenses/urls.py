@@ -1,4 +1,4 @@
 from django.urls import path
 from . import views
 app_name = 'expenses'
-urlpatterns = [path('', views.expense_list, name='list'), path('new/', views.expense_create, name='create'), path('<int:pk>/cancel/', views.expense_cancel, name='cancel'), path('<int:pk>/reverse/', views.expense_reverse, name='reverse')]
+urlpatterns = [path('', views.expense_list, name='list'), path('new/', views.expense_create, name='create'), path('villa/<int:villa_pk>/new/', views.expense_create, name='create_for_villa'), path('suggest/', views.expense_suggest, name='suggest'), path('<int:pk>/edit/', views.expense_revise, name='revise'), path('villa/<int:villa_pk>/fixed/new/', views.recurring_create, name='recurring_create'), path('villa/<int:villa_pk>/fixed/generate/', views.recurring_generate, name='recurring_generate'), path('fixed/<int:pk>/edit/', views.recurring_edit, name='recurring_edit'), path('fixed/<int:pk>/stop/', views.recurring_stop, name='recurring_stop'), path('<int:pk>/paid/', views.expense_mark_paid, name='mark_paid'), path('<int:pk>/cancel/', views.expense_cancel, name='cancel'), path('<int:pk>/reverse/', views.expense_reverse, name='reverse')]

@@ -14,7 +14,9 @@
   <div class="card">
     <div class="grid--kpi">
       <div class="kpi"><div class="kpi__label">Staff</div><div class="kpi__value">{{ handover.staff.get_full_name|default:handover.staff.username }}</div></div>
-      <div class="kpi"><div class="kpi__label">Declared</div><div class="kpi__value">QAR {{ handover.declared_amount }}</div></div>
+      <div class="kpi"><div class="kpi__label">Collected cash</div><div class="kpi__value">QAR {{ collected_total|floatformat:"2" }}</div></div>
+      <div class="kpi"><div class="kpi__label">Expenses paid by staff</div><div class="kpi__value">QAR {{ expenses_total|floatformat:"2" }}</div></div>
+      <div class="kpi"><div class="kpi__label">Handed over (declared)</div><div class="kpi__value">QAR {{ handover.declared_amount }}</div></div>
       {% if handover.confirmed_amount is not None %}
         <div class="kpi"><div class="kpi__label">Confirmed</div><div class="kpi__value">QAR {{ handover.confirmed_amount }}</div></div>
         <div class="kpi"><div class="kpi__label">Discrepancy</div><div class="kpi__value {% if handover.discrepancy != 0 %}kpi__value--warning{% endif %}">QAR {{ handover.discrepancy }}</div></div>
@@ -32,10 +34,24 @@
     <div class="card">
       {% for payment in payments %}
         <div class="list-row">
-          <span class="list-row__title">{{ payment.invoice.invoice_number }}</span>
-          <span class="list-row__meta">QAR {{ payment.amount }} — {{ payment.collected_at }}</span>
+          <span class="list-row__title">{{ payment.invoice.partition.villa.name }} / {{ payment.invoice.partition.name }}</span>
+          <span class="list-row__meta">{{ payment.invoice.invoice_number }} — QAR {{ payment.amount }} — {{ payment.collected_at }}</span>
         </div>
       {% endfor %}
     </div>
   </div>
+
+  {% if expenses %}
+  <div class="detail-section">
+    <div class="detail-section__title">Expenses the staff paid from this cash</div>
+    <div class="card">
+      {% for expense in expenses %}
+        <div class="list-row">
+          <span class="list-row__title">{{ expense.category }}</span>
+          <span class="list-row__meta">{{ expense.villa.name }} — QAR {{ expense.amount }} — paid {{ expense.paid_on }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
 {% endblock %}

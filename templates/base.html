@@ -32,9 +32,7 @@
         {% if nav_has_scope %}
           <div class="sidebar__section">Organization</div>
           <a class="sidebar__link{% if request.resolver_match.app_name == 'businesses' %} sidebar__link--active{% endif %}" href="{% url 'businesses:list' %}">Businesses</a>
-          <a class="sidebar__link{% if request.resolver_match.url_name == 'villa_list' %} sidebar__link--active{% endif %}" href="{% url 'villas:villa_list' %}">Villas</a>
-          <a class="sidebar__link{% if request.resolver_match.url_name == 'partition_list' %} sidebar__link--active{% endif %}" href="{% url 'villas:partition_list' %}">Partitions</a>
-          <a class="sidebar__link{% if request.resolver_match.app_name == 'tenancy' %} sidebar__link--active{% endif %}" href="{% url 'tenancy:list' %}">Tenants</a>
+          <a class="sidebar__link{% if request.resolver_match.url_name == 'villa_list' or request.resolver_match.url_name == 'villa_detail' or request.resolver_match.url_name == 'partition_detail' %} sidebar__link--active{% endif %}" href="{% url 'villas:villa_list' %}">Villas</a>
 
           <div class="sidebar__section">Finance</div>
           <a class="sidebar__link{% if request.resolver_match.url_name == 'invoice_list' or request.resolver_match.url_name == 'invoice_detail' %} sidebar__link--active{% endif %}" href="{% url 'billing:invoice_list' %}">Invoices</a>
@@ -70,6 +68,7 @@
 
         <div class="topbar__actions">
           {% if user.is_authenticated %}
+            <a class="btn btn--ghost" href="{% url 'notifications:list' %}" aria-label="Notifications{% if notification_unread_count %}, {{ notification_unread_count }} unread{% endif %}">Alerts{% if notification_unread_count %} <span class="badge-dot">{{ notification_unread_count }}</span>{% endif %}</a>
             <span class="pill pill--neutral">{{ user.get_full_name|default:user.username }}</span>
           {% endif %}
           <button class="btn btn--icon" type="button" data-theme-toggle aria-label="Toggle dark mode">&#9680;</button>

@@ -5,12 +5,13 @@
 
   <form class="filter-bar" method="get">
     <input type="search" name="q" placeholder="Search name or mobile…" value="{{ q }}">
+    <button class="btn btn--ghost" type="submit">Search</button>
+    {% if request.GET %}<a class="btn btn--ghost" href="{{ request.path }}">Clear</a>{% endif %}
     <select name="status" onchange="this.form.submit()">
       <option value="active" {% if status == "active" %}selected{% endif %}>Active</option>
       <option value="moved_out" {% if status == "moved_out" %}selected{% endif %}>Moved out</option>
       <option value="" {% if not status %}selected{% endif %}>All</option>
     </select>
-    <button class="btn btn--ghost" type="submit">Search</button>
   </form>
 
   <div class="card">

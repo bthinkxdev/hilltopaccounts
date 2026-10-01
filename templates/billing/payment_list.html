@@ -10,7 +10,7 @@
       <option value="bank_transfer" {% if method == "bank_transfer" %}selected{% endif %}>Bank Transfer</option>
       <option value="other" {% if method == "other" %}selected{% endif %}>Other</option>
     </select>
-    <button class="btn btn--ghost" type="submit">Filter</button>
+    {% if request.GET %}<a class="btn btn--ghost" href="{{ request.path }}">Clear Filter</a>{% endif %}
   </form>
 
   <div class="card">

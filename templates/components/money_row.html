@@ -1,0 +1,6 @@
+{# Income / Expense / Profit strip. `pnl` is prepared by the financial engine; nothing is computed here. Amounts are QAR. #}
+<div class="money-row">
+  <div><div class="money-row__label">Income</div><div class="money-row__value kpi__value--success">{{ pnl.income|floatformat:"2g" }}</div></div>
+  <div><div class="money-row__label">Expense</div><div class="money-row__value kpi__value--danger">{{ pnl.expenses|floatformat:"2g" }}</div></div>
+  <div><div class="money-row__label">{% if pnl.net >= 0 %}Profit{% else %}Loss{% endif %}</div><div class="money-row__value {% if pnl.net >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">{{ pnl.net|floatformat:"2g" }}</div></div>
+</div>

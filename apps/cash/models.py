@@ -9,6 +9,7 @@ class CashHandover(models.Model):
         REJECTED = ('rejected', 'Rejected')
     staff = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='cash_handovers')
     payments = models.ManyToManyField('billing.Payment', related_name='handovers', blank=True)
+    expenses = models.ManyToManyField('expenses.Expense', related_name='handovers', blank=True, help_text='Expenses the staff paid out of the collected cash; they reduce what is handed over.')
     declared_amount = models.DecimalField(max_digits=12, decimal_places=2)
     confirmed_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.SUBMITTED)

@@ -8,6 +8,7 @@
 
   <form class="filter-bar" method="get">
     <input type="search" name="q" placeholder="Search partitions…" value="{{ q }}">
+    <button class="btn btn--ghost" type="submit">Search</button>
     <select name="villa" onchange="this.form.submit()">
       <option value="">All villas</option>
       {% for villa in villas %}
@@ -19,7 +20,7 @@
       <option value="occupied" {% if selected_occupancy == "occupied" %}selected{% endif %}>Occupied</option>
       <option value="vacant" {% if selected_occupancy == "vacant" %}selected{% endif %}>Vacant</option>
     </select>
-    <button class="btn btn--ghost" type="submit">Filter</button>
+    {% if request.GET %}<a class="btn btn--ghost" href="{{ request.path }}">Clear</a>{% endif %}
   </form>
 
   <div class="card">

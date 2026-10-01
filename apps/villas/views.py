@@ -1,39 +1,131 @@
+from datetime import date
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.db.models import Count, F, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from apps.accounts import selectors
+from apps.accounts.models import Assignment, User
 from apps.businesses.forms import ArchiveReasonForm
 from apps.businesses.models import Business
+from apps.shared.forms import ReasonForm
 from apps.shared.pagination import paginate_queryset
-from .forms import PartitionForm, VillaForm
-from .services import archive_partition, archive_villa, create_partition, create_villa
+from apps.shared.periods import period_context
+from .forms import PartitionForm, PhotoForm, VillaForm
+from apps.expenses.models import RecurringExpense
+from .models import Photo
+from .services import add_photo, archive_partition, archive_villa, create_partition, create_villa, delete_photo
+
+def _first_photo_by(photos, key):
+    """Map group id -> first photo, from a single already-fetched list of photos."""
+    first = {}
+    for photo in photos:
+        first.setdefault(key(photo), photo)
+    return first
 
 @login_required
 def villa_list(request):
-    qs = selectors.villas_visible_to(request.user).filter(is_archived=False).select_related('business')
+    from apps.billing import selectors as billing_selectors
+    today = date.today()
+    base = selectors.villas_visible_to(request.user).filter(is_archived=False)
     q = request.GET.get('q', '').strip()
     if q:
-        qs = qs.filter(name__icontains=q)
+        base = base.filter(name__icontains=q)
     business_id = request.GET.get('business')
-    if business_id:
-        qs = qs.filter(business_id=business_id)
-    page_obj = paginate_queryset(request, qs)
-    return render(request, 'villas/villa_list.html', {'page_obj': page_obj, 'q': q, 'businesses': selectors.businesses_visible_to(request.user).filter(is_archived=False), 'selected_business': business_id, 'can_create_villa': selectors.businesses_managed_by(request.user).exists(), 'breadcrumbs': [('Villas', None)]})
+    if business_id and business_id.isdigit():
+        base = base.filter(business_id=business_id)
+    staff_id = request.GET.get('staff', '')
+    staff_choices = []
+    financial_scope = selectors.financial_villas(request.user)
+    if financial_scope.exists():
+        staff_choices = list(User.objects.filter(assignments__role=Assignment.Role.VILLA_STAFF, assignments__villa__in=financial_scope).distinct().order_by('first_name', 'username'))
+        if staff_id.isdigit():
+            base = base.filter(pk__in=Assignment.objects.filter(role=Assignment.Role.VILLA_STAFF, user_id=staff_id, villa__in=financial_scope).values('villa_id'))
+    qs = base.select_related('business').annotate(partition_total=Count('partitions', distinct=True), occupied_total=Count('partitions', filter=Q(partitions__tenancies__status='active'), distinct=True)).order_by('business__name', 'name')
+    page_obj = paginate_queryset(request, qs, per_page=12)
+    villa_ids = [villa.pk for villa in page_obj]
+    covers = _first_photo_by(Photo.objects.filter(villa_id__in=villa_ids, partition__isnull=True), lambda photo: photo.villa_id)
+    period = period_context(request, today)
+    financial_ids = set(selectors.financial_villas(request.user).filter(pk__in=villa_ids).values_list('pk', flat=True))
+    pnl_by_villa = {}
+    if financial_ids:
+        pnl_by_villa = billing_selectors.profit_loss_by_villa(selectors.invoices_visible_to(request.user).filter(partition__villa__in=financial_ids), selectors.expenses_visible_to(request.user).filter(villa__in=financial_ids), period['period_start'], period['period_end'])
+    from apps.cash.models import CashHandover
+    from apps.expenses import selectors as expenses_selectors
+    from apps.expenses.models import Expense
+    from apps.billing.models import Payment
+    from apps.villas.models import Partition
+    staff_names = {}
+    for assignment in Assignment.objects.filter(role=Assignment.Role.VILLA_STAFF, villa_id__in=financial_ids).select_related('user'):
+        staff_names.setdefault(assignment.villa_id, []).append(assignment.user.get_full_name() or assignment.user.username)
+    pending_rent = billing_selectors.pending_rent_by_villa(selectors.invoices_visible_to(request.user).filter(partition__villa_id__in=villa_ids), selectors.partitions_visible_to(request.user).filter(villa_id__in=villa_ids), period['year'], period['month']) if period['period'] == 'month' else {}
+    fixed_pending = expenses_selectors.fixed_pending_by_villa(villa_ids, period['year'], period['month']) if period['period'] == 'month' else {}
+    overdue_expenses = {row['villa_id']: row['n'] for row in selectors.expenses_visible_to(request.user).filter(villa_id__in=villa_ids, status=Expense.Status.ACTIVE, paid_on__isnull=True, due_date__lt=today).order_by().values('villa_id').annotate(n=Count('pk'))}
+    unconfirmed_cash = {row['invoice__partition__villa_id']: row['total'] for row in Payment.objects.filter(handovers__status=CashHandover.Status.SUBMITTED, invoice__partition__villa_id__in=financial_ids).order_by().values('invoice__partition__villa_id').annotate(total=Sum('amount'))}
+    for villa in page_obj:
+        villa.staff_names = staff_names.get(villa.pk, [])
+        villa.pending_rent = pending_rent.get(villa.pk, 0)
+        villa.overdue_expense_count = overdue_expenses.get(villa.pk, 0)
+        villa.fixed_pending = fixed_pending.get(villa.pk, 0)
+        villa.unconfirmed_cash = unconfirmed_cash.get(villa.pk)
+        villa.cover = covers.get(villa.pk)
+        villa.vacant_total = villa.partition_total - villa.occupied_total
+        villa.pnl = pnl_by_villa.get(villa.pk, billing_selectors.EMPTY_PROFIT_LOSS) if villa.pk in financial_ids else None
+    totals = None
+    scoped_financial = selectors.financial_villas(request.user).filter(pk__in=base.values('pk'))
+    if scoped_financial.exists():
+        totals = billing_selectors.period_profit_loss(selectors.invoices_visible_to(request.user).filter(partition__villa__in=scoped_financial), selectors.expenses_visible_to(request.user).filter(villa__in=scoped_financial), period['period_start'], period['period_end'])
+    keep = [(name, value) for name, value in (('q', q), ('business', business_id or ''), ('staff', staff_id)) if value]
+    context = {'staff_choices': staff_choices, 'selected_staff': staff_id, 'page_obj': page_obj, 'q': q, 'totals': totals, 'keep': keep, 'businesses': selectors.businesses_visible_to(request.user).filter(is_archived=False), 'selected_business': business_id, 'can_create_villa': selectors.businesses_managed_by(request.user).exists(), 'breadcrumbs': [('Villas', None)], **period}
+    return render(request, 'villas/villa_list.html', context)
 
 @login_required
 def villa_detail(request, pk):
-    villa = get_object_or_404(selectors.villas_visible_to(request.user), pk=pk)
-    partitions = selectors.partitions_visible_to(request.user).filter(villa=villa).select_related().order_by('name')
-    context = {'villa': villa, 'partitions': partitions, 'occupied_count': partitions.filter(tenancies__status='active').distinct().count(), 'can_manage': request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business) or selectors.is_villa_staff_of(request.user, villa), 'can_view_financials': selectors.can_view_financial_kpis(request.user), 'breadcrumbs': [('Businesses', reverse('businesses:list')), (villa.business.name, reverse('businesses:detail', args=[villa.business.pk])), (villa.name, None)]}
-    context['vacant_count'] = partitions.count() - context['occupied_count']
-    if context['can_view_financials']:
-        from apps.billing import selectors as billing_selectors
-        from apps.expenses import selectors as expenses_selectors
-        invoices = selectors.invoices_visible_to(request.user).filter(partition__villa=villa)
-        expenses = selectors.expenses_visible_to(request.user).filter(villa=villa)
-        context.update(expected_revenue=billing_selectors.expected_revenue(invoices), collected=billing_selectors.collected_amount(invoices), outstanding=billing_selectors.outstanding_amount(invoices), total_expenses=expenses_selectors.valid_expense_total(expenses), net_profit=billing_selectors.profit(invoices, expenses))
+    from apps.audit.models import AuditLog
+    from apps.billing import selectors as billing_selectors
+    from apps.expenses import selectors as expenses_selectors
+    from apps.tenancy.models import Tenant
+    today = date.today()
+    villa = get_object_or_404(selectors.villas_visible_to(request.user).select_related('business'), pk=pk)
+    period = period_context(request, today)
+    start, end = period['period_start'], period['period_end']
+    partitions = list(selectors.partitions_visible_to(request.user).filter(villa=villa).order_by('name'))
+    tenants = list(selectors.tenants_visible_to(request.user).filter(partition__villa=villa, status=Tenant.Status.ACTIVE).select_related('partition'))
+    tenant_by_partition = {t.partition_id: t for t in tenants}
+    photos = list(Photo.objects.filter(villa=villa).select_related('partition'))
+    partition_covers = _first_photo_by([p for p in photos if p.partition_id], lambda photo: photo.partition_id)
+    invoices = selectors.invoices_visible_to(request.user).filter(partition__villa=villa)
+    expenses = selectors.expenses_visible_to(request.user).filter(villa=villa)
+    can_view_financials = selectors.can_view_villa_financials(request.user, villa)
+    partition_pnl = billing_selectors.profit_loss_by_partition(invoices, expenses, start, end) if can_view_financials else {}
+    for partition in partitions:
+        partition.tenant = tenant_by_partition.get(partition.pk)
+        partition.cover = partition_covers.get(partition.pk)
+        partition.pnl = partition_pnl.get(partition.pk, billing_selectors.EMPTY_PROFIT_LOSS) if can_view_financials else None
+    period_expenses = expenses.filter(date__gte=start, date__lte=end)
+    recent_expenses = list(period_expenses.select_related('category', 'partition').order_by('-date', '-id')[:8])
+    scope = selectors.ManageScope(request.user)
+    for expense in recent_expenses:
+        expense.due_state = expenses_selectors.due_state(expense, today)
+        expense.can_pay = scope.can_pay_expense(expense)
+    open_invoices = list(billing_selectors.with_computed_totals(invoices.filter(is_cancelled=False)).filter(_paid__lt=F('_total')).select_related('tenant', 'partition').order_by('due_date')[:8])
+    for invoice in open_invoices:
+        invoice.outstanding_amount = invoice._total - invoice._paid
+        invoice.is_overdue = invoice.due_date < today
+    villa_photos = [p for p in photos if not p.partition_id]
+    rent_rows, rent_totals = (billing_selectors.rent_sheet(partitions=partitions, tenant_by_partition=tenant_by_partition, invoice_queryset=invoices, year=period['year'], month=period['month'], today=today) if period['period'] == 'month' else (None, None))
+    fixed_rows, fixed_totals = expenses_selectors.fixed_expense_checklist(villa, period['year'], period['month'], today) if period['period'] == 'month' else (None, None)
+    for row in fixed_rows or []:
+        row['can_pay'] = row['expense'] is not None and scope.can_pay_expense(row['expense'])
+        row['can_edit'] = row['expense'] is not None and scope.can_manage_villa(villa.pk, villa.business_id) and row['status'] in ('unpaid', 'due_today', 'overdue')
+    fixed_templates = list(RecurringExpense.objects.filter(villa=villa, is_active=True).select_related('category')) if period['period'] == 'year' else []
+    can_manage = selectors.can_manage_villa(request.user, villa)
+    context = {'rent_rows': rent_rows, 'rent_totals': rent_totals, 'fixed_rows': fixed_rows, 'fixed_totals': fixed_totals, 'fixed_templates': fixed_templates, 'can_admin_fixed': scope.is_admin(villa.business_id), 'villa': villa, 'partitions': partitions, 'occupied_count': len(tenants), 'vacant_count': len(partitions) - len(tenants), 'can_manage': can_manage, 'can_delete_photos': request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business), 'can_view_financials': can_view_financials, 'photos': villa_photos, 'open_invoices': open_invoices, 'recent_payments': selectors.payments_visible_to(request.user).filter(invoice__partition__villa=villa, collected_at__gte=start, collected_at__lte=end).select_related('invoice', 'invoice__tenant', 'collected_by').order_by('-collected_at', '-id')[:8], 'recent_expenses': recent_expenses, 'expense_summary': expenses_selectors.due_summary(expenses, today), 'keep': [], 'breadcrumbs': [('Villas', reverse('villas:villa_list')), (villa.name, None)], **period}
+    if can_view_financials:
+        context['pnl'] = billing_selectors.period_profit_loss(invoices, expenses, start, end)
+        context['total_outstanding'] = billing_selectors.outstanding_amount(invoices)
+        context['activity'] = AuditLog.objects.filter(villa=villa).select_related('user').order_by('-timestamp')[:10]
     return render(request, 'villas/villa_detail.html', context)
 
 @login_required
@@ -91,14 +183,30 @@ def partition_list(request):
 
 @login_required
 def partition_detail(request, pk):
-    partition = get_object_or_404(selectors.partitions_visible_to(request.user), pk=pk)
     from apps.billing import selectors as billing_selectors
     from apps.billing.models import Charge
-    invoices = selectors.invoices_visible_to(request.user).filter(partition=partition).order_by('-issue_date')
+    from apps.expenses import selectors as expenses_selectors
+    today = date.today()
+    partition = get_object_or_404(selectors.partitions_visible_to(request.user).select_related('villa', 'villa__business'), pk=pk)
+    villa = partition.villa
+    period = period_context(request, today)
+    start, end = period['period_start'], period['period_end']
+    current_tenant = partition.current_tenant
+    all_invoices = selectors.invoices_visible_to(request.user).filter(partition=partition)
+    invoices = list(all_invoices.order_by('-created_at', '-id')[:20])
     for invoice in invoices:
         invoice.computed_status = billing_selectors.invoice_status(invoice)
         invoice.computed_outstanding = billing_selectors.invoice_outstanding(invoice)
-    return render(request, 'villas/partition_detail.html', {'partition': partition, 'current_tenant': partition.current_tenant, 'charges': Charge.objects.filter(partition=partition, is_active=True), 'invoices': invoices[:20], 'can_manage': request.user.is_owner or selectors.can_manage_villas_and_tenants(request.user), 'breadcrumbs': [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk])), (partition.villa.name, reverse('villas:villa_detail', args=[partition.villa.pk])), (partition.name, None)]})
+    expenses = selectors.expenses_visible_to(request.user).filter(partition=partition)
+    recent_expenses = list(expenses.filter(date__gte=start, date__lte=end).select_related('category').order_by('-date', '-id')[:8])
+    for expense in recent_expenses:
+        expense.due_state = expenses_selectors.due_state(expense, today)
+    can_view_financials = selectors.can_view_villa_financials(request.user, villa)
+    context = {'partition': partition, 'villa': villa, 'current_tenant': current_tenant, 'charges': Charge.objects.filter(partition=partition, is_active=True) if current_tenant else Charge.objects.none(), 'invoices': invoices, 'recent_expenses': recent_expenses, 'photos': list(Photo.objects.filter(partition=partition)), 'can_manage': selectors.can_manage_villa(request.user, villa), 'can_delete_photos': request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business), 'can_view_financials': can_view_financials, 'keep': [], 'breadcrumbs': [('Villas', reverse('villas:villa_list')), (villa.name, reverse('villas:villa_detail', args=[villa.pk])), (partition.name, None)], **period}
+    if can_view_financials:
+        context['pnl'] = billing_selectors.period_profit_loss(all_invoices, expenses, start, end)
+        context['outstanding'] = billing_selectors.outstanding_amount(all_invoices)
+    return render(request, 'villas/partition_detail.html', context)
 
 @login_required
 def partition_create(request, villa_pk=None):
@@ -140,3 +248,57 @@ def partition_archive(request, pk):
     else:
         form = ArchiveReasonForm()
     return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Archive {partition.name}?', 'message': 'This partition will be archived, not deleted.', 'cancel_url': reverse('villas:partition_detail', args=[partition.pk])})
+
+
+def _photo_redirect(villa, partition):
+    return redirect('villas:partition_detail', pk=partition.pk) if partition else redirect('villas:villa_detail', pk=villa.pk)
+
+@login_required
+def photo_add(request, villa_pk=None, partition_pk=None):
+    partition = get_object_or_404(selectors.partitions_visible_to(request.user).select_related('villa'), pk=partition_pk) if partition_pk else None
+    villa = partition.villa if partition else get_object_or_404(selectors.villas_visible_to(request.user), pk=villa_pk)
+    if not selectors.can_manage_villa(request.user, villa):
+        raise PermissionDenied('You cannot add photos here.')
+    if request.method == 'POST':
+        form = PhotoForm(request.POST, request.FILES)
+        if form.is_valid():
+            add_photo(villa=villa, partition=partition, image=form.cleaned_data['image'], caption=form.cleaned_data['caption'], uploaded_by=request.user)
+            messages.success(request, 'Photo added.')
+            return _photo_redirect(villa, partition)
+    else:
+        form = PhotoForm()
+    target = partition.name if partition else villa.name
+    cancel_url = reverse('villas:partition_detail', args=[partition.pk]) if partition else reverse('villas:villa_detail', args=[villa.pk])
+    return render(request, 'components/form_page.html', {'form': form, 'title': f'Add Photo — {target}', 'submit_label': 'Upload', 'cancel_url': cancel_url})
+
+@login_required
+def photo_file(request, pk):
+    """Photos are served through this view so they obey the same villa scoping as every other record."""
+    from django.http import FileResponse, Http404
+    from .photos import ALLOWED_EXTENSIONS
+    photo = get_object_or_404(Photo.objects.filter(villa__in=selectors.villas_visible_to(request.user)), pk=pk)
+    extension = photo.image.name.rsplit('.', 1)[-1].lower()
+    try:
+        handle = photo.image.open('rb')
+    except FileNotFoundError as exc:
+        raise Http404('Photo file is missing.') from exc
+    response = FileResponse(handle, content_type=ALLOWED_EXTENSIONS.get(extension, 'application/octet-stream'))
+    response['Cache-Control'] = 'private, max-age=3600'
+    return response
+
+@login_required
+def photo_delete(request, pk):
+    photo = get_object_or_404(Photo.objects.filter(villa__in=selectors.villas_visible_to(request.user)).select_related('villa', 'partition'), pk=pk)
+    if not (request.user.is_owner or selectors.is_business_manager_of(request.user, photo.villa.business)):
+        raise PermissionDenied('You cannot delete this photo.')
+    villa, partition = photo.villa, photo.partition
+    if request.method == 'POST':
+        form = ReasonForm(request.POST)
+        if form.is_valid():
+            delete_photo(photo=photo, deleted_by=request.user, reason=form.cleaned_data['reason'])
+            messages.success(request, 'Photo removed.')
+            return _photo_redirect(villa, partition)
+    else:
+        form = ReasonForm()
+    back = reverse('villas:partition_detail', args=[partition.pk]) if partition else reverse('villas:villa_detail', args=[villa.pk])
+    return render(request, 'components/confirm_reason.html', {'form': form, 'title': 'Remove this photo?', 'message': 'The photo is deleted; the removal is recorded in the audit log.', 'cancel_url': back})

@@ -196,12 +196,12 @@ class Command(BaseCommand):
         maintenance = ExpenseCategory.objects.get(name='Maintenance')
         utilities = ExpenseCategory.objects.get(name='Utilities')
         today = date.today()
-        specs = [(businesses[0], None, maintenance, Decimal('1200.00'), 'Annual AC servicing'), (villas[0].business, villas[0], utilities, Decimal('340.00'), 'Common area electricity'), (villas[1].business, villas[1], maintenance, Decimal('560.00'), 'Plumbing repair')]
+        specs = [(villas[0].business, villas[0], maintenance, Decimal('1200.00'), 'Annual AC servicing'), (villas[0].business, villas[0], utilities, Decimal('340.00'), 'Common area electricity'), (villas[1].business, villas[1], maintenance, Decimal('560.00'), 'Plumbing repair')]
         for business, villa, category, amount, description in specs:
             already_seeded = Expense.objects.filter(business=business, villa=villa, category=category, amount=amount).exists()
             if already_seeded:
                 continue
-            create_expense(business=business, villa=villa, category=category, amount=amount, date=today - timedelta(days=10), payment_method='bank_transfer', description=description, created_by=owner)
+            create_expense(villa=villa, category=category, amount=amount, date=today - timedelta(days=10), payment_method='bank_transfer', paid_on=today - timedelta(days=10), description=description, created_by=owner)
 
     def _create_cash_handovers(self, owner, villa_staff):
         if not villa_staff:

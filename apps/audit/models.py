@@ -47,6 +47,7 @@ class Action(models.TextChoices):
     REPORT_EXPORTED = ('report.exported', 'Report exported')
     DOCUMENT_UPLOADED = ('document.uploaded', 'Document uploaded')
     DOCUMENT_DOWNLOADED = ('document.downloaded', 'Document downloaded')
+    DOCUMENT_DELETED = ('document.deleted', 'Document deleted')
 
 class AuditLog(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True, db_index=True)

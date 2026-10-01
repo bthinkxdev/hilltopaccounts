@@ -3,6 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 from django.urls import reverse
 from apps.accounts import selectors
 from apps.shared.exceptions import DomainError
@@ -11,7 +12,7 @@ from apps.shared.pagination import paginate_queryset
 from . import selectors as billing_selectors
 from .forms import ChargeForm, InvoiceGenerateForm, PaymentCorrectionForm, PaymentForm
 from .models import Invoice
-from .services import cancel_charge, cancel_invoice, cancel_payment, correct_payment, create_charge, generate_monthly_invoice, record_payment
+from .services import collect_rent, cancel_charge, cancel_invoice, cancel_payment, correct_payment, create_charge, generate_monthly_invoice, record_payment
 
 def _can_manage(user, villa):
     return user.is_owner or selectors.is_business_manager_of(user, villa.business) or selectors.is_villa_staff_of(user, villa)
@@ -56,7 +57,7 @@ def invoice_list(request):
     status = request.GET.get('status', '')
     if status:
         qs = billing_selectors.filter_by_status(qs, status)
-    page_obj = paginate_queryset(request, qs.order_by('-issue_date'))
+    page_obj = paginate_queryset(request, qs.order_by('-created_at', '-id'))
     for invoice in page_obj:
         invoice.computed_status = billing_selectors.invoice_status(invoice)
         invoice.computed_outstanding = billing_selectors.invoice_outstanding(invoice)
@@ -164,3 +165,32 @@ def payment_correct(request, pk):
     else:
         form = PaymentCorrectionForm(initial={'new_amount': payment.amount})
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Correct payment of QAR {payment.amount}', 'submit_label': 'Save Correction', 'cancel_url': reverse('billing:invoice_detail', args=[payment.invoice.pk])})
+
+
+@login_required
+@require_POST
+def rent_collect(request, partition_pk):
+    """Staff taps 'Collected' on the month's rent sheet. POST only."""
+    partition = get_object_or_404(selectors.partitions_visible_to(request.user).select_related('villa'), pk=partition_pk)
+    back = reverse('villas:villa_detail', args=[partition.villa_id])
+    try:
+        year, month = int(request.POST.get('year', '')), int(request.POST.get('month', ''))
+        if not (2000 <= year <= 2100 and 1 <= month <= 12):
+            raise ValueError
+    except ValueError:
+        messages.error(request, 'Choose a valid month first.')
+        return redirect(back)
+    method = request.POST.get('method', 'cash')
+    if method not in ('cash', 'bank_transfer'):
+        messages.error(request, 'Choose how the rent was paid.')
+        return redirect(back)
+    back = f'{back}?period=month&year={year}&month={month}#rent'
+    if not _can_manage(request.user, partition.villa):
+        raise PermissionDenied('You cannot collect rent for this villa.')
+    try:
+        payment = collect_rent(partition=partition, year=year, month=month, method=method, collected_by=request.user)
+    except DomainError as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, f'{partition.name}: QAR {payment.amount} rent collected for {payment.invoice.billing_period_start:%B %Y}.')
+    return redirect(back)

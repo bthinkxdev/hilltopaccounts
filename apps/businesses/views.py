@@ -7,6 +7,7 @@ from apps.accounts import selectors
 from apps.billing import selectors as billing_selectors
 from apps.expenses import selectors as expenses_selectors
 from apps.shared.pagination import paginate_queryset
+from apps.shared.periods import period_context
 from .forms import ArchiveReasonForm, BusinessForm
 from .services import archive_business, create_business
 
@@ -25,7 +26,9 @@ def business_list(request):
 def business_detail(request, pk):
     business = get_object_or_404(selectors.businesses_visible_to(request.user), pk=pk)
     villas = selectors.villas_visible_to(request.user).filter(business=business, is_archived=False)
-    context = {'business': business, 'villas': villas, 'can_view_financials': selectors.can_view_financial_kpis(request.user), 'breadcrumbs': [('Businesses', reverse('businesses:list')), (business.name, None)]}
+    period = period_context(request)
+    financial = selectors.financial_villas(request.user).filter(business=business)
+    context = {'period_pnl': billing_selectors.period_profit_loss(selectors.invoices_visible_to(request.user).filter(partition__villa__in=financial), selectors.expenses_visible_to(request.user).filter(villa__in=financial), period['period_start'], period['period_end']) if financial.exists() else None, 'keep': [], **period, 'business': business, 'villas': villas, 'can_view_financials': selectors.can_view_financial_kpis(request.user), 'breadcrumbs': [('Businesses', reverse('businesses:list')), (business.name, None)]}
     if context['can_view_financials']:
         invoices = selectors.invoices_visible_to(request.user).filter(partition__villa__business=business)
         expenses = selectors.expenses_visible_to(request.user).filter(business=business)

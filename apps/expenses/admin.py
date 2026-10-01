@@ -16,11 +16,11 @@ class ExpenseAdmin(admin.ModelAdmin):
     readonly_fields = ('created_at', 'created_by', 'updated_at', 'updated_by')
 
     def save_model(self, request, obj, form, change):
-        field_values = dict(villa=obj.villa, partition=obj.partition, category=obj.category, amount=obj.amount, date=obj.date, payment_method=obj.payment_method, description=obj.description, reference=obj.reference, attachment=obj.attachment)
+        field_values = dict(villa=obj.villa, due_date=obj.due_date, paid_on=obj.paid_on, partition=obj.partition, category=obj.category, amount=obj.amount, date=obj.date, payment_method=obj.payment_method, description=obj.description, reference=obj.reference, attachment=obj.attachment)
         if change:
             update_expense(expense=obj, updated_by=request.user, **field_values)
         else:
-            created = create_expense(business=obj.business, created_by=request.user, **field_values)
+            created = create_expense(created_by=request.user, **field_values)
             obj.pk = created.pk
 
     def has_delete_permission(self, request, obj=None):

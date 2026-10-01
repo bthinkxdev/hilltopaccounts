@@ -66,6 +66,29 @@ class InvoiceGenerationTests(BillingTestBase):
         invoice = self._generate_invoice()
         self.assertEqual(invoice.items.count(), 0)
 
+    def test_paid_one_time_charge_is_not_billed_again(self):
+        wifi = get_or_create_charge_type(name='Wifi')
+        create_charge(partition=self.partition, charge_type=wifi, amount=Decimal('5000.00'), start_date=date(2026, 1, 1), frequency='one_time', created_by=self.owner)
+        first = self._generate_invoice()
+        record_payment(invoice=first, amount=Decimal('5000.00'), method='cash', collected_by=self.owner, collected_at=date(2026, 2, 2), created_by=self.owner)
+        create_charge(partition=self.partition, charge_type=self.electricity_type, amount=Decimal('6000.00'), start_date=date(2026, 1, 1), frequency='one_time', created_by=self.owner)
+        second = self._generate_invoice(billing_period_start=date(2026, 3, 1), billing_period_end=date(2026, 3, 31))
+        self.assertEqual(selectors.invoice_total(second), Decimal('6000.00'))
+
+    def test_charge_on_cancelled_invoice_can_be_rebilled(self):
+        create_charge(partition=self.partition, charge_type=self.rent_type, amount=Decimal('100.00'), start_date=date(2026, 1, 1), frequency='one_time', created_by=self.owner)
+        cancel_invoice(invoice=self._generate_invoice(), cancelled_by=self.owner)
+        second = self._generate_invoice(billing_period_start=date(2026, 3, 1), billing_period_end=date(2026, 3, 31))
+        self.assertEqual(second.items.count(), 1)
+
+    def test_monthly_charge_recurs_across_periods_but_not_within_one(self):
+        create_charge(partition=self.partition, charge_type=self.rent_type, amount=Decimal('3000.00'), start_date=date(2026, 1, 1), frequency='monthly', created_by=self.owner)
+        self._generate_invoice()
+        march = self._generate_invoice(billing_period_start=date(2026, 3, 1), billing_period_end=date(2026, 3, 31))
+        self.assertEqual(march.items.count(), 1)
+        overlap = self._generate_invoice(billing_period_start=date(2026, 3, 15), billing_period_end=date(2026, 4, 14))
+        self.assertEqual(overlap.items.count(), 0)
+
     def test_cannot_bill_a_vacant_partition(self):
         vacant = create_partition(villa=self.villa, name='Unit 2', created_by=self.owner)
         with self.assertRaises(PartitionVacant):

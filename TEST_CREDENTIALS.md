@@ -10,7 +10,7 @@ The command is idempotent — safe to re-run any time.
 
 | Role | Username | Password | Scope |
 |---|---|---|---|
-| Owner | `owner` | `admin@1234567` | Everything — all businesses, villas, financials, staff, audit log |
+| Owner | `owner` | `Passw0rd!2026` | Everything — all businesses, villas, financials, staff, audit log |
 | Business Manager | `manager1` | `Passw0rd!2026` | Al Waab Properties only (both its villas) |
 | Villa Staff | `staff1` | `Passw0rd!2026` | Villa 12 — Al Waab only |
 | Villa Staff | `staff2` | `Passw0rd!2026` | Villa 7 — Muaither only |

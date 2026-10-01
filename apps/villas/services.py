@@ -1,7 +1,10 @@
 from django.db import transaction
 from apps.audit import services as audit_services
 from apps.audit.models import Action
-from .models import Partition, Villa
+from django.core.exceptions import PermissionDenied
+from apps.accounts import selectors as access_selectors
+from .models import Partition, Photo, Villa
+from .photos import validate_photo
 TRACKED_FIELDS = ['name', 'address', 'landlord_name', 'landlord_contact', 'contract_start', 'contract_end']
 PARTITION_TRACKED_FIELDS = ['name', 'description', 'status']
 
@@ -60,3 +63,26 @@ def archive_partition(*, partition: Partition, archived_by, reason='') -> Partit
         partition.save(update_fields=['status', 'updated_by', 'updated_at'])
         audit_services.log(user=archived_by, action=Action.PARTITION_ARCHIVED, obj=partition, business=partition.villa.business, villa=partition.villa, old_value={'status': Partition.Status.ACTIVE}, new_value={'status': Partition.Status.ARCHIVED}, reason=reason)
     return partition
+
+
+def add_photo(*, villa, image, uploaded_by, partition=None, caption='') -> Photo:
+    """Owner, the villa's Business Manager and its assigned Villa Staff may add photos."""
+    if not access_selectors.can_manage_villa(uploaded_by, villa):
+        raise PermissionDenied('You cannot add photos to this villa.')
+    validate_photo(image)
+    with transaction.atomic():
+        photo = Photo(villa=villa, partition=partition, image=image, caption=caption, uploaded_by=uploaded_by)
+        photo.full_clean()
+        photo.save()
+        audit_services.log(user=uploaded_by, action=Action.DOCUMENT_UPLOADED, obj=photo, business=villa.business, villa=villa, new_value={'partition': partition.name if partition else None, 'caption': caption, 'file': photo.image.name})
+    return photo
+
+def delete_photo(*, photo: Photo, deleted_by, reason='') -> None:
+    """Only the Owner or the villa's Business Manager may remove a photo; the audit trail keeps what was removed."""
+    villa = photo.villa
+    if not (deleted_by.is_owner or access_selectors.is_business_manager_of(deleted_by, villa.business)):
+        raise PermissionDenied('You cannot delete this photo.')
+    with transaction.atomic():
+        audit_services.log(user=deleted_by, action=Action.DOCUMENT_DELETED, obj=photo, business=villa.business, villa=villa, old_value={'partition': photo.partition.name if photo.partition_id else None, 'caption': photo.caption, 'file': photo.image.name}, reason=reason or 'removed')
+        photo.image.delete(save=False)
+        photo.delete()

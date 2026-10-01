@@ -5,13 +5,14 @@
 
   <form class="filter-bar" method="get">
     <input type="search" name="q" placeholder="Invoice number or tenant…" value="{{ q }}">
+    <button class="btn btn--ghost" type="submit">Search</button>
     <select name="status" onchange="this.form.submit()">
       <option value="">Any status</option>
       {% for value, label in status_choices %}
         <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
-    <button class="btn btn--ghost" type="submit">Filter</button>
+    {% if request.GET %}<a class="btn btn--ghost" href="{{ request.path }}">Clear</a>{% endif %}
   </form>
 
   <div class="card">

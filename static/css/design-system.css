@@ -399,6 +399,8 @@ h1, h2, h3, p {
 
 .list-row {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   align-items: center;
   justify-content: space-between;
   padding: var(--space-3) 0;
@@ -713,3 +715,78 @@ h1, h2, h3, p {
   font-weight: 700;
   margin-bottom: var(--space-3);
 }
+
+a.kpi { display: block; color: inherit; text-decoration: none; }
+a.kpi:hover { border-color: var(--accent); }
+
+.section-nav {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-1);
+  -webkit-overflow-scrolling: touch;
+}
+.section-nav a { white-space: nowrap; }
+.detail-section { scroll-margin-top: 72px; }
+
+/* Tiles (villa and partition cards) */
+.tile-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-4); margin-bottom: var(--space-4); }
+@media (min-width: 640px) { .tile-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1100px) { .tile-grid { grid-template-columns: repeat(3, 1fr); } }
+.tile { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow: hidden; color: inherit; text-decoration: none; }
+a.tile:hover { border-color: var(--accent); }
+.tile__cover { aspect-ratio: 16 / 9; background: var(--surface-elevated); display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); font-size: 13px; }
+.tile__cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile__body { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); flex: 1; }
+.tile__title { font-weight: 700; font-size: 17px; }
+.tile__meta { color: var(--text-secondary); font-size: 13px; }
+.tile__pills { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.money-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); padding-top: var(--space-3); margin-top: auto; border-top: 1px solid var(--border-subtle); }
+.money-row__label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); }
+.money-row__value { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; word-break: break-word; }
+
+/* Photo gallery */
+.gallery { display: flex; gap: var(--space-3); overflow-x: auto; padding-bottom: var(--space-2); scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
+.gallery__item { flex: 0 0 auto; width: min(260px, 78vw); scroll-snap-align: start; }
+.gallery__item img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-md); display: block; background: var(--surface-elevated); }
+.gallery__caption { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); font-size: 13px; color: var(--text-secondary); margin-top: var(--space-1); }
+
+.period-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-4); }
+.period-bar .filter-bar { margin-bottom: 0; }
+.period-bar__label { font-weight: 600; color: var(--text-secondary); }
+
+/* ---- Compact density pass ---- */
+.card { padding: var(--space-4); margin-bottom: var(--space-3); }
+.card--tight { padding: var(--space-3); }
+.card__title { margin-bottom: var(--space-2); }
+.grid--kpi { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--space-2); }
+.grid--kpi-compact { grid-template-columns: repeat(3, 1fr); }
+.kpi { padding: var(--space-3); border-radius: var(--radius-sm); }
+.kpi__label { font-size: 12px; margin-bottom: 2px; }
+.kpi__value { font-size: 19px; font-variant-numeric: tabular-nums; }
+.list-row { padding: var(--space-2) 0; gap: var(--space-2); }
+.list-row--compact { padding: 6px 0; }
+.list-row__main { flex: 1 1 140px; min-width: 0; }
+.btn--sm { min-height: 32px; padding: 0 var(--space-3); font-size: 13px; }
+.detail-section { margin-bottom: var(--space-3); }
+.detail-section__title { margin-bottom: var(--space-2); }
+.section-nav { gap: var(--space-1); margin-bottom: var(--space-3); }
+.section-nav .btn { min-height: 32px; padding: 0 var(--space-3); font-size: 13px; }
+
+/* Tiles: denser grid, small thumbnail beside the text instead of a large banner */
+.tile-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-3); }
+.tile { border-radius: var(--radius-md); }
+.tile__body { padding: var(--space-3); gap: 4px; }
+.tile__title { font-size: 15px; line-height: 1.25; }
+.tile__meta { font-size: 12px; }
+.tile__pills { gap: 4px; }
+.tile__pills .pill { font-size: 11px; padding: 2px 8px; }
+.tile--row { display: grid; grid-template-columns: 64px 1fr; align-items: stretch; }
+.tile--row .tile__cover { aspect-ratio: auto; height: 100%; min-height: 64px; font-size: 22px; }
+.tile--row .money-row { grid-column: 1 / -1; padding: var(--space-2) var(--space-3); border-top: 1px solid var(--border-subtle); margin: 0; gap: var(--space-1); }
+.money-row__label { font-size: 10px; }
+.money-row__value { font-size: 13px; }
+.gallery__item { width: min(200px, 62vw); }
+.gallery__item img { aspect-ratio: 4 / 3; border-radius: var(--radius-sm); }
+@media (max-width: 480px) { .tile-grid { grid-template-columns: 1fr; } .grid--kpi-compact { grid-template-columns: repeat(3, 1fr); } .kpi__value { font-size: 17px; } }

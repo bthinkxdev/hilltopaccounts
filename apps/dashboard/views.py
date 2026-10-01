@@ -7,6 +7,7 @@ from django.views.generic import TemplateView
 from apps.accounts import selectors
 from apps.billing import selectors as billing_selectors
 from apps.cash import selectors as cash_selectors
+from apps.shared.periods import period_context
 from apps.cash.models import CashHandover
 from apps.expenses import selectors as expenses_selectors
 from apps.tenancy.models import Tenant
@@ -30,6 +31,10 @@ class HomeView(LoginRequiredMixin, TemplateView):
         ctx['partition_count'] = partition_count
         ctx['occupied_count'] = occupied_count
         ctx['vacant_count'] = partition_count - occupied_count
+        ctx.update(period_context(self.request))
+        ctx['keep'] = []
+        financial = selectors.financial_villas(user)
+        ctx['period_pnl'] = billing_selectors.period_profit_loss(selectors.invoices_visible_to(user).filter(partition__villa__in=financial), selectors.expenses_visible_to(user).filter(villa__in=financial), ctx['period_start'], ctx['period_end']) if financial.exists() else None
         needs_attention = []
         quick_actions = []
         ctx['can_view_financials'] = selectors.can_view_financial_kpis(user)
@@ -49,14 +54,18 @@ class HomeView(LoginRequiredMixin, TemplateView):
             pending_handovers = selectors.cash_handovers_visible_to(user).filter(status=CashHandover.Status.SUBMITTED)
             if pending_handovers.exists():
                 needs_attention.append({'label': 'Pending cash handovers', 'count': pending_handovers.count(), 'meta': 'Awaiting your confirmation', 'url': reverse('cash:handover_list') + '?status=submitted'})
-            if businesses.exists():
-                quick_actions.append({'label': '+ Add Expense', 'url': reverse('expenses:create') + f'?business={businesses.first().pk}'})
+        expense_summary = expenses_selectors.due_summary(selectors.expenses_visible_to(user))
+        for bucket, label in (('overdue', 'Overdue expenses'), ('today', 'Expenses due today')):
+            if expense_summary[bucket]['count']:
+                needs_attention.append({'label': label, 'count': expense_summary[bucket]['count'], 'meta': f"QAR {expense_summary[bucket]['total']} to pay", 'url': reverse('expenses:list') + f'?due={bucket}&status=active'})
         if ctx['vacant_count'] > 0:
             needs_attention.append({'label': 'Vacant partitions', 'count': ctx['vacant_count'], 'meta': 'No tenant assigned', 'url': reverse('villas:partition_list') + '?occupancy=vacant'})
         my_unclaimed = cash_selectors.unclaimed_cash_payments(user)
         if my_unclaimed.exists():
             needs_attention.append({'label': 'Your cash ready to hand over', 'count': my_unclaimed.count(), 'meta': f'QAR {cash_selectors.outstanding_cash_for(user)} to submit', 'url': reverse('cash:handover_submit')})
             quick_actions.append({'label': 'Submit Cash Handover', 'url': reverse('cash:handover_submit')})
+        if selectors.manageable_villas(user).filter(is_archived=False).exists():
+            quick_actions.append({'label': '+ Add Expense', 'url': reverse('expenses:create')})
         if user.is_owner:
             quick_actions.insert(0, {'label': '+ Add Business', 'url': reverse('businesses:create')})
         if villas.exists():

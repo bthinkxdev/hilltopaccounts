@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Staff accountability — Faisal Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Staff accountability</h1>
+      <div class="page-header__meta">Cash collected, expenses paid, handed over and still held — with rent still pending for {{ period_label }}.</div>
+    </div>
+    <a class="btn btn--ghost" href="{% url 'cash:handover_list' %}">Handovers</a>
+  </div>
+
+  <div class="period-bar">
+    <span class="period-bar__label">Rent pending for {{ period_label }}</span>
+    {% include "components/period_picker.html" %}
+  </div>
+
+  {% if rows %}
+    <div class="tile-grid">
+      {% for row in rows %}
+        <div class="tile">
+          <div class="tile__body">
+            <div class="tile__title">{{ row.staff.get_full_name|default:row.staff.username }}</div>
+            <div class="tile__meta">{% for villa in row.villas %}<a href="{% url 'villas:villa_detail' villa.pk %}">{{ villa.name }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+            <div class="tile__pills">
+              {% if row.pending_rent_count %}<span class="pill pill--warning">{{ row.pending_rent_count }} rent pending</span>{% else %}<span class="pill pill--success">All rent collected</span>{% endif %}
+              {% if row.awaiting_confirmation %}<a class="pill pill--warning" href="{% url 'cash:handover_list' %}?status=submitted">QAR {{ row.awaiting_confirmation|floatformat:"2g" }} awaiting your confirmation</a>{% endif %}
+            </div>
+            <div class="money-row">
+              <div><div class="money-row__label">Collected</div><div class="money-row__value">QAR {{ row.collected|floatformat:"2g" }}</div></div>
+              <div><div class="money-row__label">Expenses paid</div><div class="money-row__value kpi__value--danger">QAR {{ row.expenses_paid|floatformat:"2g" }}</div></div>
+              <div><div class="money-row__label">Handed over</div><div class="money-row__value kpi__value--success">QAR {{ row.handed_over|floatformat:"2g" }}</div></div>
+            </div>
+            <div class="money-row" style="margin-top: 0; border-top: none; padding-top: 0;">
+              <div style="grid-column: span 3;"><div class="money-row__label">Still holding (to hand over)</div><div class="money-row__value {% if row.holding > 0 %}kpi__value--warning{% endif %}">QAR {{ row.holding|floatformat:"2g" }}</div></div>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="card">
+      <div class="empty-state">
+        <div class="empty-state__title">No staff are assigned to your villas yet.</div>
+        <p>Assign Villa Staff to a villa from the Staff page, and their collections will be tracked here.</p>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}

@@ -4,10 +4,37 @@
   <div class="page-header">
     <div>
       <h1>{{ partition.name }}</h1>
-      <div class="page-header__meta">{{ partition.villa.name }} — {{ partition.villa.business.name }}</div>
+      <div class="page-header__meta">
+        <a href="{% url 'villas:villa_detail' villa.pk %}">{{ villa.name }}</a> — {{ villa.business.name }}
+        {% if current_tenant %}<span class="pill pill--success">Occupied</span>{% else %}<span class="pill pill--neutral">Vacant</span>{% endif %}
+      </div>
+      {% if partition.description %}<div class="page-header__meta">{{ partition.description }}</div>{% endif %}
     </div>
     {% if can_manage %}
-      <a class="btn btn--ghost" href="{% url 'villas:partition_archive' partition.pk %}">Archive</a>
+      <div class="quick-actions">
+        <a class="btn btn--primary" href="{% url 'expenses:create' %}?partition={{ partition.pk }}">+ Add Expense</a>
+        <a class="btn btn--ghost" href="{% url 'villas:partition_photo_add' partition.pk %}">+ Add Photo</a>
+        <a class="btn btn--ghost" href="{% url 'villas:partition_archive' partition.pk %}">Archive</a>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card__title">Photos</div>
+    {% if photos %}
+      <div class="gallery">
+        {% for photo in photos %}
+          <figure class="gallery__item" style="margin:0;">
+            <img src="{% url 'villas:photo_file' photo.pk %}" alt="{{ photo.caption|default:partition.name }}" loading="lazy">
+            <figcaption class="gallery__caption"><span>{{ photo.caption }}</span>{% if can_delete_photos %}<a href="{% url 'villas:photo_delete' photo.pk %}">Remove</a>{% endif %}</figcaption>
+          </figure>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state__title">No photos of this partition yet.</div>
+        {% if can_manage %}<a class="btn btn--primary" href="{% url 'villas:partition_photo_add' partition.pk %}">+ Add Photo</a>{% endif %}
+      </div>
     {% endif %}
   </div>
 
@@ -16,7 +43,8 @@
     {% if current_tenant %}
       <div class="list-row">
         <a class="list-row__title" href="{% url 'tenancy:detail' current_tenant.pk %}">{{ current_tenant.name }}</a>
-        <span class="list-row__meta">QAR {{ current_tenant.monthly_rent }}/mo since {{ current_tenant.move_in_date }}</span>
+        <span class="list-row__meta">QAR {{ current_tenant.monthly_rent|floatformat:"2" }}/mo since {{ current_tenant.move_in_date }}</span>
+        {% if can_manage %}<a class="btn btn--ghost" href="{% url 'tenancy:move_out' current_tenant.pk %}">Move out &amp; mark vacant</a>{% endif %}
       </div>
     {% else %}
       <div class="empty-state">
@@ -27,6 +55,51 @@
     {% endif %}
   </div>
 
+  <div class="period-bar">
+    <span class="period-bar__label">Showing {{ period_label }}</span>
+    {% include "components/period_picker.html" %}
+  </div>
+
+  {% if can_view_financials %}
+    <div class="card">
+      <div class="card__title">Profit &amp; loss — {{ period_label }}</div>
+      <div class="grid--kpi">
+        <div class="kpi"><div class="kpi__label">Income</div><div class="kpi__value kpi__value--success">QAR {{ pnl.income|floatformat:"2" }}</div></div>
+        <div class="kpi"><div class="kpi__label">Expenses</div><div class="kpi__value kpi__value--danger">QAR {{ pnl.expenses|floatformat:"2" }}</div></div>
+        <div class="kpi"><div class="kpi__label">{% if pnl.net >= 0 %}Profit{% else %}Loss{% endif %}</div><div class="kpi__value {% if pnl.net >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">QAR {{ pnl.net|floatformat:"2" }}</div></div>
+        <div class="kpi"><div class="kpi__label">Outstanding (all time)</div><div class="kpi__value kpi__value--warning">QAR {{ outstanding|floatformat:"2" }}</div></div>
+      </div>
+      <p class="list-row__meta">Expenses here are only those recorded against this partition; villa-wide expenses appear on the villa page.</p>
+    </div>
+  {% endif %}
+
+  <div class="detail-section">
+    <div class="detail-section__title">Expenses in {{ period_label }}</div>
+    <div class="card">
+      {% if recent_expenses %}
+        {% for expense in recent_expenses %}
+          <div class="list-row">
+            <span class="list-row__title">{{ expense.category }} — QAR {{ expense.amount|floatformat:"2" }}</span>
+            <span class="list-row__meta">{{ expense.date }}{% if expense.due_date %} — due {{ expense.due_date }}{% endif %}</span>
+            {% if expense.due_state == "paid" %}<span class="pill pill--success">Paid</span>
+            {% elif expense.due_state == "overdue" %}<span class="pill pill--danger">Overdue</span>
+            {% elif expense.due_state == "today" %}<span class="pill pill--warning">Due today</span>
+            {% elif expense.due_state == "upcoming" %}<span class="pill pill--neutral">Upcoming</span>
+            {% elif expense.due_state == "unpaid" %}<span class="pill pill--warning">Unpaid</span>
+            {% else %}<span class="pill pill--neutral">{{ expense.get_status_display }}</span>{% endif %}
+            {% if can_manage and expense.status == "active" and not expense.paid_on %}<a class="btn btn--primary" href="{% url 'expenses:mark_paid' expense.pk %}">Mark paid</a>{% endif %}
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state__title">No expenses recorded against this partition in {{ period_label }}.</div>
+          {% if can_manage %}<a class="btn btn--primary" href="{% url 'expenses:create' %}?partition={{ partition.pk }}">+ Add Expense</a>{% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if current_tenant %}
   <div class="detail-section">
     <div class="detail-section__title">Active Charges</div>
     <div class="card">
@@ -34,7 +107,7 @@
         {% for charge in charges %}
           <div class="list-row">
             <span class="list-row__title">{{ charge.charge_type }}</span>
-            <span class="list-row__meta">QAR {{ charge.amount }} / {{ charge.get_frequency_display }}</span>
+            <span class="list-row__meta">QAR {{ charge.amount|floatformat:"2" }} / {{ charge.get_frequency_display }}</span>
           </div>
         {% endfor %}
       {% else %}
@@ -49,6 +122,7 @@
       {% endif %}
     </div>
   </div>
+  {% endif %}
 
   <div class="detail-section">
     <div class="detail-section__title">Invoices</div>
@@ -61,7 +135,7 @@
             {% if invoice.computed_status == "paid" %}<span class="pill pill--success">Paid</span>
             {% elif invoice.computed_status == "overdue" %}<span class="pill pill--danger">Overdue</span>
             {% elif invoice.computed_status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
-            {% else %}<span class="pill pill--warning">QAR {{ invoice.computed_outstanding }} due</span>{% endif %}
+            {% else %}<span class="pill pill--warning">QAR {{ invoice.computed_outstanding|floatformat:"2" }} due</span>{% endif %}
           </div>
         {% endfor %}
       {% else %}

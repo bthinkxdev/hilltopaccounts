@@ -1,8 +1,11 @@
+from datetime import date, timedelta
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from apps.accounts import selectors as access
 from apps.audit import services as audit_services
 from apps.audit.models import Action
 from . import selectors
-from .exceptions import DuplicateInvoicePeriod, InvoiceCancelled, PartitionVacant, PaymentExceedsOutstanding
+from .exceptions import DuplicateInvoicePeriod, InvoiceCancelled, NothingToCollect, PartitionVacant, PaymentExceedsOutstanding
 from .models import Charge, ChargeType, Invoice, InvoiceItem, Payment
 CHARGE_TRACKED_FIELDS = ['charge_type_id', 'description', 'amount', 'frequency', 'start_date', 'end_date', 'is_active']
 
@@ -49,6 +52,12 @@ def generate_monthly_invoice(*, partition, billing_period_start, billing_period_
     if Invoice.objects.filter(partition=partition, billing_period_start=billing_period_start, billing_period_end=billing_period_end).exists():
         raise DuplicateInvoicePeriod(f'{partition} already has an invoice for {billing_period_start}–{billing_period_end}.')
     active_charges = Charge.objects.filter(partition=partition, is_active=True, start_date__lte=billing_period_end).exclude(end_date__lt=billing_period_start)
+    # A charge already billed on a live (non-cancelled) invoice must not be billed again:
+    # one-time charges are billed once ever; monthly charges once per overlapping period.
+    live_items = InvoiceItem.objects.filter(invoice__is_cancelled=False)
+    active_charges = active_charges.exclude(frequency=Charge.Frequency.ONE_TIME, invoice_items__in=live_items)
+    overlapping_items = live_items.filter(invoice__billing_period_start__lte=billing_period_end, invoice__billing_period_end__gte=billing_period_start)
+    active_charges = active_charges.exclude(invoice_items__in=overlapping_items).distinct()
     with transaction.atomic():
         invoice = Invoice(partition=partition, tenant=tenant, billing_period_start=billing_period_start, billing_period_end=billing_period_end, issue_date=issue_date, due_date=due_date, notes=notes, created_by=generated_by)
         invoice.full_clean()
@@ -78,6 +87,8 @@ def record_payment(*, invoice: Invoice, amount, method, collected_by, collected_
         payment.full_clean()
         payment.save()
         audit_services.log(user=created_by, action=Action.COLLECTION_CREATED, obj=payment, business=locked_invoice.business, villa=locked_invoice.villa, new_value={'amount': str(amount), 'method': method, 'collected_by': collected_by.username, 'invoice': locked_invoice.invoice_number})
+        from apps.notifications.services import notify_collection_recorded
+        notify_collection_recorded(payment)
     return payment
 
 def cancel_payment(*, payment: Payment, cancelled_by, reason) -> Payment:
@@ -96,3 +107,30 @@ def correct_payment(*, payment: Payment, new_amount, corrected_by, reason, metho
         new_payment.save(update_fields=['corrects'])
         audit_services.log(user=corrected_by, action=Action.COLLECTION_UPDATED, obj=new_payment, business=new_payment.invoice.business, villa=new_payment.invoice.villa, old_value={'amount': str(payment.amount)}, new_value={'amount': str(new_amount)}, reason=reason)
     return new_payment
+
+
+def collect_rent(*, partition, year, month, method, collected_by) -> Payment:
+    """One-tap monthly rent collection for a partition.
+
+    Creates the month's invoice on first use (and the rent charge from the tenant's monthly rent when the
+    partition has no charges yet), then records a payment for the full balance. The partition row is locked,
+    so a double-tap or two staff acting together can never bill or collect the month twice.
+    """
+    from apps.villas.models import Partition
+    if not access.can_manage_villa(collected_by, partition.villa):
+        raise PermissionDenied('You cannot collect rent for this villa.')
+    start, end = selectors.period_bounds(year, month)
+    with transaction.atomic():
+        locked = Partition.objects.select_for_update().select_related('villa', 'villa__business').get(pk=partition.pk)
+        tenant = locked.current_tenant
+        if tenant is None:
+            raise PartitionVacant(f'{locked} has no active tenant — nothing to collect.')
+        invoice = Invoice.objects.filter(partition=locked, billing_period_start=start, billing_period_end=end, is_cancelled=False).first()
+        if invoice is None:
+            if not Charge.objects.filter(partition=locked, is_active=True).exists():
+                create_charge(partition=locked, charge_type=get_or_create_charge_type(name='Rent'), amount=tenant.monthly_rent, start_date=min(tenant.move_in_date, start), created_by=collected_by)
+            invoice = generate_monthly_invoice(partition=locked, billing_period_start=start, billing_period_end=end, issue_date=start, due_date=min(end, start + timedelta(days=9)), generated_by=collected_by)
+        outstanding = selectors.invoice_outstanding(invoice)
+        if outstanding <= 0:
+            raise NothingToCollect(f'{locked.name}: rent for {start:%B %Y} is already fully collected, or there is nothing to bill.')
+        return record_payment(invoice=invoice, amount=outstanding, method=method, collected_by=collected_by, collected_at=date.today(), created_by=collected_by)
