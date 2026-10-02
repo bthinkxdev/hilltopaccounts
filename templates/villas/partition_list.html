@@ -28,7 +28,7 @@
       {% for partition in page_obj %}
         <div class="list-row">
           <a class="list-row__title" href="{% url 'villas:partition_detail' partition.pk %}">{{ partition.name }}</a>
-          <span class="list-row__meta">{{ partition.villa.name }} — {{ partition.villa.business.name }}</span>
+          <span class="list-row__meta">{{ partition.villa.name }} — {{ partition.villa.business.name }}{% if partition.rent %} · Rent: QAR {{ partition.rent|floatformat:"2" }}/mo{% endif %}</span>
           {% if partition.occupied %}<span class="pill pill--success">Occupied</span>{% else %}<span class="pill pill--neutral">Vacant</span>{% endif %}
         </div>
       {% endfor %}

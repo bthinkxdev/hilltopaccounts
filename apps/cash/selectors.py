@@ -69,8 +69,10 @@ def staff_accountability(viewer, year, month) -> list[dict]:
 def villa_cash_position(villa) -> dict:
     """Where the cash collected in one villa is: still with staff, handed over, or spent on its expenses.
 
-    holding = cash collected − expenses staff paid − what the owner has confirmed receiving (net of those expenses).
+    holding = staff cash collected − expenses staff paid − what the owner confirmed receiving from staff handovers.
+    Direct cash collected by owner/management is already in owner hands.
     """
+    from apps.accounts.models import Assignment
     zero = Decimal('0.00')
     in_villa = Payment.objects.filter(method=Payment.Method.CASH, is_cancelled=False, invoice__partition__villa=villa)
     collected = in_villa.aggregate(t=Sum('amount'))['t'] or zero
@@ -83,4 +85,10 @@ def villa_cash_position(villa) -> dict:
 
     received = handed(CashHandover.Status.CONFIRMED)
     awaiting = handed(CashHandover.Status.SUBMITTED)
-    return {'collected': collected, 'spent_by_staff': spent, 'received_by_owner': received, 'awaiting_confirmation': awaiting, 'holding': collected - spent - received}
+    staff_ids = set(Assignment.objects.filter(role=Assignment.Role.VILLA_STAFF, villa=villa).values_list('user_id', flat=True))
+    owner_direct = in_villa.exclude(collected_by_id__in=staff_ids).aggregate(t=Sum('amount'))['t'] or zero
+    received_by_owner = received + owner_direct
+    staff_collected = collected - owner_direct
+    holding = max(zero, staff_collected - spent - received)
+    return {'collected': collected, 'spent_by_staff': spent, 'received_by_owner': received_by_owner, 'awaiting_confirmation': awaiting, 'holding': holding}
+

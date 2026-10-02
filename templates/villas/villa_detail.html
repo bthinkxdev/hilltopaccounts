@@ -95,44 +95,113 @@
   <div class="detail-section" id="expenses">
     <div class="detail-section__title">Fixed expenses — {{ period_label }}</div>
     {% if fixed_rows is None %}
-      <div class="card card--tight">
-        {% for fixed in fixed_templates %}
-          <div class="list-row list-row--compact">
-            <span class="list-row__title">{{ fixed.category }}</span>
-            <span class="list-row__meta">{{ fixed.amount|floatformat:"2g" }} · day {{ fixed.due_day }} · {{ fixed.get_paid_by_display }}</span>
+      {% if owner_fixed_templates %}
+        <div class="card card--tight">
+          <div class="card__title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+            <span>Owner Fixed Expenses</span>
+            <span class="pill pill--neutral">Paid by Owner</span>
           </div>
-        {% empty %}
-          <div class="empty-state"><div class="empty-state__title">No fixed expenses set up for this villa.</div></div>
-        {% endfor %}
-        <p class="list-row__meta">Switch to Monthly to tick off each month.</p>
-      </div>
-    {% elif fixed_rows %}
-      <div class="card card--tight">
-        <div class="grid--kpi grid--kpi-compact">
-          <div class="kpi"><div class="kpi__label">Total</div><div class="kpi__value">{{ fixed_totals.total|floatformat:"2g" }}</div></div>
-          <div class="kpi"><div class="kpi__label">Paid</div><div class="kpi__value kpi__value--success">{{ fixed_totals.paid|floatformat:"2g" }}</div></div>
-          <div class="kpi"><div class="kpi__label">Unpaid ({{ fixed_totals.unpaid_count }})</div><div class="kpi__value {% if fixed_totals.unpaid %}kpi__value--warning{% endif %}">{{ fixed_totals.unpaid|floatformat:"2g" }}</div></div>
-        </div>
-      </div>
-      <div class="card card--tight">
-        {% for row in fixed_rows %}
-          <div class="list-row list-row--compact">
-            <div class="list-row__main">
-              <span class="list-row__title">{{ row.template.category }}</span>
-              <div class="list-row__meta">{{ row.amount|floatformat:"2g" }} · due {{ row.due_date|date:"d M" }} · {{ row.template.get_paid_by_display }}{% if row.template.auto_debit %} · auto-debit{% endif %}{% if row.expense.paid_on %} · paid {{ row.expense.paid_on|date:"d M" }}{% endif %}</div>
+          {% for fixed in owner_fixed_templates %}
+            <div class="list-row list-row--compact">
+              <span class="list-row__title">{{ fixed.category }}</span>
+              <span class="list-row__meta">{{ fixed.amount|floatformat:"2g" }} · day {{ fixed.due_day }} · {{ fixed.get_paid_by_display }}</span>
             </div>
-            {% if row.status == "paid" %}<span class="pill pill--success">Paid</span>
-            {% elif row.status == "to_verify" %}<span class="pill pill--warning">Paid — to verify</span>
-            {% elif row.status == "overdue" %}<span class="pill pill--danger">Overdue</span>
-            {% elif row.status == "due_today" %}<span class="pill pill--warning">Due today</span>
-            {% elif row.status == "unpaid" %}<span class="pill pill--neutral">Unpaid</span>
-            {% elif row.status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
-            {% else %}<span class="pill pill--neutral">Upcoming</span>{% endif %}
-            {% if row.expense %}{% include "components/expense_actions.html" with expense=row.expense %}{% endif %}
-            {% if can_admin_fixed %}<a class="btn btn--ghost btn--sm" href="{% url 'expenses:recurring_edit' row.template.pk %}">Amount</a>{% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% if staff_fixed_templates %}
+        <div class="card card--tight" style="margin-top: var(--space-3);">
+          <div class="card__title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+            <span>Staff Fixed Expenses</span>
+            <span class="pill pill--neutral">Paid from collected cash</span>
           </div>
-        {% endfor %}
-      </div>
+          {% for fixed in staff_fixed_templates %}
+            <div class="list-row list-row--compact">
+              <span class="list-row__title">{{ fixed.category }}</span>
+              <span class="list-row__meta">{{ fixed.amount|floatformat:"2g" }} · day {{ fixed.due_day }} · {{ fixed.get_paid_by_display }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% if not fixed_templates %}
+        <div class="card card--tight">
+          <div class="empty-state"><div class="empty-state__title">No fixed expenses set up for this villa.</div></div>
+        </div>
+      {% endif %}
+      <p class="list-row__meta" style="margin-top: var(--space-2);">Switch to Monthly to tick off each month.</p>
+    {% elif fixed_rows %}
+      {# 1.owner fixed expenses card #}
+      {% if owner_fixed_rows %}
+        <div class="card card--tight">
+          <div class="card__title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+            <span>Owner Expenses (e.g. Villa Rent)</span>
+            <span class="pill pill--neutral">Paid by Owner</span>
+          </div>
+          <div class="grid--kpi grid--kpi-compact" style="margin-bottom: var(--space-2);">
+            <div class="kpi"><div class="kpi__label">Total</div><div class="kpi__value">{{ owner_fixed_totals.total|floatformat:"2g" }}</div></div>
+            <div class="kpi"><div class="kpi__label">Paid</div><div class="kpi__value kpi__value--success">{{ owner_fixed_totals.paid|floatformat:"2g" }}</div></div>
+            <div class="kpi"><div class="kpi__label">Unpaid ({{ owner_fixed_totals.unpaid_count }})</div><div class="kpi__value {% if owner_fixed_totals.unpaid %}kpi__value--warning{% endif %}">{{ owner_fixed_totals.unpaid|floatformat:"2g" }}</div></div>
+          </div>
+          {% for row in owner_fixed_rows %}
+            <div class="list-row list-row--compact">
+              <div class="list-row__main">
+                <span class="list-row__title">{{ row.template.category }}</span>
+                <div class="list-row__meta">{{ row.amount|floatformat:"2g" }} · due {{ row.due_date|date:"d M" }} · {{ row.template.get_paid_by_display }}{% if row.template.auto_debit %} · auto-debit{% endif %}{% if row.expense.paid_on %} · paid {{ row.expense.paid_on|date:"d M" }}{% endif %}</div>
+              </div>
+              {% if row.status == "paid" %}<span class="pill pill--success">Paid</span>
+              {% elif row.status == "to_verify" %}<span class="pill pill--warning">Paid — to verify</span>
+              {% elif row.status == "overdue" %}<span class="pill pill--danger">Overdue</span>
+              {% elif row.status == "due_today" %}<span class="pill pill--warning">Due today</span>
+              {% elif row.status == "unpaid" %}<span class="pill pill--neutral">Unpaid</span>
+              {% elif row.status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
+              {% else %}<span class="pill pill--neutral">Upcoming</span>{% endif %}
+              {% if row.expense %}{% include "components/expense_actions.html" with expense=row.expense %}{% endif %}
+              {% if can_admin_fixed %}<a class="btn btn--ghost btn--sm" href="{% url 'expenses:recurring_edit' row.template.pk %}">Amount</a>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {# 2.staff fixed expenses card #}
+      {% if staff_fixed_rows %}
+        <div class="card card--tight" style="margin-top: var(--space-3);">
+          <div class="card__title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+            <span>Staff Expenses (Utilities &amp; Maintenance)</span>
+            <span class="pill pill--neutral">Paid from collected cash</span>
+          </div>
+          <div class="grid--kpi grid--kpi-compact" style="margin-bottom: var(--space-2);">
+            <div class="kpi"><div class="kpi__label">Total</div><div class="kpi__value">{{ staff_fixed_totals.total|floatformat:"2g" }}</div></div>
+            <div class="kpi"><div class="kpi__label">Paid</div><div class="kpi__value kpi__value--success">{{ staff_fixed_totals.paid|floatformat:"2g" }}</div></div>
+            <div class="kpi"><div class="kpi__label">Unpaid ({{ staff_fixed_totals.unpaid_count }})</div><div class="kpi__value {% if staff_fixed_totals.unpaid %}kpi__value--warning{% endif %}">{{ staff_fixed_totals.unpaid|floatformat:"2g" }}</div></div>
+          </div>
+          {% for row in staff_fixed_rows %}
+            <div class="list-row list-row--compact">
+              <div class="list-row__main">
+                <span class="list-row__title">{{ row.template.category }}</span>
+                <div class="list-row__meta">{{ row.amount|floatformat:"2g" }} · due {{ row.due_date|date:"d M" }} · {{ row.template.get_paid_by_display }}{% if row.template.auto_debit %} · auto-debit{% endif %}{% if row.expense.paid_on %} · paid {{ row.expense.paid_on|date:"d M" }}{% endif %}</div>
+              </div>
+              {% if row.status == "paid" %}<span class="pill pill--success">Paid</span>
+              {% elif row.status == "to_verify" %}<span class="pill pill--warning">Paid — to verify</span>
+              {% elif row.status == "overdue" %}<span class="pill pill--danger">Overdue</span>
+              {% elif row.status == "due_today" %}<span class="pill pill--warning">Due today</span>
+              {% elif row.status == "unpaid" %}<span class="pill pill--neutral">Unpaid</span>
+              {% elif row.status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
+              {% else %}<span class="pill pill--neutral">Upcoming</span>{% endif %}
+              {% if row.expense %}{% include "components/expense_actions.html" with expense=row.expense %}{% endif %}
+              {% if can_admin_fixed %}<a class="btn btn--ghost btn--sm" href="{% url 'expenses:recurring_edit' row.template.pk %}">Amount</a>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% if not owner_fixed_rows and not staff_fixed_rows %}
+        <div class="card card--tight">
+          <div class="empty-state">
+            <div class="empty-state__title">No fixed expenses set up for this villa.</div>
+            <p>Set the villa rent, electricity, Wi-Fi, cleaning and maintenance once — they then appear every month, ready to tick as paid.</p>
+          </div>
+        </div>
+      {% endif %}
     {% else %}
       <div class="card card--tight">
         <div class="empty-state">
@@ -141,7 +210,7 @@
         </div>
       </div>
     {% endif %}
-    {% if can_admin_fixed %}<div class="quick-actions"><a class="btn btn--ghost btn--sm" href="{% url 'expenses:recurring_create' villa.pk %}">+ Add fixed expense</a></div>{% endif %}
+    {% if can_admin_fixed %}<div class="quick-actions" style="margin-top: var(--space-2);"><a class="btn btn--ghost btn--sm" href="{% url 'expenses:recurring_create' villa.pk %}">+ Add fixed expense</a></div>{% endif %}
 
     <div class="detail-section__title" style="margin-top: var(--space-3);">Other expenses — {{ period_label }}</div>
     <div class="card card--tight">
@@ -149,7 +218,7 @@
         <div class="list-row list-row--compact">
           <div class="list-row__main">
             <span class="list-row__title">{{ expense.category }} — {{ expense.amount|floatformat:"2g" }}</span>
-            <div class="list-row__meta">{% if expense.partition %}{{ expense.partition.name }} · {% endif %}{{ expense.date|date:"d M" }}{% if expense.due_date %} · due {{ expense.due_date|date:"d M" }}{% endif %} · {{ expense.get_paid_by_display }}</div>
+            <div class="list-row__meta">{% if expense.partition %}{{ expense.partition.name }} · {% endif %}{{ expense.date|date:"d M" }}{% if expense.due_date %} · due {{ expense.due_date|date:"d M" }}{% endif %} · {{ expense.get_paid_by_display }}{% if expense.created_by %} · created by {{ expense.created_by.get_full_name|default:expense.created_by.username }}{% endif %}</div>
           </div>
           {% if expense.due_state == "paid" %}<span class="pill pill--success">Paid</span>
           {% elif expense.due_state == "verify" %}<span class="pill pill--warning">Paid — to verify</span>
@@ -176,7 +245,7 @@
             <div class="tile__cover">{% if partition.cover %}<img src="{% url 'villas:photo_file' partition.cover.pk %}" alt="{{ partition.name }}" loading="lazy">{% else %}<span aria-hidden="true">&#9638;</span>{% endif %}</div>
             <div class="tile__body">
               <div class="tile__title">{{ partition.name }}</div>
-              <div class="tile__meta">{% if partition.tenant %}{{ partition.tenant.name }} · {{ partition.tenant.monthly_rent|floatformat:"0g" }}/mo{% else %}No tenant{% endif %}</div>
+              <div class="tile__meta">{% if partition.tenant %}{{ partition.tenant.name }} · {{ partition.tenant.monthly_rent|floatformat:"0g" }}/mo{% elif partition.rent %}Rent: QAR {{ partition.rent|floatformat:"0g" }}/mo{% else %}No tenant{% endif %}</div>
               <div class="tile__pills">{% if partition.tenant %}<span class="pill pill--success">Occupied</span>{% else %}<span class="pill pill--neutral">Vacant</span>{% endif %}</div>
             </div>
             {% if partition.pnl %}{% include "components/money_row.html" with pnl=partition.pnl %}{% endif %}

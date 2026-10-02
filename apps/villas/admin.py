@@ -23,7 +23,7 @@ class VillaAdmin(admin.ModelAdmin):
 
 @admin.register(Partition)
 class PartitionAdmin(admin.ModelAdmin):
-    list_display = ('name', 'villa', 'status', 'occupancy', 'created_at')
+    list_display = ('name', 'villa', 'rent', 'status', 'occupancy', 'created_at')
     list_filter = ('villa__business', 'villa', 'status')
     search_fields = ('name', 'villa__name')
     autocomplete_fields = ['villa']

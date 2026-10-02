@@ -28,6 +28,7 @@ class Partition(models.Model):
     villa = models.ForeignKey(Villa, on_delete=models.PROTECT, related_name='partitions')
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
+    rent = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
@@ -36,7 +37,10 @@ class Partition(models.Model):
 
     class Meta:
         ordering = ['villa__name', 'name']
-        constraints = [models.UniqueConstraint(fields=['villa', 'name'], name='unique_partition_name_per_villa')]
+        constraints = [
+            models.UniqueConstraint(fields=['villa', 'name'], name='unique_partition_name_per_villa'),
+            models.CheckConstraint(check=models.Q(rent__gte=0) | models.Q(rent__isnull=True), name='partition_rent_non_negative'),
+        ]
 
     @property
     def business(self):

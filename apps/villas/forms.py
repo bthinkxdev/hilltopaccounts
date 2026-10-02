@@ -29,6 +29,14 @@ class VillaForm(forms.Form):
 class PartitionForm(forms.Form):
     villa = forms.ModelChoiceField(queryset=Villa.objects.none(), empty_label='Select a villa…')
     name = forms.CharField(max_length=100, widget=forms.TextInput(attrs={'placeholder': 'e.g. Room 1'}))
+    rent = forms.DecimalField(
+        required=False,
+        min_value=Decimal('0.00'),
+        decimal_places=2,
+        max_digits=12,
+        label='Rent (monthly)',
+        widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01', 'placeholder': 'Optional rent, e.g. 2500.00'}),
+    )
     description = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2}))
 
     def __init__(self, *args, villa_queryset=None, **kwargs):

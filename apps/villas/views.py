@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -17,7 +18,7 @@ from apps.expenses.services import create_recurring_expense, get_or_create_categ
 from .forms import FIXED_EXPENSE_DEFAULTS, PartitionForm, PhotoForm, VillaForm
 from apps.expenses.models import RecurringExpense
 from .models import Photo
-from .services import add_photo, archive_partition, archive_villa, create_partition, create_villa, delete_photo
+from .services import add_photo, archive_partition, archive_villa, create_partition, create_villa, delete_photo, update_partition
 
 def _first_photo_by(photos, key):
     """Map group id -> first photo, from a single already-fetched list of photos."""
@@ -126,15 +127,70 @@ def villa_detail(request, pk):
         expense.can_edit = can_manage and expense.status == 'active' and expense.paid_on is None
         return expense
 
-    one_off = [decorate(e) for e in expenses.filter(date__gte=start, date__lte=end, recurring__isnull=True).select_related('category', 'partition').order_by('-date', '-id')[:15]]
+    one_off = [decorate(e) for e in expenses.filter(date__gte=start, date__lte=end, recurring__isnull=True).select_related('category', 'partition', 'created_by').order_by('-date', '-id')[:15]]
     rent_rows, rent_totals = (billing_selectors.rent_sheet(partitions=partitions, tenant_by_partition=tenant_by_partition, invoice_queryset=invoices, year=period['year'], month=period['month'], today=today) if period['period'] == 'month' else (None, None))
     fixed_rows, fixed_totals = expenses_selectors.fixed_expense_checklist(villa, period['year'], period['month'], today) if period['period'] == 'month' else (None, None)
     for row in fixed_rows or []:
         if row['expense'] is not None:
             decorate(row['expense'])
+
+    def compute_fixed_subset(rows):
+        zero = Decimal('0.00')
+        sub = {'total': zero, 'paid': zero, 'unpaid': zero, 'unpaid_count': 0}
+        for r in rows:
+            if r['status'] != expenses_selectors.FixedStatus.CANCELLED:
+                sub['total'] += r['amount']
+                if r['status'] in (expenses_selectors.FixedStatus.PAID, expenses_selectors.FixedStatus.TO_VERIFY):
+                    sub['paid'] += r['amount']
+                else:
+                    sub['unpaid'] += r['amount']
+                    sub['unpaid_count'] += 1
+        return sub
+
+    owner_fixed_rows = [r for r in (fixed_rows or []) if getattr(r['template'], 'paid_by', '') == 'owner'] if fixed_rows is not None else None
+    staff_fixed_rows = [r for r in (fixed_rows or []) if getattr(r['template'], 'paid_by', '') == 'staff'] if fixed_rows is not None else None
+    owner_fixed_totals = compute_fixed_subset(owner_fixed_rows) if owner_fixed_rows is not None else None
+    staff_fixed_totals = compute_fixed_subset(staff_fixed_rows) if staff_fixed_rows is not None else None
+
     fixed_templates = list(RecurringExpense.objects.filter(villa=villa, is_active=True).select_related('category')) if period['period'] == 'year' else []
+    owner_fixed_templates = [t for t in fixed_templates if t.paid_by == 'owner']
+    staff_fixed_templates = [t for t in fixed_templates if t.paid_by == 'staff']
+
+    owner_one_off = [e for e in one_off if e.paid_by == 'owner']
+    staff_one_off = [e for e in one_off if e.paid_by == 'staff']
+
     villa_photos = [p for p in photos if not p.partition_id]
-    context = {'villa': villa, 'partitions': partitions, 'occupied_count': len(tenants), 'vacant_count': len(partitions) - len(tenants), 'can_manage': can_manage, 'can_admin_fixed': is_admin, 'is_admin': is_admin, 'can_delete_photos': is_admin, 'can_view_financials': can_view_financials, 'photos': villa_photos, 'rent_rows': rent_rows, 'rent_totals': rent_totals, 'fixed_rows': fixed_rows, 'fixed_totals': fixed_totals, 'fixed_templates': fixed_templates, 'one_off_expenses': one_off, 'cash': cash_selectors.villa_cash_position(villa), 'to_verify': expenses_selectors.due_summary(expenses, today)['verify'] if is_admin else None, 'keep': [], 'breadcrumbs': [('Villas', reverse('villas:villa_list')), (villa.name, None)], **period}
+    context = {
+        'villa': villa,
+        'partitions': partitions,
+        'occupied_count': len(tenants),
+        'vacant_count': len(partitions) - len(tenants),
+        'can_manage': can_manage,
+        'can_admin_fixed': is_admin,
+        'is_admin': is_admin,
+        'can_delete_photos': is_admin,
+        'can_view_financials': can_view_financials,
+        'photos': villa_photos,
+        'rent_rows': rent_rows,
+        'rent_totals': rent_totals,
+        'fixed_rows': fixed_rows,
+        'fixed_totals': fixed_totals,
+        'owner_fixed_rows': owner_fixed_rows,
+        'owner_fixed_totals': owner_fixed_totals,
+        'staff_fixed_rows': staff_fixed_rows,
+        'staff_fixed_totals': staff_fixed_totals,
+        'fixed_templates': fixed_templates,
+        'owner_fixed_templates': owner_fixed_templates,
+        'staff_fixed_templates': staff_fixed_templates,
+        'one_off_expenses': one_off,
+        'owner_one_off': owner_one_off,
+        'staff_one_off': staff_one_off,
+        'cash': cash_selectors.villa_cash_position(villa),
+        'to_verify': expenses_selectors.due_summary(expenses, today)['verify'] if is_admin else None,
+        'keep': [],
+        'breadcrumbs': [('Villas', reverse('villas:villa_list')), (villa.name, None)],
+        **period,
+    }
     if can_view_financials:
         context['pnl'] = billing_selectors.period_profit_loss(invoices, expenses, start, end)
         context['total_outstanding'] = billing_selectors.outstanding_amount(invoices)
@@ -259,6 +315,48 @@ def partition_create(request, villa_pk=None):
     if villa:
         breadcrumbs = [('Businesses', reverse('businesses:list')), (villa.business.name, reverse('businesses:detail', args=[villa.business.pk])), (villa.name, reverse('villas:villa_detail', args=[villa.pk])), ('New Partition', None)]
     return render(request, 'components/form_page.html', {'form': form, 'title': 'Add Partition', 'cancel_url': cancel_url, 'breadcrumbs': breadcrumbs})
+
+@login_required
+def partition_edit(request, pk):
+    partition = get_object_or_404(selectors.partitions_visible_to(request.user).select_related('villa', 'villa__business'), pk=pk)
+    villa = partition.villa
+    if not (request.user.is_owner or selectors.can_manage_villa(request.user, villa)):
+        raise PermissionDenied('You cannot edit this partition.')
+    if request.method == 'POST':
+        form = PartitionForm(request.POST)
+        form.fields.pop('villa')
+        if form.is_valid():
+            update_partition(
+                partition=partition,
+                updated_by=request.user,
+                name=form.cleaned_data['name'],
+                rent=form.cleaned_data.get('rent'),
+                description=form.cleaned_data.get('description', ''),
+            )
+            messages.success(request, f'Partition “{partition.name}” updated.')
+            return redirect('villas:partition_detail', pk=partition.pk)
+    else:
+        form = PartitionForm(initial={
+            'name': partition.name,
+            'rent': partition.rent,
+            'description': partition.description,
+        })
+        form.fields.pop('villa')
+    cancel_url = reverse('villas:partition_detail', args=[partition.pk])
+    breadcrumbs = [
+        ('Businesses', reverse('businesses:list')),
+        (villa.business.name, reverse('businesses:detail', args=[villa.business.pk])),
+        (villa.name, reverse('villas:villa_detail', args=[villa.pk])),
+        (partition.name, reverse('villas:partition_detail', args=[partition.pk])),
+        ('Edit Partition', None),
+    ]
+    return render(request, 'components/form_page.html', {
+        'form': form,
+        'title': f'Edit {partition.name}',
+        'submit_label': 'Save Changes',
+        'cancel_url': cancel_url,
+        'breadcrumbs': breadcrumbs,
+    })
 
 @login_required
 def partition_archive(request, pk):

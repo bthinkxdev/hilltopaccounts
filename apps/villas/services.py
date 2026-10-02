@@ -6,7 +6,7 @@ from apps.accounts import selectors as access_selectors
 from .models import Partition, Photo, Villa
 from .photos import validate_photo
 TRACKED_FIELDS = ['name', 'address', 'landlord_name', 'landlord_contact', 'contract_start', 'contract_end']
-PARTITION_TRACKED_FIELDS = ['name', 'description', 'status']
+PARTITION_TRACKED_FIELDS = ['name', 'description', 'rent', 'status']
 
 def create_villa(*, business, name, created_by, **fields) -> Villa:
     with transaction.atomic():

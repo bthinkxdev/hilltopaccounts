@@ -57,6 +57,8 @@ class ExpenseForm(forms.Form):
         partition = cleaned.get('partition')
         if partition and villa and partition.villa_id != villa.id:
             self.add_error('partition', "This partition doesn't belong to the selected villa.")
+        if partition and cleaned.get('name', '').strip().lower() in ('villa rent', 'villa owner rent'):
+            self.add_error('name', "Villa rent is a whole-villa expense, not a partition expense.")
         if cleaned.get('mark_paid') and not cleaned.get('payment_method'):
             self.add_error('payment_method', 'Choose how this was paid.')
         due, spent = cleaned.get('due_date'), cleaned.get('date')

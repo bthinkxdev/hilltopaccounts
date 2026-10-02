@@ -34,6 +34,8 @@
     var amount = document.getElementById('{{ form.amount.id_for_label }}');
     var paid = document.getElementById('{{ form.mark_paid.id_for_label }}');
     var method = document.getElementById('{{ form.payment_method.id_for_label }}');
+    var datalist = document.getElementById('expense-names');
+    var allOptions = datalist ? Array.prototype.slice.call(datalist.options) : [];
     var amountEdited = !!amount.value;
     amount.addEventListener('input', function () { amountEdited = true; });
 
@@ -51,19 +53,67 @@
       var row = method.closest('.field');
       if (row) row.style.display = paid.checked ? '' : 'none';
     }
+    function filterExpenseNames() {
+      if (!datalist || !partition) return;
+      var isPartition = !!partition.value;
+      datalist.innerHTML = '';
+      allOptions.forEach(function (opt) {
+        var val = (opt.value || '').trim().toLowerCase();
+        if (isPartition && (val === 'villa rent' || val === 'villa owner rent' || val.indexOf('villa rent') !== -1)) {
+          return;
+        }
+        datalist.appendChild(opt.cloneNode(true));
+      });
+    }
     function prefill() {
       if (amountEdited || !name.value.trim()) return;
+      if (partition && partition.value && name.value.trim().toLowerCase().indexOf('villa rent') !== -1) return;
       var url = '{{ suggest_url }}?name=' + encodeURIComponent(name.value.trim()) + '&villa=' + encodeURIComponent(villa.value);
       fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (data) { if (data && data.amount && !amountEdited) amount.value = data.amount; });
     }
-    villa.addEventListener('change', function () { narrowPartitions(); prefill(); });
+    villa.addEventListener('change', function () { narrowPartitions(); filterExpenseNames(); prefill(); });
+    partition.addEventListener('change', filterExpenseNames);
     name.addEventListener('change', prefill);
     name.addEventListener('blur', prefill);
     paid.addEventListener('change', togglePaid);
     narrowPartitions();
+    filterExpenseNames();
     togglePaid();
+  })();
+  </script>
+{% endif %}
+{% if charge_form %}
+  <script>
+  (function () {
+    var chargeType = document.getElementById('{{ form.charge_type.id_for_label }}');
+    var amount = document.getElementById('{{ form.amount.id_for_label }}');
+    var rentAmount = '{{ rent_amount|default:"" }}';
+    var rentTypeId = '{{ rent_charge_type_id|default:"" }}';
+    if (!chargeType || !amount || !rentAmount) return;
+
+    function isRentSelected() {
+      if (rentTypeId && String(chargeType.value) === String(rentTypeId)) return true;
+      var opt = chargeType.options[chargeType.selectedIndex];
+      return opt && (opt.text || '').trim().toLowerCase() === 'rent';
+    }
+
+    function updateAmount() {
+      if (isRentSelected()) {
+        amount.value = rentAmount;
+      } else if (amount.value === rentAmount) {
+        amount.value = '';
+      }
+    }
+
+    chargeType.addEventListener('change', updateAmount);
+
+    if (isRentSelected()) {
+      if (!amount.value) amount.value = rentAmount;
+    } else if (amount.value === rentAmount) {
+      amount.value = '';
+    }
   })();
   </script>
 {% endif %}

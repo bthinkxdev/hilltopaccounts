@@ -51,7 +51,10 @@ def tenant_create(request, partition_pk):
                 messages.success(request, f'{tenant.name} moved in to {partition.name}.')
                 return redirect('tenancy:detail', pk=tenant.pk)
     else:
-        form = TenantForm()
+        initial = {}
+        if partition.rent is not None:
+            initial['monthly_rent'] = partition.rent
+        form = TenantForm(initial=initial)
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Move In Tenant — {partition.name}', 'submit_label': 'Move In', 'cancel_url': reverse('villas:partition_detail', args=[partition.pk]), 'breadcrumbs': [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk])), (partition.villa.name, reverse('villas:villa_detail', args=[partition.villa.pk])), (partition.name, reverse('villas:partition_detail', args=[partition.pk])), ('Move In Tenant', None)]})
 
 @login_required

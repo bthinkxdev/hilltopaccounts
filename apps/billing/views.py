@@ -1,3 +1,4 @@
+from datetime import date
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -11,7 +12,7 @@ from apps.shared.forms import ReasonForm
 from apps.shared.pagination import paginate_queryset
 from . import selectors as billing_selectors
 from .forms import ChargeForm, InvoiceGenerateForm, PaymentCorrectionForm, PaymentForm
-from .models import Invoice
+from .models import Charge, ChargeType, Invoice
 from .services import collect_rent, cancel_charge, cancel_invoice, cancel_payment, correct_payment, create_charge, generate_monthly_invoice, record_payment
 
 def _can_manage(user, villa):
@@ -19,9 +20,12 @@ def _can_manage(user, villa):
 
 @login_required
 def charge_create(request, partition_pk):
-    partition = get_object_or_404(selectors.partitions_visible_to(request.user), pk=partition_pk)
+    partition = get_object_or_404(selectors.partitions_visible_to(request.user).select_related('villa', 'villa__business'), pk=partition_pk)
     if not _can_manage(request.user, partition.villa):
         raise PermissionDenied('You cannot add a charge to this partition.')
+    rent_type = ChargeType.objects.filter(name__iexact='Rent', is_active=True).first()
+    current_tenant = partition.current_tenant
+    assigned_rent = (current_tenant.monthly_rent if current_tenant else None) or partition.rent
     if request.method == 'POST':
         form = ChargeForm(request.POST)
         if form.is_valid():
@@ -29,8 +33,29 @@ def charge_create(request, partition_pk):
             messages.success(request, f'Charge “{charge.charge_type}” added.')
             return redirect('villas:partition_detail', pk=partition.pk)
     else:
-        form = ChargeForm()
-    return render(request, 'components/form_page.html', {'form': form, 'title': f'Add Charge — {partition.name}', 'cancel_url': reverse('villas:partition_detail', args=[partition.pk])})
+        initial = {}
+        if current_tenant:
+            initial['start_date'] = current_tenant.move_in_date
+        else:
+            initial['start_date'] = date.today()
+        form = ChargeForm(initial=initial)
+
+    breadcrumbs = [
+        ('Businesses', reverse('businesses:list')),
+        (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk])),
+        (partition.villa.name, reverse('villas:villa_detail', args=[partition.villa.pk])),
+        (partition.name, reverse('villas:partition_detail', args=[partition.pk])),
+        ('Add Charge', None),
+    ]
+    return render(request, 'components/form_page.html', {
+        'form': form,
+        'title': f'Add Charge — {partition.name}',
+        'cancel_url': reverse('villas:partition_detail', args=[partition.pk]),
+        'breadcrumbs': breadcrumbs,
+        'charge_form': True,
+        'rent_amount': str(assigned_rent) if assigned_rent else '',
+        'rent_charge_type_id': str(rent_type.pk) if rent_type else '',
+    })
 
 @login_required
 def charge_cancel(request, pk):
