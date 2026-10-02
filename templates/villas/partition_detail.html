@@ -82,12 +82,13 @@
             <span class="list-row__title">{{ expense.category }} — QAR {{ expense.amount|floatformat:"2" }}</span>
             <span class="list-row__meta">{{ expense.date }}{% if expense.due_date %} — due {{ expense.due_date }}{% endif %}</span>
             {% if expense.due_state == "paid" %}<span class="pill pill--success">Paid</span>
+            {% elif expense.due_state == "verify" %}<span class="pill pill--warning">Paid — to verify</span>
             {% elif expense.due_state == "overdue" %}<span class="pill pill--danger">Overdue</span>
             {% elif expense.due_state == "today" %}<span class="pill pill--warning">Due today</span>
             {% elif expense.due_state == "upcoming" %}<span class="pill pill--neutral">Upcoming</span>
             {% elif expense.due_state == "unpaid" %}<span class="pill pill--warning">Unpaid</span>
             {% else %}<span class="pill pill--neutral">{{ expense.get_status_display }}</span>{% endif %}
-            {% if can_manage and expense.status == "active" and not expense.paid_on %}<a class="btn btn--primary" href="{% url 'expenses:mark_paid' expense.pk %}">Mark paid</a>{% endif %}
+            {% include "components/expense_actions.html" %}
           </div>
         {% endfor %}
       {% else %}

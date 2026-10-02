@@ -59,7 +59,7 @@ class OwnerVillaAccountingWorkflow(TestCase):
         r = self.client.get(reverse('villas:villa_detail', args=[villa.pk]), {'period': 'month', 'year': 2026, 'month': 2})
         pnl = r.context['pnl']
         self.assertEqual((pnl['income'], pnl['expenses'], pnl['net'], pnl['outstanding']), (Decimal('2000.00'), Decimal('450.00'), Decimal('1550.00'), Decimal('1000.00')))
-        self.assertContains(r, 'QAR 1550.00')
+        self.assertContains(r, '1,550.00')
         r = self.client.get(reverse('villas:villa_detail', args=[villa.pk]), {'period': 'year', 'year': 2026})
         self.assertEqual(r.context['pnl']['net'], Decimal('1550.00'))
         r = self.client.get(reverse('villas:villa_detail', args=[villa.pk]), {'period': 'month', 'year': 2026, 'month': 3})

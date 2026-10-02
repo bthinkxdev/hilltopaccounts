@@ -11,7 +11,8 @@ class DueBucket:
     UPCOMING = 'upcoming'
     PAID = 'paid'
     UNPAID = 'unpaid'
-    CHOICES = [(OVERDUE, 'Overdue'), (TODAY, 'Due today'), (UPCOMING, 'Upcoming'), (UNPAID, 'Outstanding'), (PAID, 'Paid')]
+    VERIFY = 'verify'
+    CHOICES = [(OVERDUE, 'Overdue'), (TODAY, 'Due today'), (UPCOMING, 'Upcoming'), (UNPAID, 'Outstanding'), (VERIFY, 'To verify'), (PAID, 'Paid')]
 
 def valid_expense_total(expense_queryset) -> Decimal:
     return expense_queryset.filter(status=Expense.Status.ACTIVE).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
@@ -26,6 +27,8 @@ def filter_by_due_bucket(expense_queryset, bucket, today=None):
     today = today or date.today()
     if bucket == DueBucket.PAID:
         return active(expense_queryset).filter(paid_on__isnull=False)
+    if bucket == DueBucket.VERIFY:
+        return active(expense_queryset).filter(paid_on__isnull=False, verified_at__isnull=True)
     if bucket == DueBucket.UNPAID:
         return unpaid(expense_queryset)
     if bucket == DueBucket.OVERDUE:
@@ -42,7 +45,7 @@ def due_state(expense: Expense, today=None) -> str:
     if expense.status != Expense.Status.ACTIVE:
         return expense.status
     if expense.paid_on is not None:
-        return DueBucket.PAID
+        return DueBucket.VERIFY if expense.verified_at is None else DueBucket.PAID
     if expense.due_date is None:
         return DueBucket.UNPAID
     if expense.due_date < today:
@@ -51,14 +54,28 @@ def due_state(expense: Expense, today=None) -> str:
         return DueBucket.TODAY
     return DueBucket.UPCOMING
 
+def _bucket_q(bucket, today) -> Q:
+    live = Q(status=Expense.Status.ACTIVE)
+    unpaid_q = live & Q(paid_on__isnull=True)
+    return {
+        DueBucket.PAID: live & Q(paid_on__isnull=False),
+        DueBucket.VERIFY: live & Q(paid_on__isnull=False, verified_at__isnull=True),
+        DueBucket.UNPAID: unpaid_q,
+        DueBucket.OVERDUE: unpaid_q & Q(due_date__lt=today),
+        DueBucket.TODAY: unpaid_q & Q(due_date=today),
+        DueBucket.UPCOMING: unpaid_q & Q(due_date__gt=today),
+    }[bucket]
+
 def due_summary(expense_queryset, today=None) -> dict:
-    """Counts and totals for every accountability bucket — one aggregate query per bucket."""
+    """Counts and totals for every accountability bucket, in one aggregate query."""
     today = today or date.today()
-    summary = {}
+    aggregates = {}
     for bucket, _label in DueBucket.CHOICES:
-        agg = filter_by_due_bucket(expense_queryset, bucket, today).aggregate(count=Count('pk'), total=Sum('amount'))
-        summary[bucket] = {'count': agg['count'], 'total': agg['total'] or Decimal('0.00')}
-    return summary
+        q = _bucket_q(bucket, today)
+        aggregates[f'{bucket}_count'] = Count('pk', filter=q)
+        aggregates[f'{bucket}_total'] = Sum('amount', filter=q)
+    row = expense_queryset.aggregate(**aggregates)
+    return {bucket: {'count': row[f'{bucket}_count'], 'total': row[f'{bucket}_total'] or Decimal('0.00')} for bucket, _label in DueBucket.CHOICES}
 
 def used_expense_names(expense_queryset):
     names = expense_queryset.values_list('category__name', flat=True).distinct().order_by('category__name')
@@ -75,6 +92,7 @@ def latest_amount_for(expense_queryset, *, name, villa=None):
 
 class FixedStatus:
     PAID = 'paid'
+    TO_VERIFY = 'to_verify'
     UNPAID = 'unpaid'
     DUE_TODAY = 'due_today'
     OVERDUE = 'overdue'
@@ -97,7 +115,7 @@ def fixed_expense_checklist(villa, year: int, month: int, today=None):
     for template in RecurringExpense.objects.filter(villa=villa, is_active=True).select_related('category'):
         templates[template.pk] = template
     zero = Decimal('0.00')
-    rows, totals = [], {'total': zero, 'paid': zero, 'unpaid': zero, 'unpaid_count': 0, 'missing_count': 0}
+    rows, totals = [], {'total': zero, 'paid': zero, 'unpaid': zero, 'unpaid_count': 0, 'missing_count': 0, 'to_verify_count': 0}
     last_day = calendar.monthrange(year, month)[1]
     for template in sorted(templates.values(), key=lambda t: (t.due_day, t.category.name)):
         expense = generated.get(template.pk)
@@ -110,7 +128,7 @@ def fixed_expense_checklist(villa, year: int, month: int, today=None):
             if expense.status != Expense.Status.ACTIVE:
                 status = FixedStatus.CANCELLED
             elif expense.paid_on is not None:
-                status = FixedStatus.PAID
+                status = FixedStatus.PAID if expense.verified_at is not None else FixedStatus.TO_VERIFY
             elif due_date < today:
                 status = FixedStatus.OVERDUE
             elif due_date == today:
@@ -119,8 +137,10 @@ def fixed_expense_checklist(villa, year: int, month: int, today=None):
                 status = FixedStatus.UNPAID
         if status != FixedStatus.CANCELLED:
             totals['total'] += amount
-            if status == FixedStatus.PAID:
+            if status in (FixedStatus.PAID, FixedStatus.TO_VERIFY):
                 totals['paid'] += amount
+                if status == FixedStatus.TO_VERIFY:
+                    totals['to_verify_count'] += 1
             else:
                 totals['unpaid'] += amount
                 totals['unpaid_count'] += 1

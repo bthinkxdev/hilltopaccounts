@@ -69,6 +69,8 @@ class Expense(models.Model):
     payment_method = models.CharField(max_length=20, choices=Method.choices, blank=True)
     paid_by = models.CharField(max_length=10, choices=PaidBy.choices, default=PaidBy.OWNER)
     paid_by_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+', null=True, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True, help_text='When the Owner / Business Manager confirmed the payment as received/valid.')
+    verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+', null=True, blank=True)
     recurring = models.ForeignKey(RecurringExpense, on_delete=models.PROTECT, related_name='expenses', null=True, blank=True)
     period = models.DateField(null=True, blank=True, help_text='First day of the month a recurring expense belongs to.')
     description = models.TextField(blank=True)
@@ -83,11 +85,19 @@ class Expense(models.Model):
 
     class Meta:
         ordering = ['-date', '-id']
-        constraints = [models.CheckConstraint(check=models.Q(amount__gt=0), name='expense_amount_positive'), models.CheckConstraint(check=models.Q(paid_on__isnull=True) | ~models.Q(payment_method=''), name='expense_paid_has_method'), models.UniqueConstraint(fields=['recurring', 'period'], condition=models.Q(recurring__isnull=False), name='one_expense_per_recurring_per_month'), models.CheckConstraint(check=models.Q(recurring__isnull=True) | models.Q(period__isnull=False), name='recurring_expense_has_period')]
+        constraints = [models.CheckConstraint(check=models.Q(amount__gt=0), name='expense_amount_positive'), models.CheckConstraint(check=models.Q(paid_on__isnull=True) | ~models.Q(payment_method=''), name='expense_paid_has_method'), models.UniqueConstraint(fields=['recurring', 'period'], condition=models.Q(recurring__isnull=False), name='one_expense_per_recurring_per_month'), models.CheckConstraint(check=models.Q(recurring__isnull=True) | models.Q(period__isnull=False), name='recurring_expense_has_period'), models.CheckConstraint(check=models.Q(verified_at__isnull=True) | models.Q(paid_on__isnull=False), name='expense_verified_only_when_paid')]
 
     @property
     def is_paid(self) -> bool:
         return self.paid_on is not None
+
+    @property
+    def is_verified(self) -> bool:
+        return self.verified_at is not None
+
+    @property
+    def awaiting_verification(self) -> bool:
+        return self.status == self.Status.ACTIVE and self.paid_on is not None and self.verified_at is None
 
     def clean(self):
         super().clean()

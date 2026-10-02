@@ -1,7 +1,11 @@
+from decimal import Decimal
 from django import forms
 from apps.businesses.forms import ArchiveReasonForm
 from apps.businesses.models import Business
 from .models import Villa
+
+# The fixed monthly costs every villa has. Each is optional at creation and can be set later by the Owner.
+FIXED_EXPENSE_DEFAULTS = [('fixed_villa_rent', 'Villa rent', 'owner'), ('fixed_electricity', 'Electricity', 'staff'), ('fixed_wifi', 'Wi-Fi', 'staff'), ('fixed_cleaning', 'Cleaning', 'staff'), ('fixed_maintenance', 'Maintenance', 'staff')]
 
 class VillaForm(forms.Form):
     business = forms.ModelChoiceField(queryset=Business.objects.none(), empty_label='Select a business…')
@@ -11,6 +15,11 @@ class VillaForm(forms.Form):
     landlord_contact = forms.CharField(required=False, max_length=200)
     contract_start = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
     contract_end = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
+    fixed_villa_rent = forms.DecimalField(required=False, min_value=Decimal('0.01'), decimal_places=2, max_digits=12, label='Villa rent (paid to the villa owner) — monthly', widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01', 'placeholder': 'Optional'}))
+    fixed_electricity = forms.DecimalField(required=False, min_value=Decimal('0.01'), decimal_places=2, max_digits=12, label='Electricity — monthly', widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01', 'placeholder': 'Optional'}))
+    fixed_wifi = forms.DecimalField(required=False, min_value=Decimal('0.01'), decimal_places=2, max_digits=12, label='Wi-Fi — monthly', widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01', 'placeholder': 'Optional'}))
+    fixed_cleaning = forms.DecimalField(required=False, min_value=Decimal('0.01'), decimal_places=2, max_digits=12, label='Cleaning — monthly', widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01', 'placeholder': 'Optional'}))
+    fixed_maintenance = forms.DecimalField(required=False, min_value=Decimal('0.01'), decimal_places=2, max_digits=12, label='Maintenance — monthly', widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01', 'placeholder': 'Optional'}))
 
     def __init__(self, *args, business_queryset=None, **kwargs):
         super().__init__(*args, **kwargs)

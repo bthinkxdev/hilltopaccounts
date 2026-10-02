@@ -144,6 +144,9 @@ class ManageScope:
     def can_manage_villa(self, villa_id, business_id) -> bool:
         return self.is_admin(business_id) or villa_id in self.staff_villa_ids
 
+    def can_verify_expense(self, expense) -> bool:
+        return self.is_admin(expense.business_id)
+
     def can_pay_expense(self, expense) -> bool:
         """Mirrors expenses.services.can_pay_expense — owner-account expenses need an admin; staff-paid ones any villa manager."""
         if self.is_admin(expense.business_id):

@@ -62,6 +62,8 @@ def confirm_cash_handover(*, handover: CashHandover, confirmed_amount, confirmed
             handover.notes = notes
         handover.full_clean()
         handover.save()
+        from apps.expenses.services import verify_expenses_in_confirmed_handover
+        verify_expenses_in_confirmed_handover(handover=handover, confirmed_by=confirmed_by)
         audit_services.log(user=confirmed_by, action=Action.CASH_HANDOVER_CONFIRMED, obj=handover, old_value={'status': CashHandover.Status.SUBMITTED}, new_value={'status': CashHandover.Status.CONFIRMED, 'confirmed_amount': str(confirmed_amount), 'discrepancy': str(handover.declared_amount - confirmed_amount)})
     return handover
 

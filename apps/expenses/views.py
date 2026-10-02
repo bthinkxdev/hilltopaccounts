@@ -15,8 +15,8 @@ from . import selectors as expense_selectors
 from .forms import ExpenseForm, MarkPaidForm, RecurringExpenseForm, ReviseExpenseForm
 from .models import Expense, RecurringExpense
 from .selectors import DueBucket
-from .services import (cancel_expense, can_pay_expense, create_expense, create_recurring_expense, deactivate_recurring_expense, generate_recurring_expenses, get_or_create_category, mark_expense_paid,
-                       reverse_expense, revise_unpaid_expense, settle_auto_debits, update_recurring_expense)
+from .services import (cancel_expense, can_pay_expense, create_expense, create_recurring_expense, deactivate_recurring_expense, get_or_create_category, mark_expense_paid,
+                       reverse_expense, revise_unpaid_expense, update_recurring_expense, verify_expense)
 
 def _can_manage_expense(user, expense):
     if expense.villa_id:
@@ -44,6 +44,8 @@ def expense_list(request):
         expense.due_state = expense_selectors.due_state(expense, today)
         expense.can_manage = scope.can_manage_villa(expense.villa_id, expense.business_id) if expense.villa_id else scope.is_admin(expense.business_id)
         expense.can_pay = scope.can_pay_expense(expense)
+        expense.can_verify = scope.can_verify_expense(expense)
+        expense.can_edit = expense.can_manage and expense.status == 'active' and expense.paid_on is None
     villas = selectors.villas_visible_to(request.user).filter(is_archived=False).select_related('business')
     context = {'page_obj': page_obj, 'status': status, 'due': due, 'due_choices': DueBucket.CHOICES, 'villas': villas, 'selected_villa': villa_id, 'summary': expense_selectors.due_summary(summary_base, today), 'can_add': selectors.manageable_villas(request.user).filter(is_archived=False).exists(), 'breadcrumbs': [('Expenses', None)]}
     return render(request, 'expenses/list.html', context)
@@ -234,23 +236,38 @@ def recurring_stop(request, pk):
         form = ReasonForm()
     return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Stop {recurring.category.name}?', 'message': 'No new monthly expense will be created. Expenses already generated stay on record.', 'cancel_url': back})
 
+
+def _back_to(request, default):
+    """Where to return after a one-tap action — only ever a path on this site."""
+    from django.utils.http import url_has_allowed_host_and_scheme
+    target = request.POST.get('next', '')
+    return target if target and url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()}, require_https=request.is_secure()) else default
+
 @login_required
 @require_POST
-def recurring_generate(request, villa_pk):
-    """One tap: create this month's expense for every fixed expense of the villa (POST only, idempotent)."""
-    villa = get_object_or_404(selectors.manageable_villas(request.user), pk=villa_pk)
+def expense_quick_paid(request, pk):
+    """One tap: 'Paid'. Staff-paid money awaits the owner's verification; the owner's own payment is final."""
+    expense = get_object_or_404(selectors.expenses_visible_to(request.user).select_related('villa', 'business', 'category'), pk=pk)
+    if not can_pay_expense(request.user, expense):
+        raise PermissionDenied('You cannot settle this expense.')
+    is_admin = request.user.is_owner or selectors.is_business_manager_of(request.user, expense.business)
     try:
-        year, month = int(request.POST.get('year', '')), int(request.POST.get('month', ''))
-        if not (2000 <= year <= 2100 and 1 <= month <= 12):
-            raise ValueError
-    except ValueError:
-        messages.error(request, 'Choose a valid month first.')
-        return redirect('villas:villa_detail', pk=villa.pk)
-    created = generate_recurring_expenses(villa=villa, year=year, month=month, generated_by=request.user)
-    settle_auto_debits(villa=villa)
-    label = date(year, month, 1).strftime('%B %Y')
-    if created:
-        messages.success(request, f'{len(created)} fixed expense{"s" if len(created) != 1 else ""} created for {label}.')
+        mark_expense_paid(expense=expense, paid_on=date.today(), payment_method=Expense.Method.BANK_TRANSFER if is_admin else Expense.Method.CASH, marked_by=request.user)
+    except DomainError as exc:
+        messages.error(request, str(exc))
     else:
-        messages.info(request, f'Nothing new to create — every active fixed expense already exists for {label}, or none are set up.')
-    return redirect(reverse('villas:villa_detail', args=[villa.pk]) + f'?period=month&year={year}&month={month}#expenses')
+        messages.success(request, f'{expense.category} marked paid.' if is_admin else f'{expense.category} marked paid — the owner will verify it.')
+    return redirect(_back_to(request, reverse('expenses:list')))
+
+@login_required
+@require_POST
+def expense_verify(request, pk):
+    """One tap: the Owner / Business Manager confirms a staff-paid expense as received."""
+    expense = get_object_or_404(selectors.expenses_visible_to(request.user).select_related('villa', 'business', 'category'), pk=pk)
+    try:
+        verify_expense(expense=expense, verified_by=request.user)
+    except DomainError as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, f'{expense.category} verified.')
+    return redirect(_back_to(request, reverse('expenses:list')))

@@ -11,6 +11,7 @@
     <a class="kpi" href="?due=today&status=active{% if selected_villa %}&villa={{ selected_villa }}{% endif %}"><div class="kpi__label">Due today</div><div class="kpi__value {% if summary.today.count %}kpi__value--warning{% endif %}">QAR {{ summary.today.total|floatformat:"2" }}</div><div class="kpi__label">{{ summary.today.count }} expense{{ summary.today.count|pluralize }}</div></a>
     <a class="kpi" href="?due=upcoming&status=active{% if selected_villa %}&villa={{ selected_villa }}{% endif %}"><div class="kpi__label">Upcoming</div><div class="kpi__value">QAR {{ summary.upcoming.total|floatformat:"2" }}</div><div class="kpi__label">{{ summary.upcoming.count }} expense{{ summary.upcoming.count|pluralize }}</div></a>
     <a class="kpi" href="?due=unpaid&status=active{% if selected_villa %}&villa={{ selected_villa }}{% endif %}"><div class="kpi__label">Outstanding</div><div class="kpi__value">QAR {{ summary.unpaid.total|floatformat:"2" }}</div><div class="kpi__label">{{ summary.unpaid.count }} unpaid</div></a>
+    <a class="kpi" href="?due=verify&status=active{% if selected_villa %}&villa={{ selected_villa }}{% endif %}"><div class="kpi__label">To verify</div><div class="kpi__value {% if summary.verify.count %}kpi__value--warning{% endif %}">QAR {{ summary.verify.total|floatformat:"2g" }}</div><div class="kpi__label">{{ summary.verify.count }} paid by staff</div></a>
     <a class="kpi" href="?due=paid&status=active{% if selected_villa %}&villa={{ selected_villa }}{% endif %}"><div class="kpi__label">Paid</div><div class="kpi__value kpi__value--success">QAR {{ summary.paid.total|floatformat:"2" }}</div><div class="kpi__label">{{ summary.paid.count }} expense{{ summary.paid.count|pluralize }}</div></a>
   </div>
 
@@ -43,13 +44,13 @@
           <span class="list-row__title">{{ expense.category }} — QAR {{ expense.amount|floatformat:"2" }}</span>
           <span class="list-row__meta">{% if expense.villa %}{{ expense.villa.name }}{% if expense.partition %} / {{ expense.partition.name }}{% endif %}{% else %}{{ expense.business.name }}{% endif %} — {{ expense.date }}{% if expense.due_date %} — due {{ expense.due_date }}{% endif %} — {{ expense.get_paid_by_display }}</span>
           {% if expense.due_state == "paid" %}<span class="pill pill--success">Paid {{ expense.paid_on }}</span>
+          {% elif expense.due_state == "verify" %}<span class="pill pill--warning">Paid — to verify</span>
           {% elif expense.due_state == "overdue" %}<span class="pill pill--danger">Overdue</span>
           {% elif expense.due_state == "today" %}<span class="pill pill--warning">Due today</span>
           {% elif expense.due_state == "upcoming" %}<span class="pill pill--neutral">Upcoming</span>
           {% elif expense.due_state == "unpaid" %}<span class="pill pill--warning">Unpaid</span>
           {% else %}<span class="pill pill--neutral">{{ expense.get_status_display }}</span>{% endif %}
-          {% if expense.can_pay and expense.status == "active" and not expense.paid_on %}<a class="btn btn--primary" href="{% url 'expenses:mark_paid' expense.pk %}">Mark paid</a>{% endif %}
-          {% if expense.can_manage and expense.status == "active" and not expense.paid_on %}<a class="btn btn--ghost" href="{% url 'expenses:revise' expense.pk %}">Edit</a>{% endif %}
+          {% include "components/expense_actions.html" %}
           {% if expense.status == "active" %}
             <a class="btn btn--ghost" href="{% url 'expenses:cancel' expense.pk %}">Cancel</a>
             <a class="btn btn--ghost" href="{% url 'expenses:reverse' expense.pk %}">Reverse</a>

@@ -1,0 +1,8 @@
+{# One-tap expense actions. Needs `expense` with can_pay / can_verify / can_edit set by the view. All state changes are POST + CSRF. #}
+{% if expense.can_pay and expense.status == "active" and not expense.paid_on %}
+  <form method="post" action="{% url 'expenses:quick_paid' expense.pk %}" class="inline-form">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn--primary btn--sm" type="submit">Paid</button></form>
+{% endif %}
+{% if expense.can_verify and expense.awaiting_verification %}
+  <form method="post" action="{% url 'expenses:verify' expense.pk %}" class="inline-form">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn--primary btn--sm" type="submit">Verify received</button></form>
+{% endif %}
+{% if expense.can_edit %}<a class="btn btn--ghost btn--sm" href="{% url 'expenses:revise' expense.pk %}">Edit</a>{% endif %}

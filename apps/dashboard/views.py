@@ -55,7 +55,7 @@ class HomeView(LoginRequiredMixin, TemplateView):
             if pending_handovers.exists():
                 needs_attention.append({'label': 'Pending cash handovers', 'count': pending_handovers.count(), 'meta': 'Awaiting your confirmation', 'url': reverse('cash:handover_list') + '?status=submitted'})
         expense_summary = expenses_selectors.due_summary(selectors.expenses_visible_to(user))
-        for bucket, label in (('overdue', 'Overdue expenses'), ('today', 'Expenses due today')):
+        for bucket, label in (('overdue', 'Overdue expenses'), ('today', 'Expenses due today'), ('verify', 'Expenses to verify')):
             if expense_summary[bucket]['count']:
                 needs_attention.append({'label': label, 'count': expense_summary[bucket]['count'], 'meta': f"QAR {expense_summary[bucket]['total']} to pay", 'url': reverse('expenses:list') + f'?due={bucket}&status=active'})
         if ctx['vacant_count'] > 0:

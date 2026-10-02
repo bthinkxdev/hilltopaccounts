@@ -38,6 +38,19 @@ def _expense_candidates(user, today):
         url = reverse('expenses:mark_paid', args=[expense.pk]) if expense.villa_id in manageable else reverse('expenses:list') + f'?villa={expense.villa_id or ""}&status=active'
         yield Candidate(kind, f'{kind}:{expense.pk}', f'{expense.category} {"overdue" if overdue else "due " + ("today" if expense.due_date == today else "soon")} — QAR {expense.amount}', f'{where} · due {expense.due_date:%d %b %Y}', url)
 
+def _verification_candidates(user, today):
+    """Expenses staff marked paid that the Owner / Business Manager still has to verify as received."""
+    scope = selectors.ManageScope(user)
+    if not (scope.is_owner or scope.admin_business_ids):
+        return
+    expenses = selectors.expenses_visible_to(user).filter(status=Expense.Status.ACTIVE, paid_on__isnull=False, verified_at__isnull=True).select_related('villa', 'business', 'category', 'paid_by_user')
+    for expense in expenses:
+        if not scope.can_verify_expense(expense):
+            continue
+        payer = (expense.paid_by_user.get_full_name() or expense.paid_by_user.username) if expense.paid_by_user_id else 'staff'
+        where = expense.villa.name if expense.villa_id else expense.business.name
+        yield Candidate(Notification.Kind.EXPENSE_TO_VERIFY, f'expense_to_verify:{expense.pk}', f'{expense.category} paid by {payer} — verify QAR {expense.amount}', f'{where} · paid {expense.paid_on:%d %b %Y}', reverse('expenses:list') + f'?due=verify&villa={expense.villa_id or ""}&status=active')
+
 def _invoice_candidates(user, today):
     overdue = billing_selectors.filter_by_status(selectors.invoices_visible_to(user), 'overdue').select_related('partition__villa', 'tenant')
     for invoice in overdue:
@@ -76,8 +89,11 @@ def _vacancy_candidates(user, today):
 def sync_for_user(user, today=None) -> None:
     """Bring this user's state-based notifications in line with live data, inside their own RBAC scope."""
     today = today or date.today()
+    # Make sure this month's fixed expenses exist before deciding what is due or overdue.
+    from apps.expenses.services import ensure_fixed_expenses
+    ensure_fixed_expenses(villa_ids=list(selectors.villas_visible_to(user).values_list('pk', flat=True)), year=today.year, month=today.month)
     candidates = {}
-    for builder in (_expense_candidates, _invoice_candidates, _handover_candidates, _contract_candidates, _vacancy_candidates):
+    for builder in (_expense_candidates, _verification_candidates, _invoice_candidates, _handover_candidates, _contract_candidates, _vacancy_candidates):
         for candidate in builder(user, today):
             candidates[candidate.dedupe_key] = candidate
     now = timezone.now()

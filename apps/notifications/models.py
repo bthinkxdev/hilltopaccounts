@@ -6,6 +6,7 @@ class Notification(models.Model):
     class Kind(models.TextChoices):
         EXPENSE_DUE_SOON = ('expense_due_soon', 'Expense due soon')
         EXPENSE_OVERDUE = ('expense_overdue', 'Expense overdue')
+        EXPENSE_TO_VERIFY = ('expense_to_verify', 'Expense awaiting verification')
         INVOICE_OVERDUE = ('invoice_overdue', 'Invoice overdue')
         CASH_HANDOVER_PENDING = ('cash_handover_pending', 'Cash handover pending')
         CASH_HANDOVER_REJECTED = ('cash_handover_rejected', 'Cash handover rejected')

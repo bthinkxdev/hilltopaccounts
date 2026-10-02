@@ -102,7 +102,11 @@ def period_profit_loss(invoice_queryset, expense_queryset, start: date, end: dat
     in_period = expense_queryset.filter(date__gte=start, date__lte=end)
     income = income_between(invoice_queryset, start, end)
     expenses = valid_expense_total(in_period)
-    return {'income': income, 'expenses': expenses, 'outstanding': outstanding_billed_between(invoice_queryset, start, end), 'unpaid_expenses': valid_expense_total(unpaid(in_period)), 'net': income - expenses}
+    from apps.expenses.models import PaidBy
+    live_expenses = in_period.filter(status='active')
+    by_payer = {row['paid_by']: row['total'] for row in live_expenses.order_by().values('paid_by').annotate(total=Sum('amount'))}
+    zero = Decimal('0.00')
+    return {'income': income, 'expenses': expenses, 'staff_expenses': by_payer.get(PaidBy.STAFF, zero), 'owner_expenses': by_payer.get(PaidBy.OWNER, zero), 'to_verify': valid_expense_total(live_expenses.filter(paid_on__isnull=False, verified_at__isnull=True)), 'outstanding': outstanding_billed_between(invoice_queryset, start, end), 'unpaid_expenses': valid_expense_total(unpaid(in_period)), 'net': income - expenses}
 
 def _profit_loss_by(invoice_queryset, expense_queryset, start: date, end: date, *, payment_key: str, expense_key: str) -> dict:
     """Income, expenses and net per group, using the same rules as period_profit_loss but in two grouped queries."""

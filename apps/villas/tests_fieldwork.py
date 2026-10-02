@@ -61,8 +61,9 @@ class FieldworkBase(TestCase):
             self.assertEqual(r.status_code, 302, (name, getattr(r, 'context', None) and r.context['form'].errors))
 
     def generate_month(self, username='staff'):
+        """Fixed expenses are created automatically when anyone opens the villa for a month."""
         self.login(username)
-        return self.client.post(reverse('expenses:recurring_generate', args=[self.villa.pk]), {'year': YEAR, 'month': MONTH})
+        return self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]), self.period)
 
     def collect(self, partition, method='cash'):
         return self.client.post(reverse('billing:rent_collect', args=[partition.pk]), {'year': YEAR, 'month': MONTH, 'method': method})
@@ -76,7 +77,7 @@ class NotebookScenarioTests(FieldworkBase):
 
         # Staff create the month's expenses with one tap; repeating it changes nothing.
         r = self.generate_month('staff')
-        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r.status_code, 200)
         self.assertEqual(Expense.objects.filter(villa=self.villa).count(), 5)
         self.generate_month('staff')
         self.assertEqual(Expense.objects.filter(villa=self.villa).count(), 5)
@@ -236,11 +237,13 @@ class FixedExpenseAndHandoverRuleTests(FieldworkBase):
         self.login('owner')
         self.client.post(reverse('expenses:recurring_edit', args=[wifi.pk]), {'name': 'Wifi', 'amount': '450.00', 'due_day': 5, 'paid_by': 'staff'})
         self.assertEqual(Expense.objects.get(recurring=wifi, period=date(YEAR, MONTH, 1)).amount, Decimal('415.00'))
-        self.client.post(reverse('expenses:recurring_generate', args=[self.villa.pk]), {'year': YEAR, 'month': 3})
-        self.assertEqual(Expense.objects.get(recurring=wifi, period=date(2026, 3, 1)).amount, Decimal('450.00'))
+        prev_year, prev_month = (YEAR - 1, 12) if MONTH == 1 else (YEAR, MONTH - 1)
+        self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]), {'period': 'month', 'year': prev_year, 'month': prev_month})
+        self.assertEqual(Expense.objects.get(recurring=wifi, period=date(prev_year, prev_month, 1)).amount, Decimal('450.00'))
         self.client.post(reverse('expenses:recurring_stop', args=[wifi.pk]), {'reason': 'cancelled wifi'})
-        self.client.post(reverse('expenses:recurring_generate', args=[self.villa.pk]), {'year': YEAR, 'month': 4})
-        self.assertFalse(Expense.objects.filter(recurring=wifi, period=date(2026, 4, 1)).exists())
+        earlier_year, earlier_month = (prev_year - 1, 12) if prev_month == 1 else (prev_year, prev_month - 1)
+        self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]), {'period': 'month', 'year': earlier_year, 'month': earlier_month})
+        self.assertFalse(Expense.objects.filter(recurring=wifi, period=date(earlier_year, earlier_month, 1)).exists())
 
     def test_scheduled_command_generates_and_settles(self):
         self.set_up_fixed_expenses()
@@ -344,43 +347,46 @@ class FixedExpenseChecklistTests(FieldworkBase):
 
     def test_every_month_lists_all_fixed_expenses_with_paid_status(self):
         self.set_up_fixed_expenses()
-        # Nothing generated yet: the month still shows all five, flagged "not created", with the amounts they will get.
+        self.assertFalse(Expense.objects.exists())
+        # Opening the month is all it takes: the five fixed expenses are there, the auto-debited rent already paid.
         rows, totals = self._rows(YEAR, MONTH)
-        self.assertEqual(len(rows), 5)
-        self.assertTrue(all(r['status'] == 'not_created' for r in rows.values()))
-        self.assertEqual((totals['total'], totals['missing_count']), (Decimal('12350.00'), 5))
-        self.assertFalse(Expense.objects.exists())  # viewing a page never creates anything
-
-        self.generate_month('owner')
-        rows, totals = self._rows(YEAR, MONTH)
-        self.assertEqual(rows['Villa owner rent']['status'], 'paid')  # auto-debit, due day already passed
+        self.assertEqual(Expense.objects.filter(villa=self.villa).count(), 5)
+        self.assertEqual(rows['Villa owner rent']['status'], 'paid')
         unpaid = {name for name, r in rows.items() if r['status'] in ('unpaid', 'overdue', 'due_today')}
         self.assertEqual(unpaid, {'Kharama', 'Wifi', 'Maintenance', 'Villa service'})
-        self.assertEqual((totals['paid'], totals['unpaid'], totals['unpaid_count'], totals['missing_count']), (Decimal('9500.00'), Decimal('2850.00'), 4, 0))
+        self.assertEqual((totals['total'], totals['paid'], totals['unpaid'], totals['unpaid_count']), (Decimal('12350.00'), Decimal('9500.00'), Decimal('2850.00'), 4))
+        self._rows(YEAR, MONTH)
+        self.assertEqual(Expense.objects.filter(villa=self.villa).count(), 5)  # opening it again adds nothing
 
-        # Staff mark their three paid; only the owner's own villa service stays unpaid.
+        # Staff tap Paid on their three: they now wait for the owner. The owner's own villa service stays unpaid.
         self.login('staff')
         for name in ('Kharama', 'Wifi', 'Maintenance'):
             expense = Expense.objects.get(recurring__category__name=name)
-            self.client.post(reverse('expenses:mark_paid', args=[expense.pk]), {'paid_on': date.today().isoformat(), 'payment_method': 'cash'})
+            self.assertEqual(self.client.post(reverse('expenses:quick_paid', args=[expense.pk])).status_code, 302)
         rows, totals = self._rows(YEAR, MONTH, 'staff')
-        self.assertEqual([n for n, r in rows.items() if r['status'] != 'paid'], ['Villa service'])
-        self.assertFalse(rows['Villa service']['can_pay'])  # staff cannot settle the owner's expense
-        self.assertEqual(totals['unpaid'], Decimal('300.00'))
+        self.assertEqual({n for n, r in rows.items() if r['status'] == 'to_verify'}, {'Kharama', 'Wifi', 'Maintenance'})
+        self.assertEqual(rows['Villa service']['status'] in ('unpaid', 'overdue', 'due_today'), True)
+        self.assertFalse(rows['Villa service']['expense'].can_pay)
+        self.assertEqual((totals['unpaid'], totals['to_verify_count']), (Decimal('300.00'), 3))
 
-        # The villa card flags what is still unpaid this month, and clears once the owner pays it.
+        # The owner verifies one tap at a time and pays the villa service; the card flags clear.
         self.login('owner')
         card = [v for v in self.client.get(reverse('villas:villa_list'), self.period).context['page_obj'] if v.pk == self.villa.pk][0]
-        self.assertEqual(card.fixed_pending, 1)
+        self.assertEqual((card.fixed_pending, card.to_verify), (1, 3))
+        for name in ('Kharama', 'Wifi', 'Maintenance'):
+            self.client.post(reverse('expenses:verify', args=[Expense.objects.get(recurring__category__name=name).pk]))
         service = Expense.objects.get(recurring__category__name='Villa service')
-        self.client.post(reverse('expenses:mark_paid', args=[service.pk]), {'paid_on': date.today().isoformat(), 'payment_method': 'bank_transfer'})
+        self.client.post(reverse('expenses:quick_paid', args=[service.pk]))
         card = [v for v in self.client.get(reverse('villas:villa_list'), self.period).context['page_obj'] if v.pk == self.villa.pk][0]
-        self.assertEqual(card.fixed_pending, 0)
+        self.assertEqual((card.fixed_pending, card.to_verify), (0, 0))
+        rows, _ = self._rows(YEAR, MONTH)
+        self.assertTrue(all(r['status'] == 'paid' for r in rows.values()))
 
-        # A different month is independent: all five again, none created or paid yet.
+        # A month still in the future is listed but never created ahead of time.
         next_year, next_month = (YEAR + 1, 1) if MONTH == 12 else (YEAR, MONTH + 1)
         rows, totals = self._rows(next_year, next_month)
         self.assertTrue(all(r['status'] == 'not_created' for r in rows.values()))
+        self.assertFalse(Expense.objects.filter(period=date(next_year, next_month, 1)).exists())
 
     def test_stopped_fixed_expense_still_shows_in_months_it_was_billed(self):
         self.set_up_fixed_expenses()

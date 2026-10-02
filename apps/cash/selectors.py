@@ -64,3 +64,23 @@ def staff_accountability(viewer, year, month) -> list[dict]:
         villas = villas_by_staff[user.pk]
         rows.append({'staff': user, 'villas': villas, 'collected': collected.get(user.pk, zero), 'expenses_paid': spent.get(user.pk, zero), 'handed_over': confirmed.get(user.pk, zero), 'awaiting_confirmation': pending.get(user.pk, zero), 'holding': collected.get(user.pk, zero) - spent.get(user.pk, zero) - confirmed.get(user.pk, zero), 'pending_rent_count': sum(pending_rent.get(v.pk, 0) for v in villas)})
     return rows
+
+
+def villa_cash_position(villa) -> dict:
+    """Where the cash collected in one villa is: still with staff, handed over, or spent on its expenses.
+
+    holding = cash collected − expenses staff paid − what the owner has confirmed receiving (net of those expenses).
+    """
+    zero = Decimal('0.00')
+    in_villa = Payment.objects.filter(method=Payment.Method.CASH, is_cancelled=False, invoice__partition__villa=villa)
+    collected = in_villa.aggregate(t=Sum('amount'))['t'] or zero
+    spent = Expense.objects.filter(villa=villa, status=Expense.Status.ACTIVE, paid_by=PaidBy.STAFF, paid_on__isnull=False).aggregate(t=Sum('amount'))['t'] or zero
+
+    def handed(status):
+        cash = Payment.objects.filter(handovers__status=status, invoice__partition__villa=villa).aggregate(t=Sum('amount'))['t'] or zero
+        netted = Expense.objects.filter(handovers__status=status, villa=villa).aggregate(t=Sum('amount'))['t'] or zero
+        return cash - netted
+
+    received = handed(CashHandover.Status.CONFIRMED)
+    awaiting = handed(CashHandover.Status.SUBMITTED)
+    return {'collected': collected, 'spent_by_staff': spent, 'received_by_owner': received, 'awaiting_confirmation': awaiting, 'holding': collected - spent - received}

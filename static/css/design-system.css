@@ -790,3 +790,7 @@ a.tile:hover { border-color: var(--accent); }
 .gallery__item { width: min(200px, 62vw); }
 .gallery__item img { aspect-ratio: 4 / 3; border-radius: var(--radius-sm); }
 @media (max-width: 480px) { .tile-grid { grid-template-columns: 1fr; } .grid--kpi-compact { grid-template-columns: repeat(3, 1fr); } .kpi__value { font-size: 17px; } }
+
+.inline-form { display: inline; margin: 0; }
+.stat-line { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); font-size: 13px; color: var(--text-secondary); margin-top: var(--space-2); }
+.stat-line b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
