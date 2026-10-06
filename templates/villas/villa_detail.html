@@ -11,7 +11,7 @@
         <a class="btn btn--primary" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>
         <a class="btn btn--ghost" href="{% url 'villas:partition_create' villa.pk %}">+ Partition</a>
         <a class="btn btn--ghost" href="{% url 'villas:villa_photo_add' villa.pk %}">+ Photo</a>
-        {% if is_admin %}<a class="btn btn--ghost" href="{% url 'villas:villa_archive' villa.pk %}">Archive</a>{% endif %}
+        {% if is_admin %}<a class="btn btn--ghost" href="{% url 'villas:villa_edit' villa.pk %}">Edit</a><a class="btn btn--ghost" href="{% url 'villas:villa_archive' villa.pk %}">Archive</a>{% endif %}
       </div>
     {% endif %}
   </div>

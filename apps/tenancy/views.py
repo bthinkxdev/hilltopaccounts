@@ -41,7 +41,11 @@ def tenant_create(request, partition_pk):
     if not (request.user.is_owner or selectors.can_manage_villas_and_tenants(request.user)):
         raise PermissionDenied('You cannot move in a tenant here.')
     if request.method == 'POST':
-        form = TenantForm(request.POST)
+        lock_rent = partition.rent is not None
+        data = request.POST.copy()
+        if lock_rent:
+            data['monthly_rent'] = str(partition.rent)
+        form = TenantForm(data, restrict_past_move_in=not request.user.is_owner, lock_rent=lock_rent)
         if form.is_valid():
             try:
                 tenant = create_tenant(partition=partition, created_by=request.user, **form.cleaned_data)
@@ -54,7 +58,7 @@ def tenant_create(request, partition_pk):
         initial = {}
         if partition.rent is not None:
             initial['monthly_rent'] = partition.rent
-        form = TenantForm(initial=initial)
+        form = TenantForm(initial=initial, restrict_past_move_in=not request.user.is_owner, lock_rent=partition.rent is not None)
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Move In Tenant — {partition.name}', 'submit_label': 'Move In', 'cancel_url': reverse('villas:partition_detail', args=[partition.pk]), 'breadcrumbs': [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk])), (partition.villa.name, reverse('villas:villa_detail', args=[partition.villa.pk])), (partition.name, reverse('villas:partition_detail', args=[partition.pk])), ('Move In Tenant', None)]})
 
 @login_required

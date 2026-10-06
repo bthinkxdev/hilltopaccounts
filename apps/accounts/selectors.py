@@ -47,10 +47,19 @@ def businesses_managed_by(user) -> QuerySet[Business]:
         return Business.objects.all()
     return Business.objects.filter(manager_assignments__user=user).distinct()
 
+LANDLORD_RENT_REGEX = r'(villa.*rent|landlord)'
+
+def is_field_staff(user) -> bool:
+    """Operational users (villa staff) who must not see owner-level finance such as villa rent, P&L or verification."""
+    return not user.is_owner and not can_view_financial_kpis(user)
+
 def expenses_visible_to(user) -> QuerySet[Expense]:
     if user.is_owner:
         return Expense.objects.all()
-    return Expense.objects.filter(Q(villa__in=villas_visible_to(user)) | Q(villa__isnull=True, business__in=businesses_managed_by(user))).distinct()
+    qs = Expense.objects.filter(Q(villa__in=villas_visible_to(user)) | Q(villa__isnull=True, business__in=businesses_managed_by(user))).distinct()
+    if is_field_staff(user):
+        qs = qs.exclude(category__name__iregex=LANDLORD_RENT_REGEX)
+    return qs
 
 def cash_handovers_visible_to(user) -> QuerySet[CashHandover]:
     if user.is_owner:

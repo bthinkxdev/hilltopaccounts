@@ -15,6 +15,8 @@ def submit_cash_handover(*, staff, payments, submitted_by, notes='', expenses=()
     declared = cash collections − staff-paid expenses. Every selected record is locked to this handover
     (until it is rejected), so nothing can be handed over or claimed twice.
     """
+    if staff.is_owner:
+        raise DomainError('Owner collections go straight to owner funds and are not handed over.')
     payments = list(payments)
     expenses = list(expenses)
     if not payments:

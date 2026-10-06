@@ -11,7 +11,7 @@
         {% if computed_outstanding > 0 %}
           <a class="btn btn--primary" href="{% url 'billing:payment_record' invoice.pk %}">Record Payment</a>
         {% endif %}
-        <a class="btn btn--ghost" href="{% url 'billing:invoice_cancel' invoice.pk %}">Cancel Invoice</a>
+        {% if computed_paid == 0 %}<a class="btn btn--ghost" href="{% url 'billing:invoice_cancel' invoice.pk %}">Cancel Invoice</a>{% endif %}
       </div>
     {% endif %}
   </div>

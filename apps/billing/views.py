@@ -122,9 +122,13 @@ def invoice_cancel(request, pk):
     if request.method == 'POST':
         form = ReasonForm(request.POST)
         if form.is_valid():
-            cancel_invoice(invoice=invoice, cancelled_by=request.user, reason=form.cleaned_data['reason'])
-            messages.success(request, f'Invoice {invoice.invoice_number} cancelled.')
-            return redirect('billing:invoice_detail', pk=invoice.pk)
+            try:
+                cancel_invoice(invoice=invoice, cancelled_by=request.user, reason=form.cleaned_data['reason'])
+            except DomainError as exc:
+                form.add_error(None, str(exc))
+            else:
+                messages.success(request, f'Invoice {invoice.invoice_number} cancelled.')
+                return redirect('billing:invoice_detail', pk=invoice.pk)
     else:
         form = ReasonForm()
     return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Cancel {invoice.invoice_number}?', 'message': 'The invoice stays on record but is excluded from every financial total.', 'cancel_url': reverse('billing:invoice_detail', args=[invoice.pk])})
@@ -165,9 +169,13 @@ def payment_cancel(request, pk):
     if request.method == 'POST':
         form = ReasonForm(request.POST)
         if form.is_valid():
-            cancel_payment(payment=payment, cancelled_by=request.user, reason=form.cleaned_data['reason'])
-            messages.success(request, 'Payment cancelled.')
-            return redirect('billing:invoice_detail', pk=payment.invoice.pk)
+            try:
+                cancel_payment(payment=payment, cancelled_by=request.user, reason=form.cleaned_data['reason'])
+            except DomainError as exc:
+                form.add_error(None, str(exc))
+            else:
+                messages.success(request, 'Payment cancelled.')
+                return redirect('billing:invoice_detail', pk=payment.invoice.pk)
     else:
         form = ReasonForm()
     return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Cancel payment of QAR {payment.amount}?', 'message': 'The original record is preserved and marked cancelled — never edited or deleted.', 'cancel_url': reverse('billing:invoice_detail', args=[payment.invoice.pk])})

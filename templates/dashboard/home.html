@@ -38,10 +38,10 @@
   <div class="card">
     <div class="card__title">Overview</div>
     <div class="grid--kpi">
-      <div class="kpi">
+      {% if not staff_view %}<div class="kpi">
         <div class="kpi__label">Businesses</div>
         <div class="kpi__value">{{ business_count }}</div>
-      </div>
+      </div>{% endif %}
       <div class="kpi">
         <div class="kpi__label">Villas</div>
         <div class="kpi__value">{{ villa_count }}</div>
@@ -58,10 +58,21 @@
         <div class="kpi__label">Vacant</div>
         <div class="kpi__value kpi__value--warning">{{ vacant_count }}</div>
       </div>
+      {% if staff_view %}
       <div class="kpi">
-        <div class="kpi__label">My outstanding cash</div>
+        <div class="kpi__label">Cash in hand</div>
         <div class="kpi__value {% if outstanding_cash > 0 %}kpi__value--warning{% endif %}">QAR {{ outstanding_cash }}</div>
       </div>
+      {% elif can_view_financials %}
+      <div class="kpi">
+        <div class="kpi__label">Cash held by staff</div>
+        <div class="kpi__value {% if cash_held_by_staff > 0 %}kpi__value--warning{% endif %}">QAR {{ cash_held_by_staff }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Pending staff handovers</div>
+        <div class="kpi__value {% if pending_staff_handovers > 0 %}kpi__value--warning{% endif %}">QAR {{ pending_staff_handovers }}</div>
+      </div>
+      {% endif %}
     </div>
   </div>
 
@@ -115,7 +126,7 @@
   {% endif %}
 
   <div class="grid grid--2">
-    <div class="card">
+    {% if not staff_view %}<div class="card">
       <div class="card__title">Businesses</div>
       {% if businesses %}
         {% for business in businesses %}
@@ -130,7 +141,7 @@
           <p>Businesses you're assigned to will appear here.</p>
         </div>
       {% endif %}
-    </div>
+    </div>{% endif %}
 
     <div class="card">
       <div class="card__title">Villas</div>

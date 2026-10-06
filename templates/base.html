@@ -31,7 +31,7 @@
 
         {% if nav_has_scope %}
           <div class="sidebar__section">Organization</div>
-          <a class="sidebar__link{% if request.resolver_match.app_name == 'businesses' %} sidebar__link--active{% endif %}" href="{% url 'businesses:list' %}">Businesses</a>
+          {% if not nav_is_field_staff %}<a class="sidebar__link{% if request.resolver_match.app_name == 'businesses' %} sidebar__link--active{% endif %}" href="{% url 'businesses:list' %}">Businesses</a>{% endif %}
           <a class="sidebar__link{% if request.resolver_match.url_name == 'villa_list' or request.resolver_match.url_name == 'villa_detail' or request.resolver_match.url_name == 'partition_detail' %} sidebar__link--active{% endif %}" href="{% url 'villas:villa_list' %}">Villas</a>
 
           <div class="sidebar__section">Finance</div>

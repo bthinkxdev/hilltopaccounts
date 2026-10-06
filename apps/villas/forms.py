@@ -26,6 +26,22 @@ class VillaForm(forms.Form):
         if business_queryset is not None:
             self.fields['business'].queryset = business_queryset
 
+    def clean(self):
+        cleaned = super().clean()
+        start, end = cleaned.get('contract_start'), cleaned.get('contract_end')
+        if start and end and end < start:
+            self.add_error('contract_end', 'Contract end date cannot be before the start date.')
+        return cleaned
+
+class VillaEditForm(forms.Form):
+    name = forms.CharField(max_length=200)
+    address = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2}))
+    landlord_name = forms.CharField(required=False, max_length=200)
+    landlord_contact = forms.CharField(required=False, max_length=200)
+    contract_start = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
+    contract_end = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
+    clean = VillaForm.clean
+
 class PartitionForm(forms.Form):
     villa = forms.ModelChoiceField(queryset=Villa.objects.none(), empty_label='Select a villa…')
     name = forms.CharField(max_length=100, widget=forms.TextInput(attrs={'placeholder': 'e.g. Room 1'}))

@@ -1,6 +1,6 @@
 from datetime import date
 
-def period_context(request, today=None) -> dict:
+def period_context(request, today=None, allow_future=False) -> dict:
     """Validated month/year (or whole-year) period from the query string, plus what the picker needs to render.
 
     Bad or missing input falls back to the current month, so a hand-edited URL can never break a page.
@@ -17,6 +17,10 @@ def period_context(request, today=None) -> dict:
         year = today.year
     if not 1 <= month <= 12:
         month = today.month
+    if not allow_future and (year, month if period == 'month' else 1) > (today.year, today.month if period == 'month' else 1):
+        from django.contrib import messages
+        messages.warning(request, 'Future periods are not available — showing the current period instead.')
+        year, month = today.year, today.month
     start, end = period_bounds(year, month if period == 'month' else None)
     label = str(year) if period == 'year' else f'{start:%B %Y}'
-    return {'period': period, 'year': year, 'month': month, 'period_start': start, 'period_end': end, 'period_label': label, 'month_choices': [(m, date(2000, m, 1).strftime('%B')) for m in range(1, 13)], 'year_choices': list(range(today.year - 4, today.year + 2))}
+    return {'period': period, 'year': year, 'month': month, 'period_start': start, 'period_end': end, 'period_label': label, 'month_choices': [(m, date(2000, m, 1).strftime('%B')) for m in range(1, 13)], 'year_choices': list(range(today.year - 4, today.year + (2 if allow_future else 1)))}

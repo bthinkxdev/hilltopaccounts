@@ -5,6 +5,7 @@ urlpatterns = [
     path('villas/', views.villa_list, name='villa_list'),
     path('villas/new/', views.villa_create, name='villa_create'),
     path('villas/<int:pk>/', views.villa_detail, name='villa_detail'),
+    path('villas/<int:pk>/edit/', views.villa_edit, name='villa_edit'),
     path('villas/<int:pk>/archive/', views.villa_archive, name='villa_archive'),
     path('villas/<int:villa_pk>/photos/add/', views.photo_add, name='villa_photo_add'),
     path('partitions/<int:partition_pk>/photos/add/', views.photo_add, name='partition_photo_add'),

@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from decimal import Decimal
 from django.contrib import messages
@@ -10,15 +11,16 @@ from apps.accounts import selectors
 from apps.accounts.models import Assignment, User
 from apps.businesses.forms import ArchiveReasonForm
 from apps.businesses.models import Business
+from apps.shared.exceptions import DomainError
 from apps.shared.forms import ReasonForm
 from apps.shared.pagination import paginate_queryset
 from apps.shared.periods import period_context
 from django.db import transaction
 from apps.expenses.services import create_recurring_expense, get_or_create_category
-from .forms import FIXED_EXPENSE_DEFAULTS, PartitionForm, PhotoForm, VillaForm
+from .forms import FIXED_EXPENSE_DEFAULTS, PartitionForm, PhotoForm, VillaEditForm, VillaForm
 from apps.expenses.models import RecurringExpense
 from .models import Photo
-from .services import add_photo, archive_partition, archive_villa, create_partition, create_villa, delete_photo, update_partition
+from .services import add_photo, archive_partition, archive_villa, create_partition, create_villa, delete_photo, update_partition, update_villa
 
 def _first_photo_by(photos, key):
     """Map group id -> first photo, from a single already-fetched list of photos."""
@@ -98,7 +100,7 @@ def villa_detail(request, pk):
     from apps.tenancy.models import Tenant
     today = date.today()
     villa = get_object_or_404(selectors.villas_visible_to(request.user).select_related('business'), pk=pk)
-    period = period_context(request, today)
+    period = period_context(request, today, allow_future=True)
     start, end = period['period_start'], period['period_end']
     # Fixed expenses show up by themselves every month (idempotent, system-attributed) — nobody re-adds them.
     for month in ([period['month']] if period['period'] == 'month' else range(1, 13)):
@@ -147,12 +149,17 @@ def villa_detail(request, pk):
                     sub['unpaid_count'] += 1
         return sub
 
+    if selectors.is_field_staff(request.user):
+        hide_rent = lambda t: re.search(selectors.LANDLORD_RENT_REGEX, t.category.name, re.I)
+        fixed_rows = [r for r in fixed_rows if not hide_rent(r['template'])] if fixed_rows is not None else None
     owner_fixed_rows = [r for r in (fixed_rows or []) if getattr(r['template'], 'paid_by', '') == 'owner'] if fixed_rows is not None else None
     staff_fixed_rows = [r for r in (fixed_rows or []) if getattr(r['template'], 'paid_by', '') == 'staff'] if fixed_rows is not None else None
     owner_fixed_totals = compute_fixed_subset(owner_fixed_rows) if owner_fixed_rows is not None else None
     staff_fixed_totals = compute_fixed_subset(staff_fixed_rows) if staff_fixed_rows is not None else None
 
     fixed_templates = list(RecurringExpense.objects.filter(villa=villa, is_active=True).select_related('category')) if period['period'] == 'year' else []
+    if selectors.is_field_staff(request.user):
+        fixed_templates = [t for t in fixed_templates if not re.search(selectors.LANDLORD_RENT_REGEX, t.category.name, re.I)]
     owner_fixed_templates = [t for t in fixed_templates if t.paid_by == 'owner']
     staff_fixed_templates = [t for t in fixed_templates if t.paid_by == 'staff']
 
@@ -224,6 +231,21 @@ def villa_create(request):
     else:
         form = VillaForm(business_queryset=manageable_businesses, initial=initial)
     return render(request, 'components/form_page.html', {'form': form, 'title': 'Add Villa', 'cancel_url': reverse('villas:villa_list'), 'breadcrumbs': [('Villas', reverse('villas:villa_list')), ('New Villa', None)]})
+
+@login_required
+def villa_edit(request, pk):
+    villa = get_object_or_404(selectors.villas_visible_to(request.user).select_related('business'), pk=pk)
+    if not (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)):
+        raise PermissionDenied('You cannot edit this villa.')
+    if request.method == 'POST':
+        form = VillaEditForm(request.POST)
+        if form.is_valid():
+            update_villa(villa=villa, updated_by=request.user, **form.cleaned_data)
+            messages.success(request, f'Villa “{villa.name}” updated.')
+            return redirect('villas:villa_detail', pk=villa.pk)
+    else:
+        form = VillaEditForm(initial={f: getattr(villa, f) for f in VillaEditForm.base_fields})
+    return render(request, 'components/form_page.html', {'form': form, 'title': f'Edit {villa.name}', 'submit_label': 'Save Changes', 'cancel_url': reverse('villas:villa_detail', args=[villa.pk]), 'breadcrumbs': [('Villas', reverse('villas:villa_list')), (villa.name, reverse('villas:villa_detail', args=[villa.pk])), ('Edit', None)]})
 
 @login_required
 def villa_archive(request, pk):
@@ -366,9 +388,13 @@ def partition_archive(request, pk):
     if request.method == 'POST':
         form = ArchiveReasonForm(request.POST)
         if form.is_valid():
-            archive_partition(partition=partition, archived_by=request.user, reason=form.cleaned_data['reason'])
-            messages.success(request, f'Partition “{partition.name}” archived.')
-            return redirect('villas:villa_detail', pk=partition.villa.pk)
+            try:
+                archive_partition(partition=partition, archived_by=request.user, reason=form.cleaned_data['reason'])
+            except DomainError as exc:
+                form.add_error(None, str(exc))
+            else:
+                messages.success(request, f'Partition “{partition.name}” archived.')
+                return redirect('villas:villa_detail', pk=partition.villa.pk)
     else:
         form = ArchiveReasonForm()
     return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Archive {partition.name}?', 'message': 'This partition will be archived, not deleted.', 'cancel_url': reverse('villas:partition_detail', args=[partition.pk])})

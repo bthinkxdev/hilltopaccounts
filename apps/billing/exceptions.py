@@ -14,3 +14,12 @@ class PaymentExceedsOutstanding(DomainError):
 
 class NothingToCollect(DomainError):
     pass
+
+class NothingToBill(DomainError):
+    pass
+
+class InvoiceHasPayments(DomainError):
+    pass
+
+class PaymentInHandover(DomainError):
+    pass

@@ -47,7 +47,7 @@ def expense_list(request):
         expense.can_verify = scope.can_verify_expense(expense)
         expense.can_edit = expense.can_manage and expense.status == 'active' and expense.paid_on is None
     villas = selectors.villas_visible_to(request.user).filter(is_archived=False).select_related('business')
-    context = {'page_obj': page_obj, 'status': status, 'due': due, 'due_choices': DueBucket.CHOICES, 'villas': villas, 'selected_villa': villa_id, 'summary': expense_selectors.due_summary(summary_base, today), 'can_add': selectors.manageable_villas(request.user).filter(is_archived=False).exists(), 'breadcrumbs': [('Expenses', None)]}
+    context = {'page_obj': page_obj, 'status': status, 'due': due, 'due_choices': DueBucket.CHOICES, 'is_field_staff': selectors.is_field_staff(request.user), 'villas': villas, 'selected_villa': villa_id, 'summary': expense_selectors.due_summary(summary_base, today), 'can_add': selectors.manageable_villas(request.user).filter(is_archived=False).exists(), 'breadcrumbs': [('Expenses', None)]}
     return render(request, 'expenses/list.html', context)
 
 def _expense_form_context(request, form, villa_pk, visible_expenses):

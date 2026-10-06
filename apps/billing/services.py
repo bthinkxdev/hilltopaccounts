@@ -5,13 +5,28 @@ from apps.accounts import selectors as access
 from apps.audit import services as audit_services
 from apps.audit.models import Action
 from . import selectors
-from .exceptions import DuplicateInvoicePeriod, InvoiceCancelled, NothingToCollect, PartitionVacant, PaymentExceedsOutstanding
+from .exceptions import DuplicateInvoicePeriod, InvoiceCancelled, InvoiceHasPayments, NothingToBill, NothingToCollect, PartitionVacant, PaymentExceedsOutstanding, PaymentInHandover
 from .models import Charge, ChargeType, Invoice, InvoiceItem, Payment
 CHARGE_TRACKED_FIELDS = ['charge_type_id', 'description', 'amount', 'frequency', 'start_date', 'end_date', 'is_active']
 
 def get_or_create_charge_type(*, name) -> ChargeType:
     charge_type, _ = ChargeType.objects.get_or_create(name=name)
     return charge_type
+
+def ensure_rent_charge(*, partition, tenant, created_by):
+    """Create the tenant's monthly Rent charge unless the partition already has an active one."""
+    rent_type = get_or_create_charge_type(name='Rent')
+    if Charge.objects.filter(partition=partition, charge_type=rent_type, is_active=True).exists():
+        return None
+    return create_charge(partition=partition, charge_type=rent_type, amount=tenant.monthly_rent, start_date=tenant.move_in_date, created_by=created_by, frequency=Charge.Frequency.MONTHLY)
+
+def close_future_charges(*, partition, move_out_date, closed_by):
+    """Move-out: end running monthly charges at the move-out date and deactivate anything starting after it."""
+    for charge in Charge.objects.filter(partition=partition, is_active=True):
+        if charge.start_date > move_out_date:
+            cancel_charge(charge=charge, cancelled_by=closed_by, reason='Tenant moved out')
+        elif charge.frequency == Charge.Frequency.MONTHLY and (charge.end_date is None or charge.end_date > move_out_date):
+            update_charge(charge=charge, updated_by=closed_by, end_date=move_out_date)
 
 def _charge_snapshot(charge: Charge) -> dict:
     return {f: str(getattr(charge, f)) for f in CHARGE_TRACKED_FIELDS}
@@ -49,7 +64,7 @@ def generate_monthly_invoice(*, partition, billing_period_start, billing_period_
     tenant = partition.current_tenant
     if tenant is None:
         raise PartitionVacant(f'{partition} has no active tenant — nothing to bill.')
-    if Invoice.objects.filter(partition=partition, billing_period_start=billing_period_start, billing_period_end=billing_period_end).exists():
+    if Invoice.objects.filter(partition=partition, billing_period_start=billing_period_start, billing_period_end=billing_period_end).exists() or Invoice.objects.filter(partition=partition, is_cancelled=False, billing_period_start__lte=billing_period_end, billing_period_end__gte=billing_period_start).exists():
         raise DuplicateInvoicePeriod(f'{partition} already has an invoice for {billing_period_start}–{billing_period_end}.')
     active_charges = Charge.objects.filter(partition=partition, is_active=True, start_date__lte=billing_period_end).exclude(end_date__lt=billing_period_start)
     # A charge already billed on a live (non-cancelled) invoice must not be billed again:
@@ -58,16 +73,23 @@ def generate_monthly_invoice(*, partition, billing_period_start, billing_period_
     active_charges = active_charges.exclude(frequency=Charge.Frequency.ONE_TIME, invoice_items__in=live_items)
     overlapping_items = live_items.filter(invoice__billing_period_start__lte=billing_period_end, invoice__billing_period_end__gte=billing_period_start)
     active_charges = active_charges.exclude(invoice_items__in=overlapping_items).distinct()
+    charges = list(active_charges.select_related('charge_type'))
+    if not any(charge.amount > 0 for charge in charges):
+        raise NothingToBill(f'{partition} has no billable charge for {billing_period_start}–{billing_period_end}. Add or activate a rent charge first.')
     with transaction.atomic():
         invoice = Invoice(partition=partition, tenant=tenant, billing_period_start=billing_period_start, billing_period_end=billing_period_end, issue_date=issue_date, due_date=due_date, notes=notes, created_by=generated_by)
         invoice.full_clean()
         invoice.save()
-        for charge in active_charges:
+        for charge in charges:
             InvoiceItem.objects.create(invoice=invoice, charge=charge, description=charge.description or charge.charge_type.name, amount=charge.amount)
-        audit_services.log(user=generated_by, action=Action.INVOICE_CREATED, obj=invoice, business=partition.villa.business, villa=partition.villa, new_value={'invoice_number': invoice.invoice_number, 'tenant': tenant.name, 'total': str(selectors.invoice_total(invoice)), 'line_items': active_charges.count()})
+        audit_services.log(user=generated_by, action=Action.INVOICE_CREATED, obj=invoice, business=partition.villa.business, villa=partition.villa, new_value={'invoice_number': invoice.invoice_number, 'tenant': tenant.name, 'total': str(selectors.invoice_total(invoice)), 'line_items': len(charges)})
     return invoice
 
 def cancel_invoice(*, invoice: Invoice, cancelled_by, reason='') -> Invoice:
+    if invoice.is_cancelled:
+        raise InvoiceCancelled(f'{invoice} is already cancelled.')
+    if invoice.payments.filter(is_cancelled=False).exists():
+        raise InvoiceHasPayments(f'{invoice} has recorded payments and cannot be cancelled. Reverse the payments first.')
     with transaction.atomic():
         invoice.is_cancelled = True
         invoice.updated_by = cancelled_by
@@ -92,6 +114,11 @@ def record_payment(*, invoice: Invoice, amount, method, collected_by, collected_
     return payment
 
 def cancel_payment(*, payment: Payment, cancelled_by, reason) -> Payment:
+    from apps.cash.models import CashHandover
+    if payment.handovers.filter(status=CashHandover.Status.CONFIRMED).exists():
+        raise PaymentInHandover(f'{payment} is part of a confirmed cash handover and cannot be cancelled directly. Use a controlled reversal.')
+    if payment.handovers.filter(status=CashHandover.Status.SUBMITTED).exists():
+        raise PaymentInHandover(f'{payment} is part of a pending cash handover. Reject the handover first.')
     with transaction.atomic():
         payment.is_cancelled = True
         payment.cancelled_reason = reason
@@ -128,7 +155,7 @@ def collect_rent(*, partition, year, month, method, collected_by) -> Payment:
         invoice = Invoice.objects.filter(partition=locked, billing_period_start=start, billing_period_end=end, is_cancelled=False).first()
         if invoice is None:
             if not Charge.objects.filter(partition=locked, is_active=True).exists():
-                create_charge(partition=locked, charge_type=get_or_create_charge_type(name='Rent'), amount=tenant.monthly_rent, start_date=min(tenant.move_in_date, start), created_by=collected_by)
+                ensure_rent_charge(partition=locked, tenant=tenant, created_by=collected_by)
             invoice = generate_monthly_invoice(partition=locked, billing_period_start=start, billing_period_end=end, issue_date=start, due_date=min(end, start + timedelta(days=9)), generated_by=collected_by)
         outstanding = selectors.invoice_outstanding(invoice)
         if outstanding <= 0:

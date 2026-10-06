@@ -1,3 +1,4 @@
+from datetime import date
 from django.test import TestCase
 from django.urls import reverse
 from apps.accounts.models import Assignment, User
@@ -31,9 +32,6 @@ class OwnerFullJourneyTests(TestCase):
         r = self.client.post(reverse('tenancy:create', args=[partition.pk]), {'name': 'Ahmed Ali', 'mobile': '+974 5555 1234', 'move_in_date': '2026-01-01', 'monthly_rent': '3000.00', 'deposit': '3000.00'})
         tenant = Tenant.objects.get(name='Ahmed Ali')
         self.assertRedirects(r, reverse('tenancy:detail', args=[tenant.pk]))
-        charge_type = ChargeType.objects.create(name='Rent')
-        r = self.client.post(reverse('billing:charge_create', args=[partition.pk]), {'charge_type': charge_type.pk, 'amount': '3000.00', 'frequency': 'monthly', 'start_date': '2026-01-01'})
-        self.assertRedirects(r, reverse('villas:partition_detail', args=[partition.pk]))
         r = self.client.post(reverse('billing:invoice_generate', args=[partition.pk]), {'billing_period_start': '2026-02-01', 'billing_period_end': '2026-02-28', 'issue_date': '2026-02-01', 'due_date': '2026-02-10'})
         invoice = Invoice.objects.get(partition=partition)
         self.assertRedirects(r, reverse('billing:invoice_detail', args=[invoice.pk]))
@@ -49,22 +47,15 @@ class OwnerFullJourneyTests(TestCase):
         expense = Expense.objects.get(business=business)
         r = self.client.get(reverse('dashboard:home'))
         self.assertContains(r, 'Financial summary')
-        self.assertContains(r, 'QAR 3000.00')
-        r = self.client.post(reverse('cash:handover_submit'), {'payments': [payment.pk]})
-        handover = CashHandover.objects.get(staff=self.owner)
-        self.assertRedirects(r, reverse('cash:handover_detail', args=[handover.pk]))
-        finance_user = User.objects.create_user('finance', is_owner=True)
-        self.client.force_login(finance_user)
-        r = self.client.post(reverse('cash:handover_confirm', args=[handover.pk]), {'confirmed_amount': '3000.00'})
-        self.assertRedirects(r, reverse('cash:handover_detail', args=[handover.pk]))
-        handover.refresh_from_db()
-        self.assertEqual(handover.status, CashHandover.Status.CONFIRMED)
-        self.assertEqual(handover.discrepancy, 0)
+        self.assertContains(r, 'QAR 3000')
+        # Owner collections go straight to owner funds: no handover is possible.
+        self.client.post(reverse('cash:handover_submit'), {'payments': [payment.pk]})
+        self.assertFalse(CashHandover.objects.filter(staff=self.owner).exists())
         self.client.force_login(self.owner)
         r = self.client.get(reverse('audit:list'))
         self.assertEqual(r.status_code, 200)
         actions_logged = set(AuditLog.objects.values_list('action', flat=True))
-        for expected in [Action.BUSINESS_CREATED, Action.VILLA_CREATED, Action.PARTITION_CREATED, Action.TENANT_CREATED, Action.CHARGE_CREATED, Action.INVOICE_CREATED, Action.COLLECTION_CREATED, Action.EXPENSE_CREATED, Action.CASH_HANDOVER_SUBMITTED, Action.CASH_HANDOVER_CONFIRMED]:
+        for expected in [Action.BUSINESS_CREATED, Action.VILLA_CREATED, Action.PARTITION_CREATED, Action.TENANT_CREATED, Action.CHARGE_CREATED, Action.INVOICE_CREATED, Action.COLLECTION_CREATED, Action.EXPENSE_CREATED]:
             self.assertIn(expected, actions_logged, f'{expected} was not audited')
 
 class StaffJourneyAndAccessControlTests(TestCase):
@@ -108,12 +99,10 @@ class StaffJourneyAndAccessControlTests(TestCase):
         self.assertEqual(r.status_code, 403)
 
     def test_staff_can_move_in_tenant_and_record_collection(self):
-        r = self.client.post(reverse('tenancy:create', args=[self.partition.pk]), {'name': 'Tenant X', 'move_in_date': '2026-01-01', 'monthly_rent': '1000.00'})
+        r = self.client.post(reverse('tenancy:create', args=[self.partition.pk]), {'name': 'Tenant X', 'move_in_date': date.today().isoformat(), 'monthly_rent': '1000.00'})
         tenant = Tenant.objects.get(name='Tenant X')
         self.assertRedirects(r, reverse('tenancy:detail', args=[tenant.pk]))
-        charge_type = ChargeType.objects.create(name='Rent')
-        self.client.post(reverse('billing:charge_create', args=[self.partition.pk]), {'charge_type': charge_type.pk, 'amount': '1000.00', 'frequency': 'monthly', 'start_date': '2026-01-01'})
-        self.client.post(reverse('billing:invoice_generate', args=[self.partition.pk]), {'billing_period_start': '2026-02-01', 'billing_period_end': '2026-02-28', 'issue_date': '2026-02-01', 'due_date': '2026-02-10'})
+        self.client.post(reverse('billing:invoice_generate', args=[self.partition.pk]), {'billing_period_start': (date.today().replace(day=1)).isoformat(), 'billing_period_end': date.today().replace(day=28).isoformat(), 'issue_date': date.today().replace(day=1).isoformat(), 'due_date': date.today().replace(day=28).isoformat()})
         invoice = Invoice.objects.get(partition=self.partition)
         r = self.client.post(reverse('billing:payment_record', args=[invoice.pk]), {'amount': '1000.00', 'method': 'cash', 'collected_at': '2026-02-05'})
         self.assertRedirects(r, reverse('billing:invoice_detail', args=[invoice.pk]))
@@ -125,8 +114,6 @@ class StaffJourneyAndAccessControlTests(TestCase):
         from apps.tenancy.services import create_tenant
         from apps.billing.services import create_charge
         tenant = create_tenant(partition=self.partition, name='T', move_in_date='2026-01-01', monthly_rent=1000, created_by=self.owner)
-        charge_type = ChargeType.objects.create(name='Rent')
-        create_charge(partition=self.partition, charge_type=charge_type, amount=1000, start_date='2026-01-01', created_by=self.owner)
         invoice = generate_monthly_invoice(partition=self.partition, billing_period_start='2026-02-01', billing_period_end='2026-02-28', issue_date='2026-02-01', due_date='2026-02-10', generated_by=self.owner)
         payment = record_payment(invoice=invoice, amount=1000, method='cash', collected_by=self.staff, collected_at='2026-02-05', created_by=self.staff)
         r = self.client.post(reverse('cash:handover_submit'), {'payments': [payment.pk]})

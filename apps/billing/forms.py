@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from django import forms
 from .models import ChargeType, Payment
@@ -26,6 +27,12 @@ class InvoiceGenerateForm(forms.Form):
         end = cleaned.get('billing_period_end')
         if start and end and (end < start):
             self.add_error('billing_period_end', 'Billing period end must be after the start.')
+        issue = cleaned.get('issue_date')
+        due = cleaned.get('due_date')
+        if issue and issue > date.today():
+            self.add_error('issue_date', 'Issue date cannot be in the future.')
+        if issue and due and due < issue:
+            self.add_error('due_date', 'Due date cannot be before the issue date.')
         return cleaned
 
 class PaymentForm(forms.Form):

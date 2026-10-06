@@ -10,8 +10,8 @@ from apps.businesses.services import create_business
 from apps.tenancy.services import create_tenant
 from apps.villas.services import create_partition, create_villa
 from . import selectors
-from .exceptions import DuplicateInvoicePeriod, InvoiceCancelled, PartitionVacant, PaymentExceedsOutstanding
-from .models import Invoice
+from .exceptions import DuplicateInvoicePeriod, InvoiceCancelled, InvoiceHasPayments, NothingToBill, PartitionVacant, PaymentExceedsOutstanding
+from .models import Charge, Invoice
 from .services import cancel_invoice, cancel_payment, correct_payment, create_charge, generate_monthly_invoice, get_or_create_charge_type, record_payment
 FAR_FUTURE_DUE_DATE = date.today() + timedelta(days=3650)
 
@@ -23,6 +23,7 @@ class BillingTestBase(TestCase):
         self.villa = create_villa(business=self.business, name='Villa 1', created_by=self.owner)
         self.partition = create_partition(villa=self.villa, name='Unit 1', created_by=self.owner)
         self.tenant = create_tenant(partition=self.partition, name='Ahmed Ali', move_in_date=date(2026, 1, 1), monthly_rent=Decimal('3000.00'), created_by=self.owner)
+        Charge.objects.filter(partition=self.partition).delete()  # tests build their own charges; tenant creation auto-adds Rent
         self.rent_type = get_or_create_charge_type(name='Rent')
         self.electricity_type = get_or_create_charge_type(name='Electricity')
 
@@ -58,13 +59,14 @@ class InvoiceGenerationTests(BillingTestBase):
 
     def test_inactive_charge_is_excluded(self):
         create_charge(partition=self.partition, charge_type=self.rent_type, amount=Decimal('3000.00'), start_date=date(2026, 1, 1), created_by=self.owner, is_active=False)
-        invoice = self._generate_invoice()
-        self.assertEqual(invoice.items.count(), 0)
+        with self.assertRaises(NothingToBill):
+            self._generate_invoice()
+        self.assertFalse(Invoice.objects.exists())
 
     def test_charge_created_after_billing_period_is_excluded(self):
         create_charge(partition=self.partition, charge_type=self.rent_type, amount=Decimal('3000.00'), start_date=date(2026, 3, 1), created_by=self.owner)
-        invoice = self._generate_invoice()
-        self.assertEqual(invoice.items.count(), 0)
+        with self.assertRaises(NothingToBill):
+            self._generate_invoice()
 
     def test_paid_one_time_charge_is_not_billed_again(self):
         wifi = get_or_create_charge_type(name='Wifi')
@@ -86,8 +88,8 @@ class InvoiceGenerationTests(BillingTestBase):
         self._generate_invoice()
         march = self._generate_invoice(billing_period_start=date(2026, 3, 1), billing_period_end=date(2026, 3, 31))
         self.assertEqual(march.items.count(), 1)
-        overlap = self._generate_invoice(billing_period_start=date(2026, 3, 15), billing_period_end=date(2026, 4, 14))
-        self.assertEqual(overlap.items.count(), 0)
+        with self.assertRaises(DuplicateInvoicePeriod):
+            self._generate_invoice(billing_period_start=date(2026, 3, 15), billing_period_end=date(2026, 4, 14))
 
     def test_cannot_bill_a_vacant_partition(self):
         vacant = create_partition(villa=self.villa, name='Unit 2', created_by=self.owner)
@@ -95,11 +97,13 @@ class InvoiceGenerationTests(BillingTestBase):
             generate_monthly_invoice(partition=vacant, billing_period_start=date(2026, 2, 1), billing_period_end=date(2026, 2, 28), issue_date=date(2026, 2, 1), due_date=FAR_FUTURE_DUE_DATE, generated_by=self.owner)
 
     def test_duplicate_billing_period_is_rejected(self):
+        create_charge(partition=self.partition, charge_type=self.rent_type, amount=Decimal('3000.00'), start_date=date(2026, 1, 1), created_by=self.owner)
         self._generate_invoice()
         with self.assertRaises(DuplicateInvoicePeriod):
             self._generate_invoice()
 
     def test_invoice_generation_is_audited(self):
+        create_charge(partition=self.partition, charge_type=self.rent_type, amount=Decimal('3000.00'), start_date=date(2026, 1, 1), created_by=self.owner)
         self._generate_invoice()
         self.assertTrue(AuditLog.objects.filter(action=Action.INVOICE_CREATED).exists())
 
@@ -244,3 +248,48 @@ class BillingRBACTests(BillingTestBase):
     def test_owner_sees_everything(self):
         self.assertEqual(invoices_visible_to(self.owner).count(), 2)
         self.assertEqual(payments_visible_to(self.owner).count(), 2)
+
+
+class RentAutomationAndGuardTests(TestCase):
+
+    def setUp(self):
+        self.owner = User.objects.create_user('owner2', is_owner=True)
+        business = create_business(name='Business Z', created_by=self.owner)
+        villa = create_villa(business=business, name='Villa Z', created_by=self.owner)
+        self.partition = create_partition(villa=villa, name='Unit Z', created_by=self.owner)
+        self.tenant = create_tenant(partition=self.partition, name='Zed', move_in_date=date(2026, 1, 1), monthly_rent=Decimal('1200.00'), created_by=self.owner)
+
+    def _invoice(self):
+        return generate_monthly_invoice(partition=self.partition, billing_period_start=date(2026, 2, 1), billing_period_end=date(2026, 2, 28), issue_date=date(2026, 2, 1), due_date=date(2026, 2, 10), generated_by=self.owner)
+
+    def test_tenant_creation_creates_rent_charge_and_invoice_total(self):
+        charge = Charge.objects.get(partition=self.partition)
+        self.assertEqual((charge.charge_type.name, charge.amount), ('Rent', Decimal('1200.00')))
+        self.assertEqual(selectors.invoice_total(self._invoice()), Decimal('1200.00'))
+
+    def test_no_zero_invoice_without_charge(self):
+        Charge.objects.all().delete()
+        with self.assertRaises(NothingToBill):
+            self._invoice()
+        self.assertFalse(Invoice.objects.exists())
+
+    def test_invoice_with_payment_cannot_be_cancelled(self):
+        invoice = self._invoice()
+        record_payment(invoice=invoice, amount=Decimal('100'), method='cash', collected_by=self.owner, collected_at=date(2026, 2, 2), created_by=self.owner)
+        with self.assertRaises(InvoiceHasPayments):
+            cancel_invoice(invoice=invoice, cancelled_by=self.owner, reason='x')
+
+    def test_payment_in_handover_cannot_be_cancelled(self):
+        from apps.cash.models import CashHandover
+        from .exceptions import PaymentInHandover
+        invoice = self._invoice()
+        payment = record_payment(invoice=invoice, amount=Decimal('100'), method='cash', collected_by=self.owner, collected_at=date(2026, 2, 2), created_by=self.owner)
+        handover = CashHandover.objects.create(staff=self.owner, declared_amount=Decimal('100'), status=CashHandover.Status.CONFIRMED)
+        handover.payments.add(payment)
+        with self.assertRaises(PaymentInHandover):
+            cancel_payment(payment=payment, cancelled_by=self.owner, reason='x')
+
+    def test_move_out_closes_rent_charge(self):
+        from apps.tenancy.services import move_out_tenant
+        move_out_tenant(tenant=self.tenant, move_out_date=date(2026, 3, 15), moved_out_by=self.owner)
+        self.assertEqual(Charge.objects.get(partition=self.partition).end_date, date(2026, 3, 15))

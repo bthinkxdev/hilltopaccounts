@@ -21,6 +21,8 @@ class HomeView(LoginRequiredMixin, TemplateView):
         businesses = selectors.businesses_visible_to(user).filter(is_archived=False)
         villas = selectors.villas_visible_to(user).filter(is_archived=False).select_related('business')
         partitions = selectors.partitions_visible_to(user)
+        staff_view = selectors.is_field_staff(user)
+        ctx['staff_view'] = staff_view
         ctx['businesses'] = businesses
         ctx['villas'] = villas
         ctx['role_labels'] = selectors.role_labels_for(user)
@@ -55,12 +57,13 @@ class HomeView(LoginRequiredMixin, TemplateView):
             if pending_handovers.exists():
                 needs_attention.append({'label': 'Pending cash handovers', 'count': pending_handovers.count(), 'meta': 'Awaiting your confirmation', 'url': reverse('cash:handover_list') + '?status=submitted'})
         expense_summary = expenses_selectors.due_summary(selectors.expenses_visible_to(user))
-        for bucket, label in (('overdue', 'Overdue expenses'), ('today', 'Expenses due today'), ('verify', 'Expenses to verify')):
+        buckets = (('overdue', 'Overdue expenses'), ('today', 'Expenses due today')) + (() if staff_view else (('verify', 'Expenses to verify'),))
+        for bucket, label in buckets:
             if expense_summary[bucket]['count']:
                 needs_attention.append({'label': label, 'count': expense_summary[bucket]['count'], 'meta': f"QAR {expense_summary[bucket]['total']} to pay", 'url': reverse('expenses:list') + f'?due={bucket}&status=active'})
         if ctx['vacant_count'] > 0:
             needs_attention.append({'label': 'Vacant partitions', 'count': ctx['vacant_count'], 'meta': 'No tenant assigned', 'url': reverse('villas:partition_list') + '?occupancy=vacant'})
-        my_unclaimed = cash_selectors.unclaimed_cash_payments(user)
+        my_unclaimed = cash_selectors.unclaimed_cash_payments(user) if not user.is_owner else cash_selectors.unclaimed_cash_payments(user).none()
         if my_unclaimed.exists():
             needs_attention.append({'label': 'Your cash ready to hand over', 'count': my_unclaimed.count(), 'meta': f'QAR {cash_selectors.outstanding_cash_for(user)} to submit', 'url': reverse('cash:handover_submit')})
             quick_actions.append({'label': 'Submit Cash Handover', 'url': reverse('cash:handover_submit')})
@@ -74,6 +77,10 @@ class HomeView(LoginRequiredMixin, TemplateView):
         ctx['quick_actions'] = quick_actions
         ctx['outstanding_cash'] = cash_selectors.outstanding_cash_for(user)
         ctx['pending_handover_amount'] = cash_selectors.pending_handover_amount(user)
+        if ctx['can_view_financials'] and not staff_view:
+            rows = cash_selectors.staff_accountability(user, ctx['year'], ctx['month'])
+            ctx['cash_held_by_staff'] = sum((r['holding'] for r in rows), start=0)
+            ctx['pending_staff_handovers'] = sum((r['awaiting_confirmation'] for r in rows), start=0)
         return ctx
 
 @login_required
