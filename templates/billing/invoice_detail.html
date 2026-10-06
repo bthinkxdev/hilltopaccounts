@@ -61,7 +61,7 @@
               <span class="pill pill--neutral">Cancelled</span>
             {% elif can_manage %}
               <span class="quick-actions" style="margin:0;">
-                <a class="btn btn--ghost" href="{% url 'billing:payment_correct' payment.pk %}">Correct</a>
+                {# <a class="btn btn--ghost" href="{% url 'billing:payment_correct' payment.pk %}">Correct</a> #}
                 <a class="btn btn--ghost" href="{% url 'billing:payment_cancel' payment.pk %}">Cancel</a>
               </span>
             {% endif %}

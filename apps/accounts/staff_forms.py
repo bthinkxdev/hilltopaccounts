@@ -44,13 +44,14 @@ class AssignmentForm(forms.Form):
         if role == Assignment.Role.BUSINESS_MANAGER:
             if not business:
                 self.add_error('business', 'Select a business for a Business Manager assignment.')
-            if villa:
-                self.add_error('villa', 'Business Manager assignments are scoped to a business, not a villa.')
+            cleaned['villa'] = None
         elif role == Assignment.Role.VILLA_STAFF:
             if not villa:
                 self.add_error('villa', 'Select a villa for a Villa Staff assignment.')
-            if business:
-                self.add_error('business', 'Villa Staff assignments are scoped to a villa, not a business.')
-        elif role == Assignment.Role.ACCOUNTANT and (not (business or villa)):
-            self.add_error(None, 'Select a business or a villa for an Accountant assignment.')
+            cleaned['business'] = None
+        elif role == Assignment.Role.ACCOUNTANT:
+            if not (business or villa):
+                self.add_error(None, 'Select a business or a villa for an Accountant assignment.')
+            elif business and villa:
+                self.add_error(None, 'Select either a business or a villa for an Accountant assignment, not both.')
         return cleaned

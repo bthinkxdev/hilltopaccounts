@@ -64,8 +64,6 @@ def generate_monthly_invoice(*, partition, billing_period_start, billing_period_
     tenant = partition.current_tenant
     if tenant is None:
         raise PartitionVacant(f'{partition} has no active tenant — nothing to bill.')
-    if Invoice.objects.filter(partition=partition, billing_period_start=billing_period_start, billing_period_end=billing_period_end).exists() or Invoice.objects.filter(partition=partition, is_cancelled=False, billing_period_start__lte=billing_period_end, billing_period_end__gte=billing_period_start).exists():
-        raise DuplicateInvoicePeriod(f'{partition} already has an invoice for {billing_period_start}–{billing_period_end}.')
     active_charges = Charge.objects.filter(partition=partition, is_active=True, start_date__lte=billing_period_end).exclude(end_date__lt=billing_period_start)
     # A charge already billed on a live (non-cancelled) invoice must not be billed again:
     # one-time charges are billed once ever; monthly charges once per overlapping period.
@@ -75,6 +73,8 @@ def generate_monthly_invoice(*, partition, billing_period_start, billing_period_
     active_charges = active_charges.exclude(invoice_items__in=overlapping_items).distinct()
     charges = list(active_charges.select_related('charge_type'))
     if not any(charge.amount > 0 for charge in charges):
+        if Invoice.objects.filter(partition=partition, is_cancelled=False, billing_period_start__lte=billing_period_end, billing_period_end__gte=billing_period_start).exists():
+            raise DuplicateInvoicePeriod(f'{partition} already has an invoice for {billing_period_start}–{billing_period_end} and all active charges have already been billed.')
         raise NothingToBill(f'{partition} has no billable charge for {billing_period_start}–{billing_period_end}. Add or activate a rent charge first.')
     with transaction.atomic():
         invoice = Invoice(partition=partition, tenant=tenant, billing_period_start=billing_period_start, billing_period_end=billing_period_end, issue_date=issue_date, due_date=due_date, notes=notes, created_by=generated_by)
@@ -152,12 +152,22 @@ def collect_rent(*, partition, year, month, method, collected_by) -> Payment:
         tenant = locked.current_tenant
         if tenant is None:
             raise PartitionVacant(f'{locked} has no active tenant — nothing to collect.')
-        invoice = Invoice.objects.filter(partition=locked, billing_period_start=start, billing_period_end=end, is_cancelled=False).first()
-        if invoice is None:
+        invoices = list(Invoice.objects.filter(partition=locked, billing_period_start__lte=end, billing_period_end__gte=start, is_cancelled=False))
+        if not invoices:
             if not Charge.objects.filter(partition=locked, is_active=True).exists():
                 ensure_rent_charge(partition=locked, tenant=tenant, created_by=collected_by)
-            invoice = generate_monthly_invoice(partition=locked, billing_period_start=start, billing_period_end=end, issue_date=start, due_date=min(end, start + timedelta(days=9)), generated_by=collected_by)
-        outstanding = selectors.invoice_outstanding(invoice)
-        if outstanding <= 0:
-            raise NothingToCollect(f'{locked.name}: rent for {start:%B %Y} is already fully collected, or there is nothing to bill.')
-        return record_payment(invoice=invoice, amount=outstanding, method=method, collected_by=collected_by, collected_at=date.today(), created_by=collected_by)
+            inv = generate_monthly_invoice(partition=locked, billing_period_start=start, billing_period_end=end, issue_date=start, due_date=min(end, start + timedelta(days=9)), generated_by=collected_by)
+            invoices = [inv]
+        target_invoice = None
+        for inv in invoices:
+            if selectors.invoice_outstanding(inv) > 0:
+                target_invoice = inv
+                break
+        if target_invoice is None:
+            try:
+                inv = generate_monthly_invoice(partition=locked, billing_period_start=start, billing_period_end=end, issue_date=start, due_date=min(end, start + timedelta(days=9)), generated_by=collected_by)
+                target_invoice = inv
+            except (DuplicateInvoicePeriod, NothingToBill):
+                raise NothingToCollect(f'{locked.name}: rent for {start:%B %Y} is already fully collected, or there is nothing to bill.')
+        outstanding = selectors.invoice_outstanding(target_invoice)
+        return record_payment(invoice=target_invoice, amount=outstanding, method=method, collected_by=collected_by, collected_at=date.today(), created_by=collected_by)

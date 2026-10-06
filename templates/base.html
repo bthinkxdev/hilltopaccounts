@@ -35,7 +35,7 @@
           <a class="sidebar__link{% if request.resolver_match.url_name == 'villa_list' or request.resolver_match.url_name == 'villa_detail' or request.resolver_match.url_name == 'partition_detail' %} sidebar__link--active{% endif %}" href="{% url 'villas:villa_list' %}">Villas</a>
 
           <div class="sidebar__section">Finance</div>
-          <a class="sidebar__link{% if request.resolver_match.url_name == 'invoice_list' or request.resolver_match.url_name == 'invoice_detail' %} sidebar__link--active{% endif %}" href="{% url 'billing:invoice_list' %}">Invoices</a>
+          {# <a class="sidebar__link{% if request.resolver_match.url_name == 'invoice_list' or request.resolver_match.url_name == 'invoice_detail' %} sidebar__link--active{% endif %}" href="{% url 'billing:invoice_list' %}">Invoices</a> #}
           <a class="sidebar__link{% if request.resolver_match.url_name == 'payment_list' %} sidebar__link--active{% endif %}" href="{% url 'billing:payment_list' %}">Collections</a>
           <a class="sidebar__link{% if request.resolver_match.app_name == 'expenses' %} sidebar__link--active{% endif %}" href="{% url 'expenses:list' %}">Expenses</a>
           <a class="sidebar__link{% if request.resolver_match.app_name == 'cash' %} sidebar__link--active{% endif %}" href="{% url 'cash:handover_list' %}">

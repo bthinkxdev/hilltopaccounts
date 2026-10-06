@@ -21,6 +21,8 @@ class TenantForm(forms.Form):
         if lock_rent:
             self.fields['monthly_rent'].disabled = True
             self.fields['monthly_rent'].help_text = 'Set by the partition rent.'
+            if self.is_bound and not self.initial.get('monthly_rent') and 'monthly_rent' in self.data:
+                self.initial['monthly_rent'] = self.data.get('monthly_rent')
 
     def clean_mobile(self):
         mobile = self.cleaned_data.get('mobile', '').strip()

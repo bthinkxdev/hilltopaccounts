@@ -117,6 +117,9 @@
           <div class="list-row">
             <span class="list-row__title">{{ charge.charge_type }}</span>
             <span class="list-row__meta">QAR {{ charge.amount|floatformat:"2" }} / {{ charge.get_frequency_display }}</span>
+            {% if can_manage %}
+              <a class="btn btn--ghost btn--sm" href="{% url 'billing:charge_cancel' charge.pk %}">Deactivate</a>
+            {% endif %}
           </div>
         {% endfor %}
       {% else %}
@@ -154,7 +157,7 @@
         </div>
       {% endif %}
       {% if current_tenant and can_manage %}
-        <a class="btn btn--primary" href="{% url 'billing:invoice_generate' partition.pk %}">+ Generate Invoice</a>
+        {# <a class="btn btn--primary" href="{% url 'billing:invoice_generate' partition.pk %}">+ Generate Invoice</a> #}
       {% endif %}
     </div>
   </div>

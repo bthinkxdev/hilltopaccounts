@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from django.db.models import DecimalField, F, OuterRef, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
-from .models import Invoice, InvoiceItem, Payment
+from .models import Charge, Invoice, InvoiceItem, Payment
 _MONEY_FIELD = DecimalField(max_digits=12, decimal_places=2)
 
 def invoice_total(invoice: Invoice) -> Decimal:
@@ -136,31 +136,66 @@ class RentStatus:
     OVERDUE = 'overdue'
 
 def rent_invoice_queryset(invoice_queryset, year: int, month: int):
-    """The live invoice(s) whose billing period is exactly this calendar month, with computed totals."""
+    """The live invoice(s) whose billing period falls in or overlaps this calendar month, with computed totals."""
     start, end = period_bounds(year, month)
-    return with_computed_totals(invoice_queryset.filter(is_cancelled=False, billing_period_start=start, billing_period_end=end))
+    return with_computed_totals(invoice_queryset.filter(is_cancelled=False, billing_period_start__lte=end, billing_period_end__gte=start))
+
+def unbilled_charges_by_partition(partition_pks, year: int, month: int):
+    from collections import defaultdict
+    start, end = period_bounds(year, month)
+    live_items = InvoiceItem.objects.filter(invoice__is_cancelled=False)
+    overlapping_items = live_items.filter(
+        invoice__billing_period_start__lte=end,
+        invoice__billing_period_end__gte=start
+    )
+    unbilled_qs = Charge.objects.filter(
+        partition_id__in=partition_pks,
+        is_active=True,
+        start_date__lte=end
+    ).exclude(end_date__lt=start).exclude(
+        frequency=Charge.Frequency.ONE_TIME,
+        invoice_items__in=live_items
+    ).exclude(
+        invoice_items__in=overlapping_items
+    ).distinct()
+    res = defaultdict(lambda: Decimal('0.00'))
+    for c in unbilled_qs:
+        res[c.partition_id] += c.amount
+    return res
 
 def rent_sheet(*, partitions, tenant_by_partition: dict, invoice_queryset, year: int, month: int, today: date):
     """Month-end collection sheet for one villa: per occupied partition, what is due, collected and still pending."""
-    invoices = {invoice.partition_id: invoice for invoice in rent_invoice_queryset(invoice_queryset, year, month)}
+    from collections import defaultdict
+    invoices_by_partition = defaultdict(list)
+    for invoice in rent_invoice_queryset(invoice_queryset, year, month):
+        invoices_by_partition[invoice.partition_id].append(invoice)
+    unbilled_map = unbilled_charges_by_partition([p.pk for p in partitions], year, month)
     zero = Decimal('0.00')
     rows, expected, collected = [], zero, zero
     for partition in partitions:
         tenant = tenant_by_partition.get(partition.pk)
         if tenant is None:
             continue
-        invoice = invoices.get(partition.pk)
-        due = invoice._total if invoice else tenant.monthly_rent
-        paid = invoice._paid if invoice else zero
-        if invoice and due > 0 and paid >= due:
-            status = RentStatus.COLLECTED
-        elif paid > 0:
-            status = RentStatus.PARTIAL
-        elif invoice and invoice.due_date < today:
-            status = RentStatus.OVERDUE
+        p_invoices = invoices_by_partition.get(partition.pk, [])
+        unbilled = unbilled_map[partition.pk]
+        if p_invoices:
+            due = sum((inv._total for inv in p_invoices), start=zero) + unbilled
+            paid = sum((inv._paid for inv in p_invoices), start=zero)
+            primary_invoice = p_invoices[0]
+            if due > 0 and paid >= due:
+                status = RentStatus.COLLECTED
+            elif paid > 0:
+                status = RentStatus.PARTIAL
+            elif any(inv.due_date < today and inv._paid < inv._total for inv in p_invoices):
+                status = RentStatus.OVERDUE
+            else:
+                status = RentStatus.PENDING
         else:
+            primary_invoice = None
+            due = unbilled if unbilled > 0 else tenant.monthly_rent
+            paid = zero
             status = RentStatus.PENDING
-        rows.append({'partition': partition, 'tenant': tenant, 'invoice': invoice, 'due': due, 'paid': paid, 'balance': due - paid, 'status': status})
+        rows.append({'partition': partition, 'tenant': tenant, 'invoice': primary_invoice, 'due': due, 'paid': paid, 'balance': due - paid, 'status': status})
         expected += due
         collected += paid
     return rows, {'expected': expected, 'collected': collected, 'pending': expected - collected, 'pending_count': sum(1 for r in rows if r['status'] != RentStatus.COLLECTED)}
@@ -173,9 +208,16 @@ def pending_rent_by_villa(invoice_queryset, partition_queryset, year: int, month
     for partition_id, villa_id in occupied:
         partition_villa[partition_id] = villa_id
         occupied_by_villa[villa_id] = occupied_by_villa.get(villa_id, 0) + 1
-    paid_up = {}
+    unbilled_map = unbilled_charges_by_partition(list(partition_villa), year, month)
+    paid_partitions = set()
     for invoice in rent_invoice_queryset(invoice_queryset.filter(partition__in=list(partition_villa)), year, month):
         if invoice._total > 0 and invoice._paid >= invoice._total:
-            villa_id = partition_villa[invoice.partition_id]
-            paid_up[villa_id] = paid_up.get(villa_id, 0) + 1
-    return {villa_id: count - paid_up.get(villa_id, 0) for villa_id, count in occupied_by_villa.items()}
+            paid_partitions.add(invoice.partition_id)
+    for partition_id, unbilled_amt in unbilled_map.items():
+        if unbilled_amt > 0:
+            paid_partitions.discard(partition_id)
+    paid_by_villa = {}
+    for partition_id in paid_partitions:
+        villa_id = partition_villa[partition_id]
+        paid_by_villa[villa_id] = paid_by_villa.get(villa_id, 0) + 1
+    return {villa_id: max(0, count - paid_by_villa.get(villa_id, 0)) for villa_id, count in occupied_by_villa.items()}

@@ -65,7 +65,7 @@ class Invoice(models.Model):
 
     class Meta:
         ordering = ['-issue_date', '-id']
-        constraints = [models.UniqueConstraint(fields=['partition', 'billing_period_start', 'billing_period_end'], name='unique_invoice_per_partition_per_period'), models.CheckConstraint(check=models.Q(due_date__gte=models.F('issue_date')), name='invoice_due_date_after_issue_date')]
+        constraints = [models.CheckConstraint(check=models.Q(due_date__gte=models.F('issue_date')), name='invoice_due_date_after_issue_date')]
 
     @property
     def business(self):

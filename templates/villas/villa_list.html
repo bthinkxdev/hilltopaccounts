@@ -49,7 +49,7 @@
             <div class="tile__meta">{{ villa.business.name }}{% if villa.staff_names %} · {{ villa.staff_names|join:", " }}{% endif %}</div>
             <div class="tile__pills">
               {% if villa.partition_total %}<span class="pill pill--success">{{ villa.occupied_total }} occ</span>{% if villa.vacant_total %}<span class="pill pill--neutral">{{ villa.vacant_total }} vacant</span>{% endif %}{% else %}<span class="pill pill--neutral">No partitions</span>{% endif %}
-              {% if villa.pending_rent %}<span class="pill pill--warning">{{ villa.pending_rent }} rent pending</span>{% endif %}
+              {% if villa.pending_rent %}<span class="pill pill--warning">{{ villa.pending_rent }} pending</span>{% endif %}
               {% if villa.fixed_pending %}<span class="pill pill--warning">{{ villa.fixed_pending }} fixed unpaid</span>{% endif %}
               {% if villa.to_verify %}<span class="pill pill--warning">{{ villa.to_verify }} to verify</span>{% endif %}
               {% if villa.overdue_expense_count %}<span class="pill pill--danger">{{ villa.overdue_expense_count }} overdue</span>{% endif %}

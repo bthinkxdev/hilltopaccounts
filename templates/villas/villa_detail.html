@@ -54,9 +54,9 @@
   </div>
 
   <div class="detail-section" id="rent">
-    <div class="detail-section__title">Rent collection — {{ period_label }}</div>
+    <div class="detail-section__title">Tenant Collections — {{ period_label }}</div>
     {% if rent_rows is None %}
-      <div class="card card--tight"><div class="empty-state"><div class="empty-state__title">Pick a month to see rent collection.</div></div></div>
+      <div class="card card--tight"><div class="empty-state"><div class="empty-state__title">Pick a month to see tenant collections.</div></div></div>
     {% else %}
       <div class="card card--tight">
         <div class="grid--kpi grid--kpi-compact">
@@ -86,7 +86,7 @@
             {% endif %}
           </div>
         {% empty %}
-          <div class="empty-state"><div class="empty-state__title">No tenants in this villa yet.</div><p>Move a tenant into a partition to start collecting rent.</p></div>
+          <div class="empty-state"><div class="empty-state__title">No tenants in this villa yet.</div><p>Move a tenant into a partition to start collecting dues.</p></div>
         {% endfor %}
       </div>
     {% endif %}
