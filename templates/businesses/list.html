@@ -9,7 +9,7 @@
   <form class="filter-bar" method="get">
     <input type="search" name="q" placeholder="Search businesses…" value="{{ q }}">
     <button class="btn btn--ghost" type="submit">Search</button>
-    {% if request.GET %}<a class="btn btn--ghost" href="{{ request.path }}">Clear</a>{% endif %}
+    {% if q %}<a class="btn btn--ghost" href="{{ request.path }}">Clear</a>{% endif %}
   </form>
 
   <div class="card">

@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count, F, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -16,9 +16,10 @@ from apps.shared.forms import ReasonForm
 from apps.shared.pagination import paginate_queryset
 from apps.shared.periods import period_context
 from django.db import transaction
-from apps.expenses.services import create_recurring_expense, get_or_create_category
+from apps.expenses.services import (create_recurring_expense, deactivate_recurring_expense,
+                                    get_or_create_category, update_expense, update_recurring_expense)
 from .forms import FIXED_EXPENSE_DEFAULTS, PartitionForm, PhotoForm, VillaEditForm, VillaForm
-from apps.expenses.models import RecurringExpense
+from apps.expenses.models import Expense, RecurringExpense
 from .models import Photo
 from .services import add_photo, archive_partition, archive_villa, create_partition, create_villa, delete_photo, update_partition, update_villa
 
@@ -149,21 +150,21 @@ def villa_detail(request, pk):
                     sub['unpaid_count'] += 1
         return sub
 
-    if selectors.is_field_staff(request.user):
-        hide_rent = lambda t: re.search(selectors.LANDLORD_RENT_REGEX, t.category.name, re.I)
-        fixed_rows = [r for r in fixed_rows if not hide_rent(r['template'])] if fixed_rows is not None else None
-    owner_fixed_rows = [r for r in (fixed_rows or []) if getattr(r['template'], 'paid_by', '') == 'owner'] if fixed_rows is not None else None
-    staff_fixed_rows = [r for r in (fixed_rows or []) if getattr(r['template'], 'paid_by', '') == 'staff'] if fixed_rows is not None else None
-    owner_fixed_totals = compute_fixed_subset(owner_fixed_rows) if owner_fixed_rows is not None else None
-    staff_fixed_totals = compute_fixed_subset(staff_fixed_rows) if staff_fixed_rows is not None else None
-
     fixed_templates = list(RecurringExpense.objects.filter(villa=villa, is_active=True).select_related('category')) if period['period'] == 'year' else []
     if selectors.is_field_staff(request.user):
-        fixed_templates = [t for t in fixed_templates if not re.search(selectors.LANDLORD_RENT_REGEX, t.category.name, re.I)]
-    owner_fixed_templates = [t for t in fixed_templates if t.paid_by == 'owner']
-    staff_fixed_templates = [t for t in fixed_templates if t.paid_by == 'staff']
+        owner_fixed_rows = None
+        owner_fixed_totals = None
+        owner_fixed_templates = []
+        owner_one_off = []
+    else:
+        owner_fixed_rows = [r for r in (fixed_rows or []) if getattr(r['template'], 'paid_by', '') == 'owner'] if fixed_rows is not None else None
+        owner_fixed_totals = compute_fixed_subset(owner_fixed_rows) if owner_fixed_rows is not None else None
+        owner_fixed_templates = [t for t in fixed_templates if t.paid_by == 'owner']
+        owner_one_off = [e for e in one_off if e.paid_by == 'owner']
 
-    owner_one_off = [e for e in one_off if e.paid_by == 'owner']
+    staff_fixed_rows = [r for r in (fixed_rows or []) if getattr(r['template'], 'paid_by', '') == 'staff'] if fixed_rows is not None else None
+    staff_fixed_totals = compute_fixed_subset(staff_fixed_rows) if staff_fixed_rows is not None else None
+    staff_fixed_templates = [t for t in fixed_templates if t.paid_by == 'staff']
     staff_one_off = [e for e in one_off if e.paid_by == 'staff']
 
     villa_photos = [p for p in photos if not p.partition_id]
@@ -189,7 +190,7 @@ def villa_detail(request, pk):
         'fixed_templates': fixed_templates,
         'owner_fixed_templates': owner_fixed_templates,
         'staff_fixed_templates': staff_fixed_templates,
-        'one_off_expenses': one_off,
+        'one_off_expenses': staff_one_off if selectors.is_field_staff(request.user) else one_off,
         'owner_one_off': owner_one_off,
         'staff_one_off': staff_one_off,
         'cash': cash_selectors.villa_cash_position(villa),
@@ -220,17 +221,34 @@ def villa_create(request):
             data = dict(form.cleaned_data)
             fixed_amounts = [(label, data.pop(field), paid_by) for field, label, paid_by in FIXED_EXPENSE_DEFAULTS]
             business = data.pop('business')
-            with transaction.atomic():
-                villa = create_villa(business=business, created_by=request.user, **data)
-                if selectors.is_business_manager_of(request.user, business):
-                    for label, amount, paid_by in fixed_amounts:
-                        if amount:
-                            create_recurring_expense(villa=villa, category=get_or_create_category(name=label), amount=amount, due_day=1, paid_by=paid_by, created_by=request.user)
-            messages.success(request, f'Villa “{villa.name}” created.')
-            return redirect('villas:villa_detail', pk=villa.pk)
+            try:
+                with transaction.atomic():
+                    villa = create_villa(business=business, created_by=request.user, **data)
+                    if selectors.is_business_manager_of(request.user, business):
+                        for label, amount, paid_by in fixed_amounts:
+                            if amount:
+                                create_recurring_expense(villa=villa, category=get_or_create_category(name=label), amount=amount, due_day=1, paid_by=paid_by, created_by=request.user)
+                messages.success(request, f'Villa “{villa.name}” created.')
+                return redirect('villas:villa_detail', pk=villa.pk)
+            except ValidationError as exc:
+                msg = exc.message_dict.get('__all__', [str(exc)])[0] if hasattr(exc, 'message_dict') else str(exc)
+                form.add_error('name', msg)
     else:
         form = VillaForm(business_queryset=manageable_businesses, initial=initial)
     return render(request, 'components/form_page.html', {'form': form, 'title': 'Add Villa', 'cancel_url': reverse('villas:villa_list'), 'breadcrumbs': [('Villas', reverse('villas:villa_list')), ('New Villa', None)]})
+
+def _sync_fixed_expenses(villa, user, data):
+    existing = {r.category.name.lower(): r for r in RecurringExpense.objects.filter(villa=villa).select_related('category')}
+    for field, label, paid_by in FIXED_EXPENSE_DEFAULTS:
+        amount = data.pop(field, None)
+        rec = existing.get(label.lower()) or (existing.get('villa owner rent') if label == 'Villa rent' else None)
+        if amount:
+            if rec:
+                update_recurring_expense(recurring=rec, updated_by=user, amount=amount, is_active=True)
+            else:
+                create_recurring_expense(villa=villa, category=get_or_create_category(name=label), amount=amount, due_day=1, paid_by=paid_by, created_by=user)
+        elif rec and rec.is_active:
+            deactivate_recurring_expense(recurring=rec, updated_by=user, reason='Removed in villa edit')
 
 @login_required
 def villa_edit(request, pk):
@@ -238,13 +256,24 @@ def villa_edit(request, pk):
     if not (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)):
         raise PermissionDenied('You cannot edit this villa.')
     if request.method == 'POST':
-        form = VillaEditForm(request.POST)
+        form = VillaEditForm(request.POST, villa=villa)
         if form.is_valid():
-            update_villa(villa=villa, updated_by=request.user, **form.cleaned_data)
-            messages.success(request, f'Villa “{villa.name}” updated.')
-            return redirect('villas:villa_detail', pk=villa.pk)
+            data = dict(form.cleaned_data)
+            try:
+                with transaction.atomic():
+                    _sync_fixed_expenses(villa, request.user, data)
+                    update_villa(villa=villa, updated_by=request.user, **data)
+                messages.success(request, f'Villa “{villa.name}” updated.')
+                return redirect('villas:villa_detail', pk=villa.pk)
+            except ValidationError as exc:
+                msg = exc.message_dict.get('__all__', [str(exc)])[0] if hasattr(exc, 'message_dict') else str(exc)
+                form.add_error('name', msg)
     else:
-        form = VillaEditForm(initial={f: getattr(villa, f) for f in VillaEditForm.base_fields})
+        active = {r.category.name.lower(): r.amount for r in RecurringExpense.objects.filter(villa=villa, is_active=True).select_related('category')}
+        initial = {f: getattr(villa, f) for f in ['name', 'address', 'landlord_name', 'landlord_contact', 'contract_start', 'contract_end']}
+        for field, label, _ in FIXED_EXPENSE_DEFAULTS:
+            initial[field] = active.get(label.lower()) or (active.get('villa owner rent') if label == 'Villa rent' else None)
+        form = VillaEditForm(initial=initial, villa=villa)
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Edit {villa.name}', 'submit_label': 'Save Changes', 'cancel_url': reverse('villas:villa_detail', args=[villa.pk]), 'breadcrumbs': [('Villas', reverse('villas:villa_list')), (villa.name, reverse('villas:villa_detail', args=[villa.pk])), ('Edit', None)]})
 
 @login_required
@@ -321,17 +350,21 @@ def partition_create(request, villa_pk=None):
         raise PermissionDenied("You don't manage any villa yet.")
     villa = get_object_or_404(manageable_villas, pk=villa_pk) if villa_pk is not None else None
     if request.method == 'POST':
-        form = PartitionForm(request.POST, villa_queryset=manageable_villas)
+        form = PartitionForm(request.POST, villa_queryset=manageable_villas, villa=villa)
         if villa is not None:
-            form.fields.pop('villa')
+            form.fields.pop('villa', None)
         if form.is_valid():
-            partition = create_partition(villa=villa or form.cleaned_data.pop('villa'), created_by=request.user, **form.cleaned_data)
-            messages.success(request, f'Partition “{partition.name}” created.')
-            return redirect('villas:partition_detail', pk=partition.pk)
+            try:
+                partition = create_partition(villa=villa or form.cleaned_data.pop('villa'), created_by=request.user, **form.cleaned_data)
+                messages.success(request, f'Partition “{partition.name}” created.')
+                return redirect('villas:partition_detail', pk=partition.pk)
+            except ValidationError as exc:
+                msg = exc.message_dict.get('__all__', [str(exc)])[0] if hasattr(exc, 'message_dict') else str(exc)
+                form.add_error('name', msg)
     else:
-        form = PartitionForm(villa_queryset=manageable_villas)
+        form = PartitionForm(villa_queryset=manageable_villas, villa=villa)
         if villa is not None:
-            form.fields.pop('villa')
+            form.fields.pop('villa', None)
     cancel_url = reverse('villas:villa_detail', args=[villa.pk]) if villa else reverse('villas:partition_list')
     breadcrumbs = [('Partitions', reverse('villas:partition_list')), ('New Partition', None)]
     if villa:
@@ -345,25 +378,29 @@ def partition_edit(request, pk):
     if not (request.user.is_owner or selectors.can_manage_villa(request.user, villa)):
         raise PermissionDenied('You cannot edit this partition.')
     if request.method == 'POST':
-        form = PartitionForm(request.POST)
-        form.fields.pop('villa')
+        form = PartitionForm(request.POST, villa=villa, partition=partition)
+        form.fields.pop('villa', None)
         if form.is_valid():
-            update_partition(
-                partition=partition,
-                updated_by=request.user,
-                name=form.cleaned_data['name'],
-                rent=form.cleaned_data.get('rent'),
-                description=form.cleaned_data.get('description', ''),
-            )
-            messages.success(request, f'Partition “{partition.name}” updated.')
-            return redirect('villas:partition_detail', pk=partition.pk)
+            try:
+                update_partition(
+                    partition=partition,
+                    updated_by=request.user,
+                    name=form.cleaned_data['name'],
+                    rent=form.cleaned_data.get('rent'),
+                    description=form.cleaned_data.get('description', ''),
+                )
+                messages.success(request, f'Partition “{partition.name}” updated.')
+                return redirect('villas:partition_detail', pk=partition.pk)
+            except ValidationError as exc:
+                msg = exc.message_dict.get('__all__', [str(exc)])[0] if hasattr(exc, 'message_dict') else str(exc)
+                form.add_error('name', msg)
     else:
         form = PartitionForm(initial={
             'name': partition.name,
             'rent': partition.rent,
             'description': partition.description,
-        })
-        form.fields.pop('villa')
+        }, villa=villa, partition=partition)
+        form.fields.pop('villa', None)
     cancel_url = reverse('villas:partition_detail', args=[partition.pk])
     breadcrumbs = [
         ('Businesses', reverse('businesses:list')),

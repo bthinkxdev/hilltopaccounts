@@ -12,15 +12,22 @@
         <option value="{{ value }}" {% if action == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
-    {% if request.GET %}<a class="btn btn--ghost" href="{{ request.path }}">Clear</a>{% endif %}
+    {% if q or action %}<a class="btn btn--ghost" href="{{ request.path }}">Clear</a>{% endif %}
   </form>
 
   <div class="card">
     {% if page_obj %}
       {% for entry in page_obj %}
-        <div class="list-row">
-          <span class="list-row__title">{{ entry.get_action_display }}</span>
-          <span class="list-row__meta">{{ entry.user }} — {{ entry.timestamp|date:"d M Y H:i" }}{% if entry.reason %} — {{ entry.reason }}{% endif %}</span>
+        <div class="list-row" style="padding: var(--space-3) 0;">
+          <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); margin-bottom: 2px;">
+              <span class="list-row__title" style="font-size: 15px;">{{ entry.get_action_display }}</span>
+              <span class="list-row__meta" style="font-size: 12px; white-space: nowrap;">{{ entry.timestamp|date:"d M Y, H:i" }}</span>
+            </div>
+            <div class="list-row__meta" style="font-size: 13px;">
+              <span style="color: var(--text-primary); font-weight: 500;">{{ entry.user }}</span>{% if entry.reason %} — <span>{{ entry.reason }}</span>{% endif %}
+            </div>
+          </div>
         </div>
       {% endfor %}
     {% else %}

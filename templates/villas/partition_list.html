@@ -20,7 +20,7 @@
       <option value="occupied" {% if selected_occupancy == "occupied" %}selected{% endif %}>Occupied</option>
       <option value="vacant" {% if selected_occupancy == "vacant" %}selected{% endif %}>Vacant</option>
     </select>
-    {% if request.GET %}<a class="btn btn--ghost" href="{{ request.path }}">Clear</a>{% endif %}
+    {% if q or selected_villa or selected_occupancy %}<a class="btn btn--ghost" href="{{ request.path }}">Clear</a>{% endif %}
   </form>
 
   <div class="card">

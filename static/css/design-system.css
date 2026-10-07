@@ -446,7 +446,7 @@ h1, h2, h3, p {
   color: var(--text-secondary);
 }
 
-.field input,
+.field input:not([type="checkbox"]):not([type="radio"]),
 .field select,
 .field textarea {
   width: 100%;
@@ -520,29 +520,52 @@ h1, h2, h3, p {
   gap: var(--space-2);
 }
 
+.field input[type="checkbox"],
+.field input[type="radio"] {
+  width: 18px !important;
+  height: 18px !important;
+  min-height: 18px !important;
+  max-width: 18px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 4px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.field [id^="id_"] > div,
 .field ul li {
-  padding: var(--space-3);
+  display: block;
+  margin-bottom: var(--space-2);
+}
+
+.field [id^="id_"] > div > label,
+.field ul li label {
+  display: flex !important;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   background: var(--surface-solid);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary) !important;
+  margin-bottom: 0 !important;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.field ul label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: 15px;
-  font-weight: 400;
-  color: var(--text-primary);
-  margin-bottom: 0;
+.field [id^="id_"] > div > label:hover,
+.field ul li label:hover {
+  border-color: var(--accent);
 }
 
-.field ul input[type="checkbox"],
-.field ul input[type="radio"] {
-  width: 18px;
-  height: 18px;
-  min-height: 0;
-  accent-color: var(--accent);
+.field [id^="id_"] > div > label:has(input:checked),
+.field ul li label:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-solid));
 }
 
 .form-actions {
@@ -666,6 +689,11 @@ h1, h2, h3, p {
   background: var(--surface-solid);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
+}
+
+.filter-bar input[type="search"] {
+  flex: 1 1 160px;
+  min-width: 0;
 }
 
 .quick-actions {
@@ -794,3 +822,43 @@ a.tile:hover { border-color: var(--accent); }
 .inline-form { display: inline; margin: 0; }
 .stat-line { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); font-size: 13px; color: var(--text-secondary); margin-top: var(--space-2); }
 .stat-line b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+.expense-list { display: flex; flex-direction: column; gap: var(--space-2); }
+.expense-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.expense-row:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+  background: var(--surface-solid);
+}
+.expense-row__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.expense-row__top { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.expense-row__category { font-size: 15px; font-weight: 600; color: var(--text-primary); text-transform: capitalize; }
+.expense-row__amount { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-primary); white-space: nowrap; }
+.expense-row__meta { font-size: 13px; color: var(--text-secondary); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+.expense-row__meta .sep { color: var(--text-tertiary); font-size: 10px; }
+.expense-row__payer { color: var(--text-tertiary); }
+.expense-row__side { display: flex; align-items: center; gap: var(--space-3); flex-shrink: 0; }
+.expense-row__status { display: flex; align-items: center; }
+.expense-row__actions { display: flex; align-items: center; gap: 4px; }
+.expense-row__actions .btn { padding: 0 var(--space-2); font-size: 12px; min-height: 28px; }
+
+.kpi--active {
+  border-color: var(--accent) !important;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-solid)) !important;
+}
+.kpi__sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+
+@media (max-width: 768px) {
+  .expense-row { flex-direction: column; align-items: stretch; padding: var(--space-3); gap: var(--space-2); }
+  .expense-row__side { justify-content: space-between; padding-top: var(--space-2); border-top: 1px solid var(--border-subtle); }
+  .expense-row__actions { flex-wrap: wrap; gap: 2px; }
+}

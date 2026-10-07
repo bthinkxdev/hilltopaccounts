@@ -31,16 +31,26 @@ class VillaForm(forms.Form):
         start, end = cleaned.get('contract_start'), cleaned.get('contract_end')
         if start and end and end < start:
             self.add_error('contract_end', 'Contract end date cannot be before the start date.')
+        business = cleaned.get('business')
+        name = (cleaned.get('name') or '').strip()
+        if business and name:
+            if Villa.objects.filter(business=business, name__iexact=name).exists():
+                self.add_error('name', 'A villa with this name already exists in this business.')
         return cleaned
 
-class VillaEditForm(forms.Form):
-    name = forms.CharField(max_length=200)
-    address = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2}))
-    landlord_name = forms.CharField(required=False, max_length=200)
-    landlord_contact = forms.CharField(required=False, max_length=200)
-    contract_start = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
-    contract_end = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
-    clean = VillaForm.clean
+class VillaEditForm(VillaForm):
+    def __init__(self, *args, villa=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.villa = villa
+        self.fields.pop('business', None)
+
+    def clean(self):
+        cleaned = super().clean()
+        name = (cleaned.get('name') or '').strip()
+        if self.villa and name:
+            if Villa.objects.filter(business=self.villa.business, name__iexact=name).exclude(pk=self.villa.pk).exists():
+                self.add_error('name', 'A villa with this name already exists in this business.')
+        return cleaned
 
 class PartitionForm(forms.Form):
     villa = forms.ModelChoiceField(queryset=Villa.objects.none(), empty_label='Select a villa…')
@@ -55,10 +65,25 @@ class PartitionForm(forms.Form):
     )
     description = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2}))
 
-    def __init__(self, *args, villa_queryset=None, **kwargs):
+    def __init__(self, *args, villa_queryset=None, villa=None, partition=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.villa = villa
+        self.partition = partition
         if villa_queryset is not None:
             self.fields['villa'].queryset = villa_queryset
+
+    def clean(self):
+        cleaned = super().clean()
+        name = (cleaned.get('name') or '').strip()
+        v = self.villa or cleaned.get('villa')
+        if v and name:
+            from .models import Partition
+            qs = Partition.objects.filter(villa=v, name__iexact=name)
+            if self.partition:
+                qs = qs.exclude(pk=self.partition.pk)
+            if qs.exists():
+                self.add_error('name', 'A partition with this name already exists in this villa.')
+        return cleaned
 
 
 class PhotoForm(forms.Form):

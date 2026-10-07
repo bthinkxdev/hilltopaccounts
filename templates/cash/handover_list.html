@@ -5,14 +5,18 @@
     <h1>Cash Handover</h1>
     <div class="quick-actions">
       {% if can_view_accountability %}<a class="btn btn--ghost" href="{% url 'cash:staff_accountability' %}">Staff accountability</a>{% endif %}
-      {% if my_unclaimed_payments %}<a class="btn btn--primary" href="{% url 'cash:handover_submit' %}">Submit Handover</a>{% endif %}
+      {# Only field staff submit handovers to owner; hidden for owner #}
+      {% if not user.is_owner and my_unclaimed_payments %}<a class="btn btn--primary" href="{% url 'cash:handover_submit' %}">Submit Handover</a>{% endif %}
     </div>
   </div>
 
   <div class="card">
     <div class="card__title">My cash</div>
     <div class="grid--kpi">
-      <div class="kpi"><div class="kpi__label">Outstanding (accountable to me)</div><div class="kpi__value {% if my_outstanding_cash > 0 %}kpi__value--warning{% endif %}">QAR {{ my_outstanding_cash }}</div></div>
+      <div class="kpi">
+        <div class="kpi__label">{% if my_outstanding_cash < 0 %}Out-of-pocket (To reimburse){% else %}Cash held by me{% endif %}</div>
+        <div class="kpi__value {% if my_outstanding_cash < 0 %}kpi__value--danger{% elif my_outstanding_cash > 0 %}kpi__value--warning{% endif %}">QAR {% if my_outstanding_cash < 0 %}{{ my_outstanding_cash|cut:"-" }}{% else %}{{ my_outstanding_cash }}{% endif %}</div>
+      </div>
       <div class="kpi"><div class="kpi__label">Expenses I paid from cash</div><div class="kpi__value">QAR {{ my_expenses_paid }}</div></div>
       <div class="kpi"><div class="kpi__label">Pending confirmation</div><div class="kpi__value">QAR {{ my_pending_amount }}</div></div>
       <div class="kpi"><div class="kpi__label">Ready to hand over</div><div class="kpi__value">{{ my_unclaimed_payments|length }} collection{{ my_unclaimed_payments|length|pluralize }}</div></div>
@@ -26,7 +30,7 @@
         <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
-    {% if request.GET %}<a class="btn btn--ghost" href="{{ request.path }}">Clear Filter</a>{% endif %}
+    {% if status %}<a class="btn btn--ghost" href="{{ request.path }}">Clear Filter</a>{% endif %}
   </form>
 
   <div class="card">

@@ -1,3 +1,5 @@
+from datetime import date
+from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -22,18 +24,36 @@ def tenant_list(request):
     if status:
         qs = qs.filter(status=status)
     page_obj = paginate_queryset(request, qs.order_by('-move_in_date'))
-    return render(request, 'tenancy/list.html', {'page_obj': page_obj, 'q': q, 'status': status, 'breadcrumbs': [('Tenants', None)]})
+    has_filters = bool(q or ('status' in request.GET and status != Tenant.Status.ACTIVE))
+    return render(request, 'tenancy/list.html', {'page_obj': page_obj, 'q': q, 'status': status, 'has_filters': has_filters, 'breadcrumbs': [('Tenants', None)]})
 
 @login_required
 def tenant_detail(request, pk):
+    today = date.today()
     tenant = get_object_or_404(selectors.tenants_visible_to(request.user), pk=pk)
     invoices = selectors.invoices_visible_to(request.user).filter(tenant=tenant).order_by('-issue_date')
     for invoice in invoices:
         invoice.computed_status = billing_selectors.invoice_status(invoice)
         invoice.computed_outstanding = billing_selectors.invoice_outstanding(invoice)
-    balance = sum((inv.computed_outstanding for inv in invoices), start=0)
+    unbilled = Decimal('0.00')
+    if tenant.status == Tenant.Status.ACTIVE:
+        unbilled = billing_selectors.unbilled_charges_by_partition([tenant.partition_id], today.year, today.month)[tenant.partition_id] or (tenant.monthly_rent if not invoices.exists() else Decimal('0.00'))
+    balance = sum((inv.computed_outstanding for inv in invoices), start=Decimal('0.00')) + unbilled
     partition = tenant.partition
-    return render(request, 'tenancy/detail.html', {'tenant': tenant, 'invoices': invoices, 'outstanding_balance': balance, 'can_manage': request.user.is_owner or selectors.is_business_manager_of(request.user, partition.villa.business) or selectors.is_villa_staff_of(request.user, partition.villa), 'breadcrumbs': [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk])), (partition.villa.name, reverse('villas:villa_detail', args=[partition.villa.pk])), (partition.name, reverse('villas:partition_detail', args=[partition.pk])), (tenant.name, None)]})
+    return render(request, 'tenancy/detail.html', {
+        'tenant': tenant,
+        'invoices': invoices,
+        'outstanding_balance': balance,
+        'unbilled_balance': unbilled,
+        'can_manage': request.user.is_owner or selectors.is_business_manager_of(request.user, partition.villa.business) or selectors.is_villa_staff_of(request.user, partition.villa),
+        'breadcrumbs': [
+            ('Businesses', reverse('businesses:list')),
+            (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk])),
+            (partition.villa.name, reverse('villas:villa_detail', args=[partition.villa.pk])),
+            (partition.name, reverse('villas:partition_detail', args=[partition.pk])),
+            (tenant.name, None)
+        ]
+    })
 
 @login_required
 def tenant_create(request, partition_pk):

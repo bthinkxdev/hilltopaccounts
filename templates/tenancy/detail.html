@@ -16,7 +16,7 @@
     <div class="grid--kpi">
       <div class="kpi"><div class="kpi__label">Monthly Rent</div><div class="kpi__value">QAR {{ tenant.monthly_rent }}</div></div>
       <div class="kpi"><div class="kpi__label">Deposit</div><div class="kpi__value">QAR {{ tenant.deposit }}</div></div>
-      <div class="kpi"><div class="kpi__label">Outstanding Balance</div><div class="kpi__value {% if outstanding_balance > 0 %}kpi__value--warning{% endif %}">QAR {{ outstanding_balance }}</div></div>
+      <div class="kpi"><div class="kpi__label">Outstanding Balance</div><div class="kpi__value {% if outstanding_balance > 0 %}kpi__value--warning{% endif %}">QAR {{ outstanding_balance|floatformat:"2" }}</div></div>
       <div class="kpi"><div class="kpi__label">Status</div><div class="kpi__value">{{ tenant.get_status_display }}</div></div>
     </div>
     <div class="detail-section">
@@ -40,12 +40,15 @@
             {% if invoice.computed_status == "paid" %}<span class="pill pill--success">Paid</span>
             {% elif invoice.computed_status == "overdue" %}<span class="pill pill--danger">Overdue</span>
             {% elif invoice.computed_status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
-            {% else %}<span class="pill pill--warning">QAR {{ invoice.computed_outstanding }} due</span>{% endif %}
+            {% else %}<span class="pill pill--warning">QAR {{ invoice.computed_outstanding|floatformat:"2" }} due</span>{% endif %}
           </div>
         {% endfor %}
       {% else %}
         <div class="empty-state">
           <div class="empty-state__title">No invoices generated yet.</div>
+          {% if unbilled_balance > 0 %}
+            <p>Current rent of QAR {{ unbilled_balance|floatformat:"2" }} is pending collection.</p>
+          {% endif %}
         </div>
       {% endif %}
     </div>

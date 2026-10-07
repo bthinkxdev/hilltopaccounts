@@ -154,6 +154,7 @@
               {% elif row.status == "due_today" %}<span class="pill pill--warning">Due today</span>
               {% elif row.status == "unpaid" %}<span class="pill pill--neutral">Unpaid</span>
               {% elif row.status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
+              {% elif row.status == "reversed" %}<span class="pill pill--neutral">Reversed</span>
               {% else %}<span class="pill pill--neutral">Upcoming</span>{% endif %}
               {% if row.expense %}{% include "components/expense_actions.html" with expense=row.expense %}{% endif %}
               {% if can_admin_fixed %}<a class="btn btn--ghost btn--sm" href="{% url 'expenses:recurring_edit' row.template.pk %}">Amount</a>{% endif %}
@@ -186,6 +187,7 @@
               {% elif row.status == "due_today" %}<span class="pill pill--warning">Due today</span>
               {% elif row.status == "unpaid" %}<span class="pill pill--neutral">Unpaid</span>
               {% elif row.status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
+              {% elif row.status == "reversed" %}<span class="pill pill--neutral">Reversed</span>
               {% else %}<span class="pill pill--neutral">Upcoming</span>{% endif %}
               {% if row.expense %}{% include "components/expense_actions.html" with expense=row.expense %}{% endif %}
               {% if can_admin_fixed %}<a class="btn btn--ghost btn--sm" href="{% url 'expenses:recurring_edit' row.template.pk %}">Amount</a>{% endif %}

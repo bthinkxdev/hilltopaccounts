@@ -1,6 +1,7 @@
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db.models import Q
+from decimal import Decimal
+from django.db.models import Q, Sum
 from django.shortcuts import render
 from django.urls import reverse
 from django.views.generic import TemplateView
@@ -56,11 +57,28 @@ class HomeView(LoginRequiredMixin, TemplateView):
             pending_handovers = selectors.cash_handovers_visible_to(user).filter(status=CashHandover.Status.SUBMITTED)
             if pending_handovers.exists():
                 needs_attention.append({'label': 'Pending cash handovers', 'count': pending_handovers.count(), 'meta': 'Awaiting your confirmation', 'url': reverse('cash:handover_list') + '?status=submitted'})
-        expense_summary = expenses_selectors.due_summary(selectors.expenses_visible_to(user))
-        buckets = (('overdue', 'Overdue expenses'), ('today', 'Expenses due today')) + (() if staff_view else (('verify', 'Expenses to verify'),))
-        for bucket, label in buckets:
-            if expense_summary[bucket]['count']:
-                needs_attention.append({'label': label, 'count': expense_summary[bucket]['count'], 'meta': f"QAR {expense_summary[bucket]['total']} to pay", 'url': reverse('expenses:list') + f'?due={bucket}&status=active'})
+        if staff_view:
+            invoices = selectors.invoices_visible_to(user)
+            pending_rent = billing_selectors.outstanding_amount(invoices)
+            ctx['pending_rent_to_collect'] = pending_rent
+            overdue_rent = billing_selectors.overdue_invoices(invoices)
+            if overdue_rent:
+                overdue_total = sum((billing_selectors.invoice_outstanding(i) for i in overdue_rent), start=Decimal('0.00'))
+                needs_attention.append({'label': 'Overdue tenant rent', 'count': len(overdue_rent), 'meta': f'QAR {overdue_total} to collect', 'url': reverse('billing:invoice_list') + '?status=overdue'})
+
+            staff_bills = selectors.expenses_visible_to(user).filter(status='active', paid_by='staff', paid_on__isnull=True)
+            staff_bills_due = staff_bills.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            staff_bills_count = staff_bills.count()
+            ctx['staff_bills_due'] = staff_bills_due
+            ctx['staff_bills_count'] = staff_bills_count
+            if staff_bills_count > 0:
+                needs_attention.append({'label': 'Staff bills due (Utilities / Maintenance)', 'count': staff_bills_count, 'meta': f'QAR {staff_bills_due} to pay from cash', 'url': reverse('expenses:list') + '?due=unpaid&status=active'})
+        else:
+            expense_summary = expenses_selectors.due_summary(selectors.expenses_visible_to(user))
+            buckets = (('overdue', 'Overdue expenses'), ('today', 'Expenses due today'), ('verify', 'Expenses to verify'))
+            for bucket, label in buckets:
+                if expense_summary[bucket]['count']:
+                    needs_attention.append({'label': label, 'count': expense_summary[bucket]['count'], 'meta': f"QAR {expense_summary[bucket]['total']} to pay", 'url': reverse('expenses:list') + f'?due={bucket}&status=active'})
         if ctx['vacant_count'] > 0:
             needs_attention.append({'label': 'Vacant partitions', 'count': ctx['vacant_count'], 'meta': 'No tenant assigned', 'url': reverse('villas:partition_list') + '?occupancy=vacant'})
         my_unclaimed = cash_selectors.unclaimed_cash_payments(user) if not user.is_owner else cash_selectors.unclaimed_cash_payments(user).none()
@@ -75,7 +93,10 @@ class HomeView(LoginRequiredMixin, TemplateView):
             quick_actions.append({'label': 'Record Collection', 'url': reverse('billing:invoice_list')})
         ctx['needs_attention'] = needs_attention
         ctx['quick_actions'] = quick_actions
-        ctx['outstanding_cash'] = cash_selectors.outstanding_cash_for(user)
+        outstanding_cash = cash_selectors.outstanding_cash_for(user)
+        ctx['outstanding_cash'] = outstanding_cash
+        ctx['abs_outstanding_cash'] = abs(outstanding_cash)
+        ctx['is_cash_negative'] = outstanding_cash < 0
         ctx['pending_handover_amount'] = cash_selectors.pending_handover_amount(user)
         if ctx['can_view_financials'] and not staff_view:
             rows = cash_selectors.staff_accountability(user, ctx['year'], ctx['month'])

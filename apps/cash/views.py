@@ -22,7 +22,8 @@ def handover_list(request):
     if status:
         qs = qs.filter(status=status)
     page_obj = paginate_queryset(request, qs.order_by('-submitted_at'))
-    return render(request, 'cash/handover_list.html', {'page_obj': page_obj, 'status': status, 'status_choices': CashHandover.Status.choices, 'my_outstanding_cash': selectors.outstanding_cash_for(request.user), 'my_pending_amount': selectors.pending_handover_amount(request.user), 'my_unclaimed_payments': selectors.unclaimed_cash_payments(request.user), 'my_expenses_paid': selectors.total_staff_paid_expenses(request.user), 'can_view_accountability': accounts_selectors.can_view_financial_kpis(request.user), 'breadcrumbs': [('Cash Handover', None)]})
+    my_unclaimed = [] if request.user.is_owner else selectors.unclaimed_cash_payments(request.user)
+    return render(request, 'cash/handover_list.html', {'page_obj': page_obj, 'status': status, 'status_choices': CashHandover.Status.choices, 'my_outstanding_cash': selectors.outstanding_cash_for(request.user), 'my_pending_amount': selectors.pending_handover_amount(request.user), 'my_unclaimed_payments': my_unclaimed, 'my_expenses_paid': selectors.total_staff_paid_expenses(request.user), 'can_view_accountability': accounts_selectors.can_view_financial_kpis(request.user), 'breadcrumbs': [('Cash Handover', None)]})
 
 @login_required
 def handover_detail(request, pk):
@@ -47,7 +48,7 @@ def handover_submit(request):
     if not form.fields['payments'].queryset.exists():
         messages.info(request, 'You have no un-handed-over cash collections right now.')
         return redirect('cash:handover_list')
-    return render(request, 'components/form_page.html', {'form': form, 'title': 'Submit Cash Handover', 'submit_label': 'Submit', 'cancel_url': reverse('cash:handover_list')})
+    return render(request, 'components/form_page.html', {'form': form, 'title': 'Submit Cash Handover', 'submit_label': 'Submit Handover', 'cancel_url': reverse('cash:handover_list'), 'handover_form': True})
 
 @login_required
 def handover_confirm(request, pk):

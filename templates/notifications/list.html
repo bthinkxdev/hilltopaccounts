@@ -13,7 +13,7 @@
       <option value="">All</option>
       <option value="unread" {% if show == "unread" %}selected{% endif %}>Unread only</option>
     </select>
-    {% if request.GET %}<a class="btn btn--ghost" href="{{ request.path }}">Clear Filter</a>{% endif %}
+    {% if show %}<a class="btn btn--ghost" href="{{ request.path }}">Clear Filter</a>{% endif %}
   </form>
 
   <div class="card">

@@ -60,8 +60,16 @@
       </div>
       {% if staff_view %}
       <div class="kpi">
-        <div class="kpi__label">Cash in hand</div>
-        <div class="kpi__value {% if outstanding_cash > 0 %}kpi__value--warning{% endif %}">QAR {{ outstanding_cash }}</div>
+        <div class="kpi__label">Rent to collect</div>
+        <div class="kpi__value {% if pending_rent_to_collect > 0 %}kpi__value--warning{% endif %}">QAR {{ pending_rent_to_collect|floatformat:"2" }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Staff bills due</div>
+        <div class="kpi__value {% if staff_bills_due > 0 %}kpi__value--danger{% endif %}">QAR {{ staff_bills_due|floatformat:"2" }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">{% if is_cash_negative %}Out-of-pocket (To reimburse){% else %}Cash in hand{% endif %}</div>
+        <div class="kpi__value {% if is_cash_negative %}kpi__value--danger{% elif outstanding_cash > 0 %}kpi__value--warning{% endif %}">QAR {{ abs_outstanding_cash|floatformat:"2" }}</div>
       </div>
       {% elif can_view_financials %}
       <div class="kpi">
@@ -134,7 +142,9 @@
             <a class="list-row__title" href="{% url 'businesses:detail' business.pk %}">{{ business.name }}</a>
           </div>
         {% endfor %}
-        <a class="btn btn--ghost" href="{% url 'businesses:list' %}">View all businesses</a>
+        <div style="display: flex; justify-content: center; margin-top: var(--space-4);">
+          <a class="btn btn--ghost" href="{% url 'businesses:list' %}">View all businesses</a>
+        </div>
       {% else %}
         <div class="empty-state">
           <div class="empty-state__title">No businesses yet.</div>
@@ -152,7 +162,9 @@
             <span class="list-row__meta">{{ villa.business.name }}</span>
           </div>
         {% endfor %}
-        <a class="btn btn--ghost" href="{% url 'villas:villa_list' %}">View all villas</a>
+        <div style="display: flex; justify-content: center; margin-top: var(--space-4);">
+          <a class="btn btn--ghost" href="{% url 'villas:villa_list' %}">View all villas</a>
+        </div>
       {% else %}
         <div class="empty-state">
           <div class="empty-state__title">No villas yet.</div>

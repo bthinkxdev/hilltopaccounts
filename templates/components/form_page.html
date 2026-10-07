@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ title }} — Faisal Accounting{% endblock %}
 {% block content %}
-  <div class="page-header"><h1>{{ title }}</h1></div>
-  <div class="card card--narrow">
+  <div class="page-header" style="max-width: 600px; margin: 0 auto var(--space-4);"><h1>{{ title }}</h1></div>
+  <div class="card card--narrow" style="max-width: 600px;">
     <form method="post" enctype="multipart/form-data" novalidate>
       {% csrf_token %}
       {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors.0 }}</div>{% endif %}
@@ -14,6 +14,22 @@
           {% if field.errors %}<div class="field__error">{{ field.errors.0 }}</div>{% endif %}
         </div>
       {% endfor %}
+      {% if handover_form %}
+        <div style="margin: var(--space-4) 0; padding: var(--space-4); background: var(--surface-solid); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2); font-size: 14px;">
+            <span style="color: var(--text-secondary);">Selected collections:</span>
+            <strong id="handover-collections" style="color: var(--text-primary); font-variant-numeric: tabular-nums;">QAR 0.00</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); font-size: 14px;">
+            <span style="color: var(--text-secondary);">Selected expenses:</span>
+            <strong id="handover-expenses" style="color: var(--danger); font-variant-numeric: tabular-nums;">- QAR 0.00</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding-top: var(--space-3); border-top: 1px solid var(--border-subtle);">
+            <strong style="font-size: 15px; color: var(--text-primary);">Handover amount:</strong>
+            <strong id="handover-net" style="font-size: 20px; color: var(--accent); font-variant-numeric: tabular-nums;">QAR 0.00</strong>
+          </div>
+        </div>
+      {% endif %}
       <div class="form-actions">
         <button class="btn btn--primary" type="submit">{{ submit_label|default:"Save" }}</button>
         {% if cancel_url %}<a class="btn btn--ghost" href="{{ cancel_url }}">Cancel</a>{% endif %}
@@ -114,6 +130,41 @@
     } else if (amount.value === rentAmount) {
       amount.value = '';
     }
+  })();
+  </script>
+{% endif %}
+{% if handover_form %}
+  <script>
+  (function () {
+    function parseAmount(text) {
+      var match = (text || '').match(/QAR\s*([\d,.]+)/i);
+      return match ? parseFloat(match[1].replace(/,/g, '')) || 0 : 0;
+    }
+    function updateHandoverTotal() {
+      var coll = 0, exp = 0;
+      document.querySelectorAll('input[name="payments"]:checked').forEach(function (cb) {
+        var label = cb.closest('label') || document.querySelector('label[for="' + cb.id + '"]');
+        if (label) coll += parseAmount(label.textContent);
+      });
+      document.querySelectorAll('input[name="expenses"]:checked').forEach(function (cb) {
+        var label = cb.closest('label') || document.querySelector('label[for="' + cb.id + '"]');
+        if (label) exp += parseAmount(label.textContent);
+      });
+      var net = coll - exp;
+      var collEl = document.getElementById('handover-collections');
+      var expEl = document.getElementById('handover-expenses');
+      var netEl = document.getElementById('handover-net');
+      if (collEl) collEl.textContent = 'QAR ' + coll.toFixed(2);
+      if (expEl) expEl.textContent = '- QAR ' + exp.toFixed(2);
+      if (netEl) {
+        netEl.textContent = 'QAR ' + net.toFixed(2);
+        netEl.style.color = net > 0 ? 'var(--accent)' : 'var(--danger)';
+      }
+    }
+    document.querySelectorAll('input[name="payments"], input[name="expenses"]').forEach(function (el) {
+      el.addEventListener('change', updateHandoverTotal);
+    });
+    updateHandoverTotal();
   })();
   </script>
 {% endif %}

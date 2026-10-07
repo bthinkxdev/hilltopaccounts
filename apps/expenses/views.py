@@ -13,7 +13,7 @@ from apps.shared.forms import ReasonForm
 from apps.shared.pagination import paginate_queryset
 from . import selectors as expense_selectors
 from .forms import ExpenseForm, MarkPaidForm, RecurringExpenseForm, ReviseExpenseForm
-from .models import Expense, RecurringExpense
+from .models import Expense, PaidBy, RecurringExpense
 from .selectors import DueBucket
 from .services import (cancel_expense, can_pay_expense, create_expense, create_recurring_expense, deactivate_recurring_expense, get_or_create_category, mark_expense_paid,
                        reverse_expense, revise_unpaid_expense, update_recurring_expense, verify_expense)
@@ -27,6 +27,8 @@ def _can_manage_expense(user, expense):
 def expense_list(request):
     today = date.today()
     visible = selectors.expenses_visible_to(request.user)
+    if selectors.is_field_staff(request.user):
+        visible = visible.filter(paid_by=PaidBy.STAFF)
     qs = visible.select_related('business', 'villa', 'partition', 'category')
     villa_id = request.GET.get('villa', '')
     if villa_id.isdigit():
@@ -47,7 +49,8 @@ def expense_list(request):
         expense.can_verify = scope.can_verify_expense(expense)
         expense.can_edit = expense.can_manage and expense.status == 'active' and expense.paid_on is None
     villas = selectors.villas_visible_to(request.user).filter(is_archived=False).select_related('business')
-    context = {'page_obj': page_obj, 'status': status, 'due': due, 'due_choices': DueBucket.CHOICES, 'is_field_staff': selectors.is_field_staff(request.user), 'villas': villas, 'selected_villa': villa_id, 'summary': expense_selectors.due_summary(summary_base, today), 'can_add': selectors.manageable_villas(request.user).filter(is_archived=False).exists(), 'breadcrumbs': [('Expenses', None)]}
+    has_filters = bool(villa_id.isdigit() or (due in dict(DueBucket.CHOICES)) or ('status' in request.GET and status != Expense.Status.ACTIVE))
+    context = {'page_obj': page_obj, 'status': status, 'due': due, 'due_choices': DueBucket.CHOICES, 'is_field_staff': selectors.is_field_staff(request.user), 'villas': villas, 'selected_villa': villa_id, 'has_filters': has_filters, 'summary': expense_selectors.due_summary(summary_base, today), 'can_add': selectors.manageable_villas(request.user).filter(is_archived=False).exists(), 'breadcrumbs': [('Expenses', None)]}
     return render(request, 'expenses/list.html', context)
 
 def _expense_form_context(request, form, villa_pk, visible_expenses):

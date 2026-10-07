@@ -98,6 +98,7 @@ class FixedStatus:
     OVERDUE = 'overdue'
     NOT_CREATED = 'not_created'
     CANCELLED = 'cancelled'
+    REVERSED = 'reversed'
 
 def fixed_expense_checklist(villa, year: int, month: int, today=None):
     """The villa's fixed expenses for one month, each with its paid / unpaid / overdue state.
@@ -125,7 +126,11 @@ def fixed_expense_checklist(villa, year: int, month: int, today=None):
             totals['missing_count'] += 1
         else:
             due_date, amount = expense.due_date, expense.amount
-            if expense.status != Expense.Status.ACTIVE:
+            if expense.status == Expense.Status.CANCELLED:
+                status = FixedStatus.CANCELLED
+            elif expense.status == Expense.Status.REVERSED:
+                status = FixedStatus.REVERSED
+            elif expense.status != Expense.Status.ACTIVE:
                 status = FixedStatus.CANCELLED
             elif expense.paid_on is not None:
                 status = FixedStatus.PAID if expense.verified_at is not None else FixedStatus.TO_VERIFY
@@ -135,7 +140,7 @@ def fixed_expense_checklist(villa, year: int, month: int, today=None):
                 status = FixedStatus.DUE_TODAY
             else:
                 status = FixedStatus.UNPAID
-        if status != FixedStatus.CANCELLED:
+        if status not in (FixedStatus.CANCELLED, FixedStatus.REVERSED):
             totals['total'] += amount
             if status in (FixedStatus.PAID, FixedStatus.TO_VERIFY):
                 totals['paid'] += amount

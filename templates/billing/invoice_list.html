@@ -12,20 +12,24 @@
         <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
-    {% if request.GET %}<a class="btn btn--ghost" href="{{ request.path }}">Clear</a>{% endif %}
+    {% if q or status %}<a class="btn btn--ghost" href="{{ request.path }}">Clear</a>{% endif %}
   </form>
 
   <div class="card">
     {% if page_obj %}
       {% for invoice in page_obj %}
-        <div class="list-row">
-          <a class="list-row__title" href="{% url 'billing:invoice_detail' invoice.pk %}">{{ invoice.invoice_number }}</a>
-          <span class="list-row__meta">{{ invoice.tenant.name }} — {{ invoice.partition.villa.name }}</span>
-          {% if invoice.computed_status == "paid" %}<span class="pill pill--success">Paid</span>
-          {% elif invoice.computed_status == "overdue" %}<span class="pill pill--danger">Overdue — QAR {{ invoice.computed_outstanding }}</span>
-          {% elif invoice.computed_status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
-          {% elif invoice.computed_status == "partially_paid" %}<span class="pill pill--warning">QAR {{ invoice.computed_outstanding }} due</span>
-          {% else %}<span class="pill pill--neutral">Pending — QAR {{ invoice.computed_outstanding }}</span>{% endif %}
+        <div class="list-row" style="align-items: center; padding: var(--space-3) 0;">
+          <div style="flex: 1; min-width: 0; padding-right: var(--space-2);">
+            <a class="list-row__title" href="{% url 'billing:invoice_detail' invoice.pk %}" style="display: block; margin-bottom: 2px;">{{ invoice.invoice_number }}</a>
+            <div class="list-row__meta">{{ invoice.tenant.name }} — {{ invoice.partition.villa.name }}</div>
+          </div>
+          <div style="flex-shrink: 0; text-align: right;">
+            {% if invoice.computed_status == "paid" %}<span class="pill pill--success">Paid</span>
+            {% elif invoice.computed_status == "overdue" %}<span class="pill pill--danger">Overdue · QAR {{ invoice.computed_outstanding|floatformat:"2" }}</span>
+            {% elif invoice.computed_status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
+            {% elif invoice.computed_status == "partially_paid" %}<span class="pill pill--warning">QAR {{ invoice.computed_outstanding|floatformat:"2" }} due</span>
+            {% else %}<span class="pill pill--neutral">Pending · QAR {{ invoice.computed_outstanding|floatformat:"2" }}</span>{% endif %}
+          </div>
         </div>
       {% endfor %}
     {% else %}

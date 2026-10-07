@@ -2,7 +2,7 @@ from django.db.models import Q, QuerySet
 from apps.billing.models import Charge, Invoice, Payment
 from apps.businesses.models import Business
 from apps.cash.models import CashHandover
-from apps.expenses.models import Expense
+from apps.expenses.models import Expense, PaidBy
 from apps.tenancy.models import Tenant
 from apps.villas.models import Partition, Villa
 from .models import Assignment
