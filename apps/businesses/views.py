@@ -6,21 +6,28 @@ from django.urls import reverse
 from apps.accounts import selectors
 from apps.billing import selectors as billing_selectors
 from apps.expenses import selectors as expenses_selectors
+from apps.shared.exceptions import DomainError
 from apps.shared.pagination import paginate_queryset
 from apps.shared.periods import period_context
 from .forms import ArchiveReasonForm, BusinessForm
-from .services import archive_business, create_business
+from .services import archive_business, create_business, unarchive_business
 
 @login_required
 def business_list(request):
-    qs = selectors.businesses_visible_to(request.user).filter(is_archived=False)
+    status = request.GET.get('status', 'active')
+    if status == 'archived':
+        qs = selectors.businesses_visible_to(request.user).filter(is_archived=True)
+    elif status == 'all':
+        qs = selectors.businesses_visible_to(request.user)
+    else:
+        qs = selectors.businesses_visible_to(request.user).filter(is_archived=False)
     q = request.GET.get('q', '').strip()
     if q:
         qs = qs.filter(name__icontains=q)
     page_obj = paginate_queryset(request, qs)
     for business in page_obj:
         business.scoped_villa_count = selectors.villas_visible_to(request.user).filter(business=business).count()
-    return render(request, 'businesses/list.html', {'page_obj': page_obj, 'q': q, 'breadcrumbs': [('Businesses', None)]})
+    return render(request, 'businesses/list.html', {'page_obj': page_obj, 'q': q, 'selected_status': status, 'breadcrumbs': [('Businesses', None)]})
 
 @login_required
 def business_detail(request, pk):
@@ -57,9 +64,24 @@ def business_archive(request, pk):
     if request.method == 'POST':
         form = ArchiveReasonForm(request.POST)
         if form.is_valid():
-            archive_business(business=business, archived_by=request.user, reason=form.cleaned_data['reason'])
-            messages.success(request, f'Business “{business.name}” archived.')
-            return redirect('businesses:list')
+            try:
+                archive_business(business=business, archived_by=request.user, reason=form.cleaned_data['reason'])
+            except DomainError as exc:
+                form.add_error(None, str(exc))
+            else:
+                messages.success(request, f'Business “{business.name}” archived.')
+                return redirect('businesses:list')
     else:
         form = ArchiveReasonForm()
     return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Archive {business.name}?', 'message': 'This business will be archived, not deleted — its history stays intact and visible.', 'cancel_url': reverse('businesses:detail', args=[business.pk]), 'breadcrumbs': [('Businesses', reverse('businesses:list')), (business.name, reverse('businesses:detail', args=[business.pk])), ('Archive', None)]})
+
+
+@login_required
+def business_unarchive(request, pk):
+    business = get_object_or_404(selectors.businesses_visible_to(request.user), pk=pk)
+    if not request.user.is_owner:
+        raise PermissionDenied('Only the Owner can unarchive a business.')
+    if request.method == 'POST':
+        unarchive_business(business=business, unarchived_by=request.user)
+        messages.success(request, f'Business “{business.name}” unarchived.')
+    return redirect('businesses:detail', pk=business.pk)

@@ -22,6 +22,16 @@
           <div class="list-row">
             <span class="list-row__title">{{ assignment.get_role_display }}</span>
             <span class="list-row__meta">{{ assignment.business|default:assignment.villa }}</span>
+            {% if assignment.role == 'villa_staff' %}
+              <div style="display: flex; align-items: center; gap: 8px; margin-left: auto; margin-right: var(--space-3);">
+                <label class="switch" title="Allow adding partitions">
+                  <input type="checkbox" {% if assignment.can_add_partitions %}checked{% endif %}
+                         onchange="onTogglePartition(this, '{% url 'accounts:assignment_toggle_partitions' assignment.pk %}', '{{ staff.username|escapejs }}', '{{ assignment.villa.name|escapejs }}')">
+                  <span class="switch__slider"></span>
+                </label>
+                <span style="font-size: 13px; color: var(--text-secondary);">Add partitions</span>
+              </div>
+            {% endif %}
             <a class="btn btn--ghost" href="{% url 'accounts:assignment_remove' assignment.pk %}">Remove</a>
           </div>
         {% endfor %}
@@ -34,4 +44,42 @@
       <a class="btn btn--primary" href="{% url 'accounts:assignment_create' staff.pk %}">+ Add Assignment</a>
     </div>
   </div>
+
+  <dialog id="partition-modal" style="width: calc(100% - var(--space-6)); max-width: 420px;">
+    <h3 style="margin-bottom:var(--space-2);">Enable Partition Access</h3>
+    <p id="partition-modal-msg" style="color:var(--text-secondary); margin-bottom:var(--space-4); font-size:14px; line-height:1.5;"></p>
+    <div style="display:flex; justify-content:flex-end; gap:var(--space-2);">
+      <button type="button" class="btn btn--ghost" onclick="cancelToggle()">Cancel</button>
+      <form id="partition-toggle-form" method="post" style="margin:0;">
+        {% csrf_token %}
+        <button type="submit" class="btn btn--primary">OK</button>
+      </form>
+    </div>
+  </dialog>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let pendingToggle = null;
+function onTogglePartition(checkbox, url, staffName, villaName) {
+  if (checkbox.checked) {
+    pendingToggle = checkbox;
+    document.getElementById('partition-toggle-form').action = url;
+    document.getElementById('partition-modal-msg').textContent =
+      `When you enable this, ${staffName} can add partitions to ${villaName}.`;
+    document.getElementById('partition-modal').showModal();
+  } else {
+    const form = document.getElementById('partition-toggle-form');
+    form.action = url;
+    form.submit();
+  }
+}
+function cancelToggle() {
+  if (pendingToggle) {
+    pendingToggle.checked = false;
+    pendingToggle = null;
+  }
+  document.getElementById('partition-modal').close();
+}
+</script>
 {% endblock %}

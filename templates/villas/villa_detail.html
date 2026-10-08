@@ -4,14 +4,27 @@
   <div class="page-header">
     <div>
       <h1>{{ villa.name }}</h1>
-      <div class="page-header__meta">{{ villa.business.name }}{% if villa.address %} · {{ villa.address }}{% endif %} · {{ occupied_count }} occupied, {{ vacant_count }} vacant</div>
+      <div class="page-header__meta">
+        {% if villa.is_archived %}<span class="pill pill--neutral">Archived</span> · {% endif %}
+        {{ villa.business.name }}{% if villa.address %} · {{ villa.address }}{% endif %} · {{ occupied_count }} occupied, {{ vacant_count }} vacant
+      </div>
     </div>
     {% if can_manage %}
       <div class="quick-actions">
-        <a class="btn btn--primary" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>
-        <a class="btn btn--ghost" href="{% url 'villas:partition_create' villa.pk %}">+ Partition</a>
-        <a class="btn btn--ghost" href="{% url 'villas:villa_photo_add' villa.pk %}">+ Photo</a>
-        {% if is_admin %}<a class="btn btn--ghost" href="{% url 'villas:villa_edit' villa.pk %}">Edit</a><a class="btn btn--ghost" href="{% url 'villas:villa_archive' villa.pk %}">Archive</a>{% endif %}
+        {% if not villa.is_archived %}
+          <a class="btn btn--primary" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>
+          {% if can_add_partition %}<a class="btn btn--ghost" href="{% url 'villas:partition_create' villa.pk %}">+ Partition</a>{% endif %}
+          <a class="btn btn--ghost" href="{% url 'villas:villa_photo_add' villa.pk %}">+ Photo</a>
+          {% if is_admin %}<a class="btn btn--ghost" href="{% url 'villas:villa_edit' villa.pk %}">Edit</a><a class="btn btn--ghost" href="{% url 'villas:villa_archive' villa.pk %}">Archive</a>{% endif %}
+        {% else %}
+          {% if user.is_owner %}<a class="btn btn--primary" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>{% endif %}
+          {% if is_admin %}
+            <form method="post" action="{% url 'villas:villa_unarchive' villa.pk %}" style="display:inline;">
+              {% csrf_token %}
+              <button class="btn btn--ghost" type="submit">Unarchive</button>
+            </form>
+          {% endif %}
+        {% endif %}
       </div>
     {% endif %}
   </div>
@@ -51,6 +64,55 @@
       {% if cash.awaiting_confirmation %}<span>Handed over, awaiting owner <b>{{ cash.awaiting_confirmation|floatformat:"2g" }}</b></span>{% endif %}
       <a href="{% url 'cash:handover_list' %}">Handovers &rarr;</a>
     </div>
+  </div>
+
+  <div class="detail-section" id="partitions">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); flex-wrap: wrap; gap: var(--space-2);">
+      <div class="detail-section__title" style="margin-bottom: 0;">Partitions</div>
+      {% if not nav_is_field_staff %}
+        <form method="get" class="filter-bar" style="margin: 0; padding: 0; background: none; border: none; gap: var(--space-2);">
+          <input type="hidden" name="period" value="{{ period }}">
+          <input type="hidden" name="year" value="{{ year }}">
+          <input type="hidden" name="month" value="{{ month }}">
+          <select name="status" onchange="this.form.submit()" aria-label="Status">
+            <option value="active" {% if selected_status == "active" %}selected{% endif %}>Active</option>
+            <option value="archived" {% if selected_status == "archived" %}selected{% endif %}>Archived</option>
+            <option value="all" {% if selected_status == "all" %}selected{% endif %}>All</option>
+          </select>
+        </form>
+      {% endif %}
+    </div>
+    {% if partitions %}
+      <div class="tile-grid">
+        {% for partition in partitions %}
+          <a class="tile tile--row" href="{% url 'villas:partition_detail' partition.pk %}?period={{ period }}&year={{ year }}&month={{ month }}">
+            <div class="tile__cover">{% if partition.cover %}<img src="{% url 'villas:photo_file' partition.cover.pk %}" alt="{{ partition.name }}" loading="lazy">{% else %}<span aria-hidden="true">&#9638;</span>{% endif %}</div>
+            <div class="tile__body">
+              <div class="tile__title">{{ partition.name }}</div>
+              <div class="tile__meta">{% if partition.status == 'archived' %}Archived{% elif partition.tenant %}{{ partition.tenant.name }} · {{ partition.tenant.monthly_rent|floatformat:"0g" }}/mo{% elif partition.rent %}Rent: QAR {{ partition.rent|floatformat:"0g" }}/mo{% else %}No tenant{% endif %}</div>
+              <div class="tile__pills">
+                {% if partition.status == 'archived' %}<span class="pill pill--neutral">Archived</span>
+                {% elif partition.tenant %}<span class="pill pill--success">Occupied</span>
+                {% else %}<span class="pill pill--neutral">Vacant</span>{% endif %}
+              </div>
+            </div>
+            {% if partition.pnl %}{% include "components/money_row.html" with pnl=partition.pnl %}{% endif %}
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="card card--tight">
+        <div class="empty-state">
+          {% if selected_status == 'archived' %}
+            <div class="empty-state__title">No archived partitions for this villa.</div>
+          {% else %}
+            <div class="empty-state__title">No partitions created yet.</div>
+            <p>Add a partition to start assigning tenants and collecting rent.</p>
+            {% if can_add_partition %}<a class="btn btn--primary" href="{% url 'villas:partition_create' villa.pk %}">+ Add Partition</a>{% endif %}
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
   </div>
 
   <div class="detail-section" id="rent">
@@ -232,38 +294,13 @@
           {% include "components/expense_actions.html" %}
         </div>
       {% empty %}
-        <div class="empty-state"><div class="empty-state__title">No other expenses in {{ period_label }}.</div>{% if can_manage %}<a class="btn btn--primary btn--sm" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>{% endif %}</div>
+        <div class="empty-state"><div class="empty-state__title">No other expenses in {{ period_label }}.</div>{% if can_manage and not villa.is_archived or user.is_owner %}<a class="btn btn--primary btn--sm" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>{% endif %}</div>
       {% endfor %}
       <a class="btn btn--ghost btn--sm" href="{% url 'expenses:list' %}?villa={{ villa.pk }}">All expenses for this villa</a>
     </div>
   </div>
 
-  <div class="detail-section" id="partitions">
-    <div class="detail-section__title">Partitions</div>
-    {% if partitions %}
-      <div class="tile-grid">
-        {% for partition in partitions %}
-          <a class="tile tile--row" href="{% url 'villas:partition_detail' partition.pk %}?period={{ period }}&year={{ year }}&month={{ month }}">
-            <div class="tile__cover">{% if partition.cover %}<img src="{% url 'villas:photo_file' partition.cover.pk %}" alt="{{ partition.name }}" loading="lazy">{% else %}<span aria-hidden="true">&#9638;</span>{% endif %}</div>
-            <div class="tile__body">
-              <div class="tile__title">{{ partition.name }}</div>
-              <div class="tile__meta">{% if partition.tenant %}{{ partition.tenant.name }} · {{ partition.tenant.monthly_rent|floatformat:"0g" }}/mo{% elif partition.rent %}Rent: QAR {{ partition.rent|floatformat:"0g" }}/mo{% else %}No tenant{% endif %}</div>
-              <div class="tile__pills">{% if partition.tenant %}<span class="pill pill--success">Occupied</span>{% else %}<span class="pill pill--neutral">Vacant</span>{% endif %}</div>
-            </div>
-            {% if partition.pnl %}{% include "components/money_row.html" with pnl=partition.pnl %}{% endif %}
-          </a>
-        {% endfor %}
-      </div>
-    {% else %}
-      <div class="card card--tight">
-        <div class="empty-state">
-          <div class="empty-state__title">No partitions created yet.</div>
-          <p>Add a partition to start assigning tenants and collecting rent.</p>
-          {% if can_manage %}<a class="btn btn--primary" href="{% url 'villas:partition_create' villa.pk %}">+ Add Partition</a>{% endif %}
-        </div>
-      </div>
-    {% endif %}
-  </div>
+
 
   <div class="detail-section" id="photos">
     <div class="detail-section__title">Photos</div>
@@ -280,7 +317,7 @@
       {% else %}
         <div class="empty-state">
           <div class="empty-state__title">No photos of this villa yet.</div>
-          {% if can_manage %}<a class="btn btn--primary btn--sm" href="{% url 'villas:villa_photo_add' villa.pk %}">+ Add Photo</a>{% endif %}
+          {% if can_manage and not villa.is_archived %}<a class="btn btn--primary btn--sm" href="{% url 'villas:villa_photo_add' villa.pk %}">+ Add Photo</a>{% endif %}
         </div>
       {% endif %}
     </div>

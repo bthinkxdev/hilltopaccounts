@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from apps.audit import services as audit_services
 from apps.audit.models import Action
@@ -38,9 +39,12 @@ def enable_user(*, user: User, enabled_by, reason='') -> User:
         audit_services.log(user=enabled_by, action=Action.USER_UPDATED, obj=user, old_value={'is_active': False}, new_value={'is_active': True}, reason=reason or 'reactivated')
     return user
 
-def _create_assignment(*, user, role, business, villa, assigned_by) -> Assignment:
+def _create_assignment(*, user, role, business, villa, assigned_by, can_add_partitions=False) -> Assignment:
     with transaction.atomic():
-        assignment = Assignment(user=user, role=role, business=business, villa=villa, created_by=assigned_by)
+        target = villa or business
+        if Assignment.objects.filter(user=user, role=role, business=business, villa=villa).exists():
+            raise ValidationError(f'{user.username} is already assigned to {target}.')
+        assignment = Assignment(user=user, role=role, business=business, villa=villa, can_add_partitions=can_add_partitions, created_by=assigned_by)
         assignment.full_clean()
         assignment.save()
         action = Action.VILLA_ASSIGNMENT_CHANGED if villa is not None else Action.BUSINESS_ASSIGNMENT_CHANGED
@@ -50,8 +54,8 @@ def _create_assignment(*, user, role, business, villa, assigned_by) -> Assignmen
 def assign_business_manager(*, user, business, assigned_by) -> Assignment:
     return _create_assignment(user=user, role=Assignment.Role.BUSINESS_MANAGER, business=business, villa=None, assigned_by=assigned_by)
 
-def assign_villa_staff(*, user, villa, assigned_by) -> Assignment:
-    return _create_assignment(user=user, role=Assignment.Role.VILLA_STAFF, business=None, villa=villa, assigned_by=assigned_by)
+def assign_villa_staff(*, user, villa, assigned_by, can_add_partitions=False) -> Assignment:
+    return _create_assignment(user=user, role=Assignment.Role.VILLA_STAFF, business=None, villa=villa, assigned_by=assigned_by, can_add_partitions=can_add_partitions)
 
 def assign_accountant(*, user, assigned_by, business=None, villa=None) -> Assignment:
     return _create_assignment(user=user, role=Assignment.Role.ACCOUNTANT, business=business, villa=villa, assigned_by=assigned_by)

@@ -22,12 +22,23 @@ class Assignment(models.Model):
     role = models.CharField(max_length=20, choices=Role.choices)
     business = models.ForeignKey('businesses.Business', on_delete=models.CASCADE, null=True, blank=True, related_name='manager_assignments')
     villa = models.ForeignKey('villas.Villa', on_delete=models.CASCADE, null=True, blank=True, related_name='staff_assignments')
+    can_add_partitions = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
 
     class Meta:
         ordering = ['user__username']
-        constraints = [models.CheckConstraint(check=models.Q(role='business_manager', business__isnull=False, villa__isnull=True) | models.Q(role='villa_staff', villa__isnull=False, business__isnull=True) | models.Q(role='accountant', business__isnull=False, villa__isnull=True) | models.Q(role='accountant', business__isnull=True, villa__isnull=False), name='assignment_scope_matches_role'), models.UniqueConstraint(fields=['user', 'role', 'business', 'villa'], name='unique_assignment')]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(role='business_manager', business__isnull=False, villa__isnull=True)
+                | models.Q(role='villa_staff', villa__isnull=False, business__isnull=True)
+                | models.Q(role='accountant', business__isnull=False, villa__isnull=True)
+                | models.Q(role='accountant', business__isnull=True, villa__isnull=False),
+                name='assignment_scope_matches_role',
+            ),
+            models.UniqueConstraint(fields=['user', 'role', 'business'], condition=models.Q(business__isnull=False), name='unique_business_assignment'),
+            models.UniqueConstraint(fields=['user', 'role', 'villa'], condition=models.Q(villa__isnull=False), name='unique_villa_assignment'),
+        ]
 
     def __str__(self):
         scope = self.business or self.villa

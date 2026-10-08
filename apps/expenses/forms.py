@@ -37,9 +37,11 @@ class ExpenseForm(forms.Form):
         self.user = user
         if user is not None:
             from apps.accounts import selectors
-            villas = selectors.manageable_villas(user).filter(is_archived=False)
+            villas = selectors.manageable_villas(user)
+            if not user.is_owner:
+                villas = villas.filter(is_archived=False)
             self.fields['villa'].queryset = villas.select_related('business')
-            self.fields['partition'].queryset = Partition.objects.filter(villa__in=villas, status=Partition.Status.ACTIVE).select_related('villa')
+            self.fields['partition'].queryset = Partition.objects.filter(villa__in=villas).select_related('villa') if user.is_owner else Partition.objects.filter(villa__in=villas, status=Partition.Status.ACTIVE).select_related('villa')
 
     def clean_name(self):
         return ' '.join(self.cleaned_data['name'].split())

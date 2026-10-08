@@ -6,17 +6,28 @@
       <h1>{{ partition.name }}</h1>
       <div class="page-header__meta">
         <a href="{% url 'villas:villa_detail' villa.pk %}">{{ villa.name }}</a> — {{ villa.business.name }}
-        {% if current_tenant %}<span class="pill pill--success">Occupied</span>{% else %}<span class="pill pill--neutral">Vacant</span>{% endif %}
+        {% if partition.status == 'archived' %}<span class="pill pill--neutral">Archived</span>
+        {% elif current_tenant %}<span class="pill pill--success">Occupied</span>
+        {% else %}<span class="pill pill--neutral">Vacant</span>{% endif %}
         {% if partition.rent %}<span class="pill pill--neutral">Rent: QAR {{ partition.rent|floatformat:"2" }}/mo</span>{% endif %}
       </div>
       {% if partition.description %}<div class="page-header__meta">{{ partition.description }}</div>{% endif %}
     </div>
     {% if can_manage %}
       <div class="quick-actions">
-        <a class="btn btn--primary" href="{% url 'expenses:create' %}?partition={{ partition.pk }}">+ Add Expense</a>
-        <a class="btn btn--ghost" href="{% url 'villas:partition_edit' partition.pk %}">Edit</a>
-        <a class="btn btn--ghost" href="{% url 'villas:partition_photo_add' partition.pk %}">+ Add Photo</a>
-        <a class="btn btn--ghost" href="{% url 'villas:partition_archive' partition.pk %}">Archive</a>
+        {% if partition.status != 'archived' %}
+          <a class="btn btn--primary" href="{% url 'expenses:create' %}?partition={{ partition.pk }}">+ Add Expense</a>
+          <a class="btn btn--ghost" href="{% url 'villas:partition_edit' partition.pk %}">Edit</a>
+          <a class="btn btn--ghost" href="{% url 'villas:partition_photo_add' partition.pk %}">+ Add Photo</a>
+          {% if can_archive %}<a class="btn btn--ghost" href="{% url 'villas:partition_archive' partition.pk %}">Archive</a>{% endif %}
+        {% else %}
+          {% if can_archive %}
+            <form method="post" action="{% url 'villas:partition_unarchive' partition.pk %}" style="display:inline;">
+              {% csrf_token %}
+              <button class="btn btn--ghost" type="submit">Unarchive</button>
+            </form>
+          {% endif %}
+        {% endif %}
       </div>
     {% endif %}
   </div>
@@ -35,7 +46,7 @@
     {% else %}
       <div class="empty-state">
         <div class="empty-state__title">No photos of this partition yet.</div>
-        {% if can_manage %}<a class="btn btn--primary" href="{% url 'villas:partition_photo_add' partition.pk %}">+ Add Photo</a>{% endif %}
+        {% if can_manage and partition.status != 'archived' %}<a class="btn btn--primary" href="{% url 'villas:partition_photo_add' partition.pk %}">+ Add Photo</a>{% endif %}
       </div>
     {% endif %}
   </div>
@@ -45,7 +56,7 @@
       <span>Tenant</span>
       <span class="list-row__meta" style="font-weight: normal; font-size: 0.875rem;">
         Partition Rent: <strong>{% if partition.rent %}QAR {{ partition.rent|floatformat:"2" }}/mo{% else %}Not set{% endif %}</strong>
-        {% if can_manage %}<a href="{% url 'villas:partition_edit' partition.pk %}" style="margin-left: 0.5rem;">Edit</a>{% endif %}
+        {% if can_manage and partition.status != 'archived' %}<a href="{% url 'villas:partition_edit' partition.pk %}" style="margin-left: 0.5rem;">Edit</a>{% endif %}
       </span>
     </div>
     {% if current_tenant %}
@@ -53,6 +64,17 @@
         <a class="list-row__title" href="{% url 'tenancy:detail' current_tenant.pk %}">{{ current_tenant.name }}</a>
         <span class="list-row__meta">QAR {{ current_tenant.monthly_rent|floatformat:"2" }}/mo since {{ current_tenant.move_in_date }}</span>
         {% if can_manage %}<a class="btn btn--ghost" href="{% url 'tenancy:move_out' current_tenant.pk %}">Move out &amp; mark vacant</a>{% endif %}
+      </div>
+    {% elif partition.status == 'archived' %}
+      <div class="empty-state">
+        <div class="empty-state__title">This partition is archived.</div>
+        <p>Unarchive this partition to assign tenants or record new activity.</p>
+        {% if can_archive %}
+          <form method="post" action="{% url 'villas:partition_unarchive' partition.pk %}">
+            {% csrf_token %}
+            <button class="btn btn--ghost" type="submit">Unarchive Partition</button>
+          </form>
+        {% endif %}
       </div>
     {% else %}
       <div class="empty-state">

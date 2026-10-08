@@ -60,6 +60,9 @@ def tenant_create(request, partition_pk):
     partition = get_object_or_404(selectors.partitions_visible_to(request.user), pk=partition_pk)
     if not (request.user.is_owner or selectors.can_manage_villas_and_tenants(request.user)):
         raise PermissionDenied('You cannot move in a tenant here.')
+    if partition.status == 'archived' or partition.villa.is_archived or partition.villa.business.is_archived:
+        messages.error(request, 'Cannot move in a tenant to an archived partition.')
+        return redirect('villas:partition_detail', pk=partition.pk)
     lock_rent = partition.rent is not None
     initial = {}
     if lock_rent:

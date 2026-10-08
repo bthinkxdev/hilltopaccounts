@@ -21,7 +21,7 @@ class HomeView(LoginRequiredMixin, TemplateView):
         user = self.request.user
         businesses = selectors.businesses_visible_to(user).filter(is_archived=False)
         villas = selectors.villas_visible_to(user).filter(is_archived=False).select_related('business')
-        partitions = selectors.partitions_visible_to(user)
+        partitions = selectors.partitions_visible_to(user).filter(status='active', villa__is_archived=False)
         staff_view = selectors.is_field_staff(user)
         ctx['staff_view'] = staff_view
         ctx['businesses'] = businesses

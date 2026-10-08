@@ -7,6 +7,7 @@ urlpatterns = [
     path('villas/<int:pk>/', views.villa_detail, name='villa_detail'),
     path('villas/<int:pk>/edit/', views.villa_edit, name='villa_edit'),
     path('villas/<int:pk>/archive/', views.villa_archive, name='villa_archive'),
+    path('villas/<int:pk>/unarchive/', views.villa_unarchive, name='villa_unarchive'),
     path('villas/<int:villa_pk>/photos/add/', views.photo_add, name='villa_photo_add'),
     path('partitions/<int:partition_pk>/photos/add/', views.photo_add, name='partition_photo_add'),
     path('photos/<int:pk>/', views.photo_file, name='photo_file'),
@@ -16,5 +17,6 @@ urlpatterns = [
     path('partitions/<int:pk>/', views.partition_detail, name='partition_detail'),
     path('partitions/<int:pk>/edit/', views.partition_edit, name='partition_edit'),
     path('partitions/<int:pk>/archive/', views.partition_archive, name='partition_archive'),
+    path('partitions/<int:pk>/unarchive/', views.partition_unarchive, name='partition_unarchive'),
     path('villas/<int:villa_pk>/partitions/new/', views.partition_create, name='partition_create'),
 ]

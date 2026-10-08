@@ -59,7 +59,9 @@ def _expense_form_context(request, form, villa_pk, visible_expenses):
 
 @login_required
 def expense_create(request, villa_pk=None):
-    manageable = selectors.manageable_villas(request.user).filter(is_archived=False)
+    manageable = selectors.manageable_villas(request.user)
+    if not request.user.is_owner:
+        manageable = manageable.filter(is_archived=False)
     if not manageable.exists():
         raise PermissionDenied('You are not authorized to add expenses.')
     preselected = request.GET.get('villa') or villa_pk

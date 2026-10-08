@@ -88,7 +88,8 @@ def assignment_create(request, staff_pk):
                 else:
                     assign_accountant(user=staff, business=business, villa=villa, assigned_by=request.user)
             except ValidationError as exc:
-                form.add_error(None, 'That assignment already exists.' if 'unique' in str(exc).lower() else str(exc))
+                msg = exc.messages[0] if hasattr(exc, 'messages') and exc.messages else str(exc)
+                form.add_error(None, msg)
             else:
                 messages.success(request, f'Assignment added for {staff.username}.')
                 return redirect('accounts:staff_detail', pk=staff.pk)
@@ -110,3 +111,13 @@ def assignment_remove(request, pk):
     else:
         form = ReasonForm()
     return render(request, 'components/confirm_reason.html', {'form': form, 'title': 'Remove this assignment?', 'message': 'Access tied to this assignment is revoked immediately.', 'cancel_url': reverse('accounts:staff_detail', args=[staff.pk])})
+
+@login_required
+def assignment_toggle_partitions(request, pk):
+    _owner_only(request.user)
+    assignment = get_object_or_404(Assignment, pk=pk, role=Assignment.Role.VILLA_STAFF)
+    assignment.can_add_partitions = not assignment.can_add_partitions
+    assignment.save(update_fields=['can_add_partitions'])
+    action = 'enabled' if assignment.can_add_partitions else 'disabled'
+    messages.success(request, f'Partition creation {action} for {assignment.user.username} at {assignment.villa.name}.')
+    return redirect('accounts:staff_detail', pk=assignment.user_id)

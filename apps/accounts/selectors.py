@@ -112,6 +112,20 @@ def can_manage_villa(user, villa) -> bool:
         return True
     return Assignment.objects.filter(user=user).filter(Q(role=Assignment.Role.BUSINESS_MANAGER, business_id=villa.business_id) | Q(role=Assignment.Role.VILLA_STAFF, villa=villa)).exists()
 
+def can_add_partition(user, villa) -> bool:
+    if villa.is_archived or villa.business.is_archived:
+        return False
+    if user.is_owner:
+        return True
+    return Assignment.objects.filter(user=user).filter(Q(role=Assignment.Role.BUSINESS_MANAGER, business_id=villa.business_id) | Q(role=Assignment.Role.VILLA_STAFF, villa=villa, can_add_partitions=True)).exists()
+
+def partition_creatable_villas(user) -> QuerySet[Villa]:
+    if user.is_owner:
+        return Villa.objects.filter(is_archived=False, business__is_archived=False)
+    managed = Assignment.objects.filter(user=user, role=Assignment.Role.BUSINESS_MANAGER).values('business_id')
+    staffed = Assignment.objects.filter(user=user, role=Assignment.Role.VILLA_STAFF, can_add_partitions=True).values('villa_id')
+    return Villa.objects.filter(Q(business_id__in=managed) | Q(pk__in=staffed), is_archived=False, business__is_archived=False).distinct()
+
 def manageable_villas(user) -> QuerySet[Villa]:
     if user.is_owner:
         return Villa.objects.all()
@@ -140,18 +154,24 @@ class ManageScope:
         self.is_owner = user.is_owner
         self.admin_business_ids = set()
         self.staff_villa_ids = set()
+        self.partition_villa_ids = set()
         if not self.is_owner:
-            for role, business_id, villa_id in Assignment.objects.filter(user=user).values_list('role', 'business_id', 'villa_id'):
+            for role, business_id, villa_id, can_add in Assignment.objects.filter(user=user).values_list('role', 'business_id', 'villa_id', 'can_add_partitions'):
                 if role == Assignment.Role.BUSINESS_MANAGER:
                     self.admin_business_ids.add(business_id)
                 elif role == Assignment.Role.VILLA_STAFF:
                     self.staff_villa_ids.add(villa_id)
+                    if can_add:
+                        self.partition_villa_ids.add(villa_id)
 
     def is_admin(self, business_id) -> bool:
         return self.is_owner or business_id in self.admin_business_ids
 
     def can_manage_villa(self, villa_id, business_id) -> bool:
         return self.is_admin(business_id) or villa_id in self.staff_villa_ids
+
+    def can_add_partition(self, villa_id, business_id) -> bool:
+        return self.is_admin(business_id) or villa_id in self.partition_villa_ids
 
     def can_verify_expense(self, expense) -> bool:
         return self.is_admin(expense.business_id)

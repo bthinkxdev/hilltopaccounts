@@ -6,6 +6,7 @@
     <p class="page-header__meta" style="margin-bottom: var(--space-4);">{{ message }}</p>
     <form method="post" novalidate>
       {% csrf_token %}
+      {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors.0 }}</div>{% endif %}
       <div class="field">
         <label for="{{ form.reason.id_for_label }}">Reason <span class="field__required">*</span></label>
         {{ form.reason }}

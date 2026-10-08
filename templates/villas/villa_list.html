@@ -35,7 +35,14 @@
           {% for person in staff_choices %}<option value="{{ person.pk }}" {% if selected_staff == person.pk|stringformat:"s" %}selected{% endif %}>{{ person.get_full_name|default:person.username }}</option>{% endfor %}
         </select>
       {% endif %}
-      {% if q or selected_business or selected_staff %}<a class="btn btn--ghost" href="?period={{ period }}&year={{ year }}&month={{ month }}">Clear</a>{% endif %}
+      {% if not nav_is_field_staff %}
+        <select name="status" onchange="this.form.submit()" aria-label="Status">
+          <option value="active" {% if selected_status == "active" %}selected{% endif %}>Active</option>
+          <option value="archived" {% if selected_status == "archived" %}selected{% endif %}>Archived</option>
+          <option value="all" {% if selected_status == "all" %}selected{% endif %}>All</option>
+        </select>
+      {% endif %}
+      {% if q or selected_business or selected_staff or selected_status != "active" %}<a class="btn btn--ghost" href="?period={{ period }}&year={{ year }}&month={{ month }}">Clear</a>{% endif %}
     </form>
   </div>
 
@@ -48,6 +55,7 @@
             <div class="tile__title">{{ villa.name }}</div>
             <div class="tile__meta">{{ villa.business.name }}{% if villa.staff_names %} · {{ villa.staff_names|join:", " }}{% endif %}</div>
             <div class="tile__pills">
+              {% if villa.is_archived %}<span class="pill pill--neutral">Archived</span>{% endif %}
               {% if villa.partition_total %}<span class="pill pill--success">{{ villa.occupied_total }} occ</span>{% if villa.vacant_total %}<span class="pill pill--neutral">{{ villa.vacant_total }} vacant</span>{% endif %}{% else %}<span class="pill pill--neutral">No partitions</span>{% endif %}
               {% if villa.pending_rent %}<span class="pill pill--warning">{{ villa.pending_rent }} pending</span>{% endif %}
               {% if villa.fixed_pending %}<span class="pill pill--warning">{{ villa.fixed_pending }} fixed unpaid</span>{% endif %}

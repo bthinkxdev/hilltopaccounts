@@ -9,7 +9,12 @@
   <form class="filter-bar" method="get">
     <input type="search" name="q" placeholder="Search businesses…" value="{{ q }}">
     <button class="btn btn--ghost" type="submit">Search</button>
-    {% if q %}<a class="btn btn--ghost" href="{{ request.path }}">Clear</a>{% endif %}
+    <select name="status" onchange="this.form.submit()" aria-label="Status">
+      <option value="active" {% if selected_status == "active" %}selected{% endif %}>Active</option>
+      <option value="archived" {% if selected_status == "archived" %}selected{% endif %}>Archived</option>
+      <option value="all" {% if selected_status == "all" %}selected{% endif %}>All</option>
+    </select>
+    {% if q or selected_status != "active" %}<a class="btn btn--ghost" href="{{ request.path }}">Clear</a>{% endif %}
   </form>
 
   <div class="card">
@@ -18,6 +23,7 @@
         <div class="list-row">
           <a class="list-row__title" href="{% url 'businesses:detail' business.pk %}">{{ business.name }}</a>
           <span class="list-row__meta">{{ business.scoped_villa_count }} villa{{ business.scoped_villa_count|pluralize }}</span>
+          {% if business.is_archived %}<span class="pill pill--neutral">Archived</span>{% endif %}
         </div>
       {% endfor %}
     {% else %}

@@ -10,6 +10,8 @@ TRACKED_FIELDS = ['name', 'address', 'landlord_name', 'landlord_contact', 'contr
 PARTITION_TRACKED_FIELDS = ['name', 'description', 'rent', 'status']
 
 def create_villa(*, business, name, created_by, **fields) -> Villa:
+    if business.is_archived:
+        raise DomainError(f'Cannot create a villa under archived business “{business.name}”.')
     with transaction.atomic():
         villa = Villa(business=business, name=name, created_by=created_by, **fields)
         villa.full_clean()
@@ -30,13 +32,31 @@ def update_villa(*, villa: Villa, updated_by, **fields) -> Villa:
     return villa
 
 def archive_villa(*, villa: Villa, archived_by, reason='') -> Villa:
+    from apps.tenancy.models import Tenant
+    active_tenants = list(Tenant.objects.filter(partition__villa=villa, status=Tenant.Status.ACTIVE).select_related('partition'))
+    if active_tenants:
+        if len(active_tenants) == 1:
+            t = active_tenants[0]
+            raise DomainError(f'{villa.name} is occupied by {t.name} in {t.partition.name}. Move the tenant out before archiving.')
+        raise DomainError(f'{villa.name} has {len(active_tenants)} active tenants across its partitions. Move all tenants out before archiving.')
     with transaction.atomic():
         villa.is_archived = True
         villa.save(update_fields=['is_archived'])
         audit_services.log(user=archived_by, action=Action.VILLA_ARCHIVED, obj=villa, business=villa.business, villa=villa, old_value={'is_archived': False}, new_value={'is_archived': True}, reason=reason)
     return villa
 
+def unarchive_villa(*, villa: Villa, unarchived_by) -> Villa:
+    if villa.business.is_archived:
+        raise DomainError(f'Cannot unarchive villa while its parent business “{villa.business.name}” is archived.')
+    with transaction.atomic():
+        villa.is_archived = False
+        villa.save(update_fields=['is_archived'])
+        audit_services.log(user=unarchived_by, action=Action.VILLA_UPDATED, obj=villa, business=villa.business, villa=villa, old_value={'is_archived': True}, new_value={'is_archived': False}, reason='Unarchived')
+    return villa
+
 def create_partition(*, villa: Villa, name, created_by, **fields) -> Partition:
+    if villa.is_archived or villa.business.is_archived:
+        raise DomainError(f'Cannot create a partition under archived villa “{villa.name}”.')
     with transaction.atomic():
         partition = Partition(villa=villa, name=name, created_by=created_by, **fields)
         partition.full_clean()
@@ -65,6 +85,16 @@ def archive_partition(*, partition: Partition, archived_by, reason='') -> Partit
         partition.updated_by = archived_by
         partition.save(update_fields=['status', 'updated_by', 'updated_at'])
         audit_services.log(user=archived_by, action=Action.PARTITION_ARCHIVED, obj=partition, business=partition.villa.business, villa=partition.villa, old_value={'status': Partition.Status.ACTIVE}, new_value={'status': Partition.Status.ARCHIVED}, reason=reason)
+    return partition
+
+def unarchive_partition(*, partition: Partition, unarchived_by) -> Partition:
+    if partition.villa.is_archived:
+        raise DomainError(f'Cannot unarchive partition while its parent villa “{partition.villa.name}” is archived.')
+    with transaction.atomic():
+        partition.status = Partition.Status.ACTIVE
+        partition.updated_by = unarchived_by
+        partition.save(update_fields=['status', 'updated_by', 'updated_at'])
+        audit_services.log(user=unarchived_by, action=Action.PARTITION_UPDATED, obj=partition, business=partition.villa.business, villa=partition.villa, old_value={'status': Partition.Status.ARCHIVED}, new_value={'status': Partition.Status.ACTIVE}, reason='Unarchived')
     return partition
 
 
