@@ -2,13 +2,13 @@ from datetime import date
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 from apps.accounts import selectors
 from apps.shared.exceptions import DomainError
-from apps.villas.models import Partition
+from apps.villas.models import Partition, Villa
 from apps.shared.forms import ReasonForm
 from apps.shared.pagination import paginate_queryset
 from . import selectors as expense_selectors
@@ -54,19 +54,26 @@ def expense_list(request):
     return render(request, 'expenses/list.html', context)
 
 def _expense_form_context(request, form, villa_pk, visible_expenses):
-    cancel_url = reverse('villas:villa_detail', args=[villa_pk]) if villa_pk is not None else reverse('expenses:list')
+    partition = request.GET.get('partition')
+    cancel_url = reverse('villas:partition_detail', args=[partition]) if partition else (reverse('villas:villa_detail', args=[villa_pk]) if villa_pk else reverse('expenses:list'))
     return {'form': form, 'title': 'Add Expense', 'cancel_url': cancel_url, 'expense_form': True, 'expense_names': expense_selectors.used_expense_names(visible_expenses), 'suggest_url': reverse('expenses:suggest')}
 
 @login_required
 def expense_create(request, villa_pk=None):
+    if villa_pk is not None:
+        villa = get_object_or_404(selectors.villas_visible_to(request.user), pk=villa_pk)
+        if selectors.is_field_staff(request.user) and (villa.is_archived or villa.business.is_archived):
+            messages.info(request, 'This villa has been archived.')
+            return redirect('villas:villa_list')
     manageable = selectors.manageable_villas(request.user)
     if not request.user.is_owner:
         manageable = manageable.filter(is_archived=False)
     if not manageable.exists():
+        if selectors.is_field_staff(request.user) and Villa.objects.filter(staff_assignments__user=request.user).exists():
+            messages.info(request, 'This villa has been archived.')
+            return redirect('villas:villa_list')
         raise PermissionDenied('You are not authorized to add expenses.')
     preselected = request.GET.get('villa') or villa_pk
-    if villa_pk is not None:
-        get_object_or_404(manageable, pk=villa_pk)
     visible_expenses = selectors.expenses_visible_to(request.user)
     if request.method == 'POST':
         form = ExpenseForm(request.POST, request.FILES, user=request.user)
@@ -84,7 +91,9 @@ def expense_create(request, villa_pk=None):
                 form.add_error('paid_by', str(exc))
                 return render(request, 'components/form_page.html', _expense_form_context(request, form, villa_pk, visible_expenses))
             messages.success(request, f'{expense.category} — QAR {expense.amount} recorded for {expense.villa.name}.')
-            return redirect('villas:villa_detail', pk=expense.villa_id) if villa_pk is not None else redirect('expenses:list')
+            if expense.partition_id:
+                return redirect('villas:partition_detail', pk=expense.partition_id)
+            return redirect('villas:villa_detail', pk=expense.villa_id) if (villa_pk or request.GET.get('villa')) else redirect('expenses:list')
     else:
         initial = {'villa': preselected, 'date': date.today()}
         partition_id = request.GET.get('partition', '')
@@ -92,6 +101,9 @@ def expense_create(request, villa_pk=None):
             partition = Partition.objects.filter(pk=partition_id, villa__in=manageable).first()
             if partition is not None:
                 initial.update(villa=partition.villa_id, partition=partition.pk)
+            elif selectors.is_field_staff(request.user) and Partition.objects.filter(villa__staff_assignments__user=request.user, pk=partition_id).exists():
+                messages.info(request, 'This villa has been archived.')
+                return redirect('villas:villa_list')
         initial['paid_by'] = 'owner' if request.user.is_owner else 'staff'
         form = ExpenseForm(user=request.user, initial=initial)
     return render(request, 'components/form_page.html', _expense_form_context(request, form, villa_pk, visible_expenses))

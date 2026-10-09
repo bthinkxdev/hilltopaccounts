@@ -7,7 +7,10 @@
       <div class="page-header__meta">{{ tenant.partition.villa.name }} — {{ tenant.partition.name }}</div>
     </div>
     {% if can_manage and tenant.status == "active" %}
-      <a class="btn btn--ghost" href="{% url 'tenancy:move_out' tenant.pk %}">Move Out</a>
+      <div style="display: flex; gap: var(--space-2);">
+        <a class="btn btn--ghost" href="{% url 'tenancy:edit' tenant.pk %}">Edit</a>
+        <a class="btn btn--ghost" href="{% url 'tenancy:move_out' tenant.pk %}">Move Out</a>
+      </div>
     {% endif %}
   </div>
 

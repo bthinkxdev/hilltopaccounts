@@ -174,10 +174,11 @@ h1, h2, h3, p {
 }
 
 .sidebar__link:hover {
-  background: var(--surface-solid);
+  background: var(--border-subtle);
 }
 
-.sidebar__link--active {
+.sidebar__link--active,
+.sidebar__link--active:hover {
   background: var(--accent);
   color: var(--accent-contrast);
 }
@@ -390,6 +391,7 @@ h1, h2, h3, p {
   font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .kpi__value--accent { color: var(--accent); }

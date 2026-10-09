@@ -43,11 +43,11 @@
     <div class="card">
       <div class="card__title">Financial summary (all time)</div>
       <div class="grid--kpi">
-        <div class="kpi"><div class="kpi__label">Expected Revenue</div><div class="kpi__value">QAR {{ expected_revenue }}</div></div>
-        <div class="kpi"><div class="kpi__label">Collected</div><div class="kpi__value kpi__value--success">QAR {{ collected }}</div></div>
-        <div class="kpi"><div class="kpi__label">Outstanding</div><div class="kpi__value kpi__value--warning">QAR {{ outstanding }}</div></div>
-        <div class="kpi"><div class="kpi__label">Expenses</div><div class="kpi__value kpi__value--danger">QAR {{ total_expenses }}</div></div>
-        <div class="kpi"><div class="kpi__label">Net Profit</div><div class="kpi__value {% if net_profit >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">QAR {{ net_profit }}</div></div>
+        <div class="kpi"><div class="kpi__label">Expected Revenue</div><div class="kpi__value">QAR {{ expected_revenue|floatformat:"2" }}</div></div>
+        <div class="kpi"><div class="kpi__label">Collected</div><div class="kpi__value kpi__value--success">QAR {{ collected|floatformat:"2" }}</div></div>
+        <div class="kpi"><div class="kpi__label">Outstanding</div><div class="kpi__value kpi__value--warning">QAR {{ outstanding|floatformat:"2" }}</div></div>
+        <div class="kpi"><div class="kpi__label">Expenses</div><div class="kpi__value kpi__value--danger">QAR {{ total_expenses|floatformat:"2" }}</div></div>
+        <div class="kpi"><div class="kpi__label">Net Profit</div><div class="kpi__value {% if net_profit >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">QAR {{ net_profit|floatformat:"2" }}</div></div>
       </div>
     </div>
   {% endif %}

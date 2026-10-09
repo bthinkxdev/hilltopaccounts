@@ -17,6 +17,9 @@ def create_tenant(*, partition, name, move_in_date, monthly_rent, created_by, mo
         tenant = Tenant(partition=partition, name=name, move_in_date=move_in_date, monthly_rent=monthly_rent, mobile=mobile, id_document_number=id_document_number, nationality=nationality, deposit=deposit, notes=notes, created_by=created_by)
         tenant.full_clean()
         tenant.save()
+        if partition.rent is None:
+            partition.rent = monthly_rent
+            partition.save(update_fields=['rent'])
         from apps.billing.services import ensure_rent_charge
         ensure_rent_charge(partition=partition, tenant=tenant, created_by=created_by)
         audit_services.log(user=created_by, action=Action.TENANT_CREATED, obj=tenant, business=partition.villa.business, villa=partition.villa, new_value=_snapshot(tenant))

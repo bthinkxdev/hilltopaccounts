@@ -20,8 +20,8 @@ class HomeView(LoginRequiredMixin, TemplateView):
         ctx = super().get_context_data(**kwargs)
         user = self.request.user
         businesses = selectors.businesses_visible_to(user).filter(is_archived=False)
-        villas = selectors.villas_visible_to(user).filter(is_archived=False).select_related('business')
-        partitions = selectors.partitions_visible_to(user).filter(status='active', villa__is_archived=False)
+        villas = selectors.villas_visible_to(user).filter(is_archived=False, business__is_archived=False).select_related('business')
+        partitions = selectors.partitions_visible_to(user).filter(status='active', villa__is_archived=False, villa__business__is_archived=False)
         staff_view = selectors.is_field_staff(user)
         ctx['staff_view'] = staff_view
         ctx['businesses'] = businesses
@@ -82,13 +82,14 @@ class HomeView(LoginRequiredMixin, TemplateView):
         if ctx['vacant_count'] > 0:
             needs_attention.append({'label': 'Vacant partitions', 'count': ctx['vacant_count'], 'meta': 'No tenant assigned', 'url': reverse('villas:partition_list') + '?occupancy=vacant'})
         my_unclaimed = cash_selectors.unclaimed_cash_payments(user) if not user.is_owner else cash_selectors.unclaimed_cash_payments(user).none()
+        dashboard_url = reverse('dashboard:home')
         if my_unclaimed.exists():
-            needs_attention.append({'label': 'Your cash ready to hand over', 'count': my_unclaimed.count(), 'meta': f'QAR {cash_selectors.outstanding_cash_for(user)} to submit', 'url': reverse('cash:handover_submit')})
-            quick_actions.append({'label': 'Submit Cash Handover', 'url': reverse('cash:handover_submit')})
-        if selectors.manageable_villas(user).filter(is_archived=False).exists():
-            quick_actions.append({'label': '+ Add Expense', 'url': reverse('expenses:create')})
+            needs_attention.append({'label': 'Your cash ready to hand over', 'count': my_unclaimed.count(), 'meta': f'QAR {cash_selectors.outstanding_cash_for(user)} to submit', 'url': f"{reverse('cash:handover_submit')}?next={dashboard_url}"})
+            quick_actions.append({'label': 'Submit Cash Handover', 'url': f"{reverse('cash:handover_submit')}?next={dashboard_url}"})
+        if selectors.manageable_villas(user).filter(is_archived=False, business__is_archived=False).exists():
+            quick_actions.append({'label': '+ Add Expense', 'url': f"{reverse('expenses:create')}?next={dashboard_url}"})
         if user.is_owner:
-            quick_actions.insert(0, {'label': '+ Add Business', 'url': reverse('businesses:create')})
+            quick_actions.insert(0, {'label': '+ Add Business', 'url': f"{reverse('businesses:create')}?next={dashboard_url}"})
         if villas.exists():
             quick_actions.append({'label': 'Record Collection', 'url': reverse('billing:invoice_list')})
         ctx['needs_attention'] = needs_attention
@@ -110,7 +111,8 @@ def global_search(request):
     results = {}
     if q:
         user = request.user
-        results['businesses'] = selectors.businesses_visible_to(user).filter(name__icontains=q)[:10]
+        if not selectors.is_field_staff(user):
+            results['businesses'] = selectors.businesses_visible_to(user).filter(name__icontains=q)[:10]
         results['villas'] = selectors.villas_visible_to(user).filter(name__icontains=q)[:10]
         results['partitions'] = selectors.partitions_visible_to(user).filter(name__icontains=q)[:10]
         results['tenants'] = selectors.tenants_visible_to(user).filter(Q(name__icontains=q) | Q(mobile__icontains=q))[:10]

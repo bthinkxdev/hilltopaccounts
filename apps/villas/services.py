@@ -111,11 +111,13 @@ def add_photo(*, villa, image, uploaded_by, partition=None, caption='') -> Photo
     return photo
 
 def delete_photo(*, photo: Photo, deleted_by, reason='') -> None:
-    """Only the Owner or the villa's Business Manager may remove a photo; the audit trail keeps what was removed."""
     villa = photo.villa
-    if not (deleted_by.is_owner or access_selectors.is_business_manager_of(deleted_by, villa.business)):
+    if not access_selectors.can_delete_photo(deleted_by, photo):
         raise PermissionDenied('You cannot delete this photo.')
     with transaction.atomic():
         audit_services.log(user=deleted_by, action=Action.DOCUMENT_DELETED, obj=photo, business=villa.business, villa=villa, old_value={'partition': photo.partition.name if photo.partition_id else None, 'caption': photo.caption, 'file': photo.image.name}, reason=reason or 'removed')
-        photo.image.delete(save=False)
+        try:
+            photo.image.delete(save=False)
+        except OSError:
+            pass
         photo.delete()

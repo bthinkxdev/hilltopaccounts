@@ -23,12 +23,14 @@
       <input type="hidden" name="period" value="{{ period }}"><input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}">
       <input type="search" name="q" placeholder="Search villas…" value="{{ q }}">
       <button class="btn btn--ghost" type="submit">Search</button>
+      {% if not nav_is_field_staff %}
       <select name="business" onchange="this.form.submit()" aria-label="Business">
         <option value="">All businesses</option>
         {% for business in businesses %}
           <option value="{{ business.pk }}" {% if selected_business == business.pk|stringformat:"s" %}selected{% endif %}>{{ business.name }}</option>
         {% endfor %}
       </select>
+      {% endif %}
       {% if staff_choices %}
         <select name="staff" onchange="this.form.submit()" aria-label="Staff">
           <option value="">All staff</option>
@@ -53,9 +55,9 @@
           <div class="tile__cover">{% if villa.cover %}<img src="{% url 'villas:photo_file' villa.cover.pk %}" alt="{{ villa.name }}" loading="lazy">{% else %}<span aria-hidden="true">&#8962;</span>{% endif %}</div>
           <div class="tile__body">
             <div class="tile__title">{{ villa.name }}</div>
-            <div class="tile__meta">{{ villa.business.name }}{% if villa.staff_names %} · {{ villa.staff_names|join:", " }}{% endif %}</div>
+            <div class="tile__meta">{% if not nav_is_field_staff %}{{ villa.business.name }}{% if villa.staff_names %} · {% endif %}{% endif %}{% if villa.staff_names %}{{ villa.staff_names|join:", " }}{% endif %}</div>
             <div class="tile__pills">
-              {% if villa.is_archived %}<span class="pill pill--neutral">Archived</span>{% endif %}
+              {% if villa.is_archived or villa.business.is_archived %}<span class="pill pill--neutral">Archived</span>{% endif %}
               {% if villa.partition_total %}<span class="pill pill--success">{{ villa.occupied_total }} occ</span>{% if villa.vacant_total %}<span class="pill pill--neutral">{{ villa.vacant_total }} vacant</span>{% endif %}{% else %}<span class="pill pill--neutral">No partitions</span>{% endif %}
               {% if villa.pending_rent %}<span class="pill pill--warning">{{ villa.pending_rent }} pending</span>{% endif %}
               {% if villa.fixed_pending %}<span class="pill pill--warning">{{ villa.fixed_pending }} fixed unpaid</span>{% endif %}

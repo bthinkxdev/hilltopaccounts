@@ -1,7 +1,8 @@
 from datetime import date
 from decimal import Decimal
 from django import forms
-from .models import ChargeType, Payment
+from django.db.models import Q
+from .models import Charge, ChargeType, Payment
 
 class ChargeForm(forms.Form):
     charge_type = forms.ModelChoiceField(queryset=ChargeType.objects.filter(is_active=True), empty_label='Select a charge type…')
@@ -10,6 +11,13 @@ class ChargeForm(forms.Form):
     frequency = forms.ChoiceField(choices=[('monthly', 'Monthly'), ('one_time', 'One-time')], initial='monthly')
     start_date = forms.DateField(widget=forms.DateInput(attrs={'type': 'date'}))
     end_date = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
+
+    def __init__(self, *args, partition=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if partition:
+            today = date.today()
+            active_ids = Charge.objects.filter(partition=partition, is_active=True).filter(Q(end_date__isnull=True) | Q(end_date__gt=today)).values_list('charge_type_id', flat=True)
+            self.fields['charge_type'].queryset = ChargeType.objects.filter(is_active=True).exclude(id__in=active_ids)
 
 class NewChargeTypeForm(forms.Form):
     name = forms.CharField(max_length=100)

@@ -74,11 +74,11 @@
       {% elif can_view_financials %}
       <div class="kpi">
         <div class="kpi__label">Cash held by staff</div>
-        <div class="kpi__value {% if cash_held_by_staff > 0 %}kpi__value--warning{% endif %}">QAR {{ cash_held_by_staff }}</div>
+        <div class="kpi__value {% if cash_held_by_staff > 0 %}kpi__value--warning{% endif %}">QAR {{ cash_held_by_staff|floatformat:"2" }}</div>
       </div>
       <div class="kpi">
         <div class="kpi__label">Pending staff handovers</div>
-        <div class="kpi__value {% if pending_staff_handovers > 0 %}kpi__value--warning{% endif %}">QAR {{ pending_staff_handovers }}</div>
+        <div class="kpi__value {% if pending_staff_handovers > 0 %}kpi__value--warning{% endif %}">QAR {{ pending_staff_handovers|floatformat:"2" }}</div>
       </div>
       {% endif %}
     </div>
@@ -107,27 +107,27 @@
     <div class="grid--kpi">
       <div class="kpi">
         <div class="kpi__label">Expected Revenue</div>
-        <div class="kpi__value">QAR {{ expected_revenue }}</div>
+        <div class="kpi__value">QAR {{ expected_revenue|floatformat:"2" }}</div>
       </div>
       <div class="kpi">
         <div class="kpi__label">Collected</div>
-        <div class="kpi__value kpi__value--success">QAR {{ collected }}</div>
+        <div class="kpi__value kpi__value--success">QAR {{ collected|floatformat:"2" }}</div>
       </div>
       <div class="kpi">
         <div class="kpi__label">Outstanding</div>
-        <div class="kpi__value kpi__value--warning">QAR {{ outstanding }}</div>
+        <div class="kpi__value kpi__value--warning">QAR {{ outstanding|floatformat:"2" }}</div>
       </div>
       <div class="kpi">
         <div class="kpi__label">Collection Rate</div>
-        <div class="kpi__value">{{ collection_rate }}%</div>
+        <div class="kpi__value">{{ collection_rate|floatformat:"2" }}%</div>
       </div>
       <div class="kpi">
         <div class="kpi__label">Expenses</div>
-        <div class="kpi__value kpi__value--danger">QAR {{ total_expenses }}</div>
+        <div class="kpi__value kpi__value--danger">QAR {{ total_expenses|floatformat:"2" }}</div>
       </div>
       <div class="kpi">
         <div class="kpi__label">Net Profit</div>
-        <div class="kpi__value {% if net_profit >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">QAR {{ net_profit }}</div>
+        <div class="kpi__value {% if net_profit >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">QAR {{ net_profit|floatformat:"2" }}</div>
       </div>
     </div>
   </div>
@@ -159,7 +159,7 @@
         {% for villa in villas %}
           <div class="list-row">
             <a class="list-row__title" href="{% url 'villas:villa_detail' villa.pk %}">{{ villa.name }}</a>
-            <span class="list-row__meta">{{ villa.business.name }}</span>
+            {% if not staff_view %}<span class="list-row__meta">{{ villa.business.name }}</span>{% endif %}
           </div>
         {% endfor %}
         <div style="display: flex; justify-content: center; margin-top: var(--space-4);">

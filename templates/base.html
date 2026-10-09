@@ -27,7 +27,7 @@
       <div class="sidebar__brand">Faisal Accounting</div>
 
       {% if user.is_authenticated %}
-        <a class="sidebar__link{% if request.resolver_match.app_name == 'dashboard' %} sidebar__link--active{% endif %}" href="{% url 'dashboard:home' %}">Dashboard</a>
+        <a class="sidebar__link{% if request.resolver_match.url_name == 'home' %} sidebar__link--active{% endif %}" href="{% url 'dashboard:home' %}">Dashboard</a>
 
         {% if nav_has_scope %}
           <div class="sidebar__section">Organization</div>
@@ -63,6 +63,7 @@
         {% if user.is_authenticated and nav_has_scope %}
           <form class="topbar__search" method="get" action="{% url 'dashboard:search' %}" role="search">
             <input type="search" name="q" placeholder="Search tenants, invoices, villas…" value="{{ request.GET.q|default:'' }}" aria-label="Global search">
+            <input type="hidden" name="from" value="{% if request.resolver_match.url_name == 'search' %}{{ request.GET.from|default:'' }}{% else %}{{ request.get_full_path }}{% endif %}">
           </form>
         {% endif %}
 

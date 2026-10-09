@@ -6,7 +6,7 @@
       <h1>{{ villa.name }}</h1>
       <div class="page-header__meta">
         {% if villa.is_archived %}<span class="pill pill--neutral">Archived</span> · {% endif %}
-        {{ villa.business.name }}{% if villa.address %} · {{ villa.address }}{% endif %} · {{ occupied_count }} occupied, {{ vacant_count }} vacant
+        {% if not nav_is_field_staff %}{{ villa.business.name }} · {% endif %}{% if villa.address %}{{ villa.address }} · {% endif %}{{ occupied_count }} occupied, {{ vacant_count }} vacant
       </div>
     </div>
     {% if can_manage %}
@@ -310,7 +310,7 @@
           {% for photo in photos %}
             <figure class="gallery__item" style="margin:0;">
               <img src="{% url 'villas:photo_file' photo.pk %}" alt="{{ photo.caption|default:villa.name }}" loading="lazy">
-              <figcaption class="gallery__caption"><span>{{ photo.caption }}</span>{% if can_delete_photos %}<a href="{% url 'villas:photo_delete' photo.pk %}">Remove</a>{% endif %}</figcaption>
+              <figcaption class="gallery__caption"><span>{{ photo.caption }}</span>{% if photo.can_delete %}<a href="{% url 'villas:photo_delete' photo.pk %}">Remove</a>{% endif %}</figcaption>
             </figure>
           {% endfor %}
         </div>
@@ -334,6 +334,23 @@
           </div>
         {% empty %}
           <div class="empty-state"><div class="empty-state__title">No activity recorded for this villa yet.</div></div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  {% if past_tenants %}
+    <div class="detail-section" id="past-tenants">
+      <div class="detail-section__title">Past Tenants</div>
+      <div class="card card--tight">
+        {% for old_tenant in past_tenants %}
+          <div class="list-row list-row--compact">
+            <div class="list-row__main">
+              <a class="list-row__title" href="{% url 'tenancy:detail' old_tenant.pk %}">{{ old_tenant.name }}</a>
+              <div class="list-row__meta">{{ old_tenant.partition.name }} · {{ old_tenant.move_in_date|date:"d M Y" }} – {{ old_tenant.move_out_date|date:"d M Y"|default:"Moved out" }}{% if old_tenant.mobile %} · {{ old_tenant.mobile }}{% endif %}</div>
+            </div>
+            <span class="pill pill--neutral">Moved out</span>
+          </div>
         {% endfor %}
       </div>
     </div>

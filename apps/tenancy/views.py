@@ -4,15 +4,19 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.forms.models import model_to_dict
 from django.urls import reverse
 from apps.accounts import selectors
+from apps.billing.models import Charge
 from apps.billing import selectors as billing_selectors
 from apps.shared.exceptions import DomainError
 from apps.shared.pagination import paginate_queryset
+from apps.villas.models import Partition
 from .forms import MoveOutForm, TenantForm
 from .models import Tenant
-from .services import create_tenant, move_out_tenant
+from .services import create_tenant, move_out_tenant, update_tenant
 
 @login_required
 def tenant_list(request):
@@ -40,19 +44,60 @@ def tenant_detail(request, pk):
         unbilled = billing_selectors.unbilled_charges_by_partition([tenant.partition_id], today.year, today.month)[tenant.partition_id] or (tenant.monthly_rent if not invoices.exists() else Decimal('0.00'))
     balance = sum((inv.computed_outstanding for inv in invoices), start=Decimal('0.00')) + unbilled
     partition = tenant.partition
+    prefix = [('Villas', reverse('villas:villa_list'))] if selectors.is_field_staff(request.user) else [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk]))]
     return render(request, 'tenancy/detail.html', {
         'tenant': tenant,
         'invoices': invoices,
         'outstanding_balance': balance,
         'unbilled_balance': unbilled,
         'can_manage': request.user.is_owner or selectors.is_business_manager_of(request.user, partition.villa.business) or selectors.is_villa_staff_of(request.user, partition.villa),
-        'breadcrumbs': [
-            ('Businesses', reverse('businesses:list')),
-            (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk])),
+        'breadcrumbs': prefix + [
             (partition.villa.name, reverse('villas:villa_detail', args=[partition.villa.pk])),
             (partition.name, reverse('villas:partition_detail', args=[partition.pk])),
-            (tenant.name, None)
+            (tenant.name, None),
         ]
+    })
+
+@login_required
+def tenant_edit(request, pk):
+    tenant = get_object_or_404(selectors.tenants_visible_to(request.user), pk=pk, status=Tenant.Status.ACTIVE)
+    partition = tenant.partition
+    if not (request.user.is_owner or selectors.can_manage_villa(request.user, partition.villa)):
+        raise PermissionDenied('You cannot edit this tenant.')
+    lock_rent = partition.rent is not None
+    if request.method == 'POST':
+        data = request.POST.copy()
+        if lock_rent:
+            data['monthly_rent'] = str(partition.rent)
+        form = TenantForm(data, lock_rent=lock_rent)
+        if form.is_valid():
+            try:
+                update_tenant(tenant=tenant, updated_by=request.user, **form.cleaned_data)
+                Charge.objects.filter(partition=partition, charge_type__name='Rent', is_active=True).update(amount=form.cleaned_data['monthly_rent'])
+                if partition.rent is None:
+                    partition.rent = form.cleaned_data['monthly_rent']
+                    partition.save(update_fields=['rent'])
+            except DomainError as exc:
+                form.add_error(None, str(exc))
+            else:
+                messages.success(request, f'{tenant.name} updated.')
+                return redirect('tenancy:detail', pk=tenant.pk)
+    else:
+        form = TenantForm(initial=model_to_dict(tenant), lock_rent=lock_rent)
+
+    prefix = [('Villas', reverse('villas:villa_list'))] if selectors.is_field_staff(request.user) else [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk]))]
+    breadcrumbs = prefix + [
+        (partition.villa.name, reverse('villas:villa_detail', args=[partition.villa.pk])),
+        (partition.name, reverse('villas:partition_detail', args=[partition.pk])),
+        (tenant.name, reverse('tenancy:detail', args=[tenant.pk])),
+        ('Edit', None),
+    ]
+    return render(request, 'components/form_page.html', {
+        'form': form,
+        'title': f'Edit Tenant — {tenant.name}',
+        'submit_label': 'Save Changes',
+        'cancel_url': reverse('tenancy:detail', args=[tenant.pk]),
+        'breadcrumbs': breadcrumbs,
     })
 
 @login_required
@@ -61,7 +106,8 @@ def tenant_create(request, partition_pk):
     if not (request.user.is_owner or selectors.can_manage_villas_and_tenants(request.user)):
         raise PermissionDenied('You cannot move in a tenant here.')
     if partition.status == 'archived' or partition.villa.is_archived or partition.villa.business.is_archived:
-        messages.error(request, 'Cannot move in a tenant to an archived partition.')
+        if selectors.is_field_staff(request.user):
+            return redirect('villas:villa_list')
         return redirect('villas:partition_detail', pk=partition.pk)
     lock_rent = partition.rent is not None
     initial = {}

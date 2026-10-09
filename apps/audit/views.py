@@ -8,7 +8,7 @@ from .models import Action, AuditLog
 def audit_list(request):
     if not request.user.is_owner:
         raise PermissionDenied('Only the Owner can view the audit trail.')
-    qs = AuditLog.objects.select_related('user', 'content_type', 'business', 'villa')
+    qs = AuditLog.objects.select_related('user', 'content_type', 'business', 'villa').prefetch_related('content_object')
     q = request.GET.get('q', '').strip()
     if q:
         qs = qs.filter(user__username__icontains=q)

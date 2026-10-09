@@ -15,7 +15,7 @@
     </div>
     {% if can_manage %}
       <div class="quick-actions">
-        {% if partition.status != 'archived' %}
+        {% if partition.status != 'archived' and not villa.is_archived and not villa.business.is_archived %}
           <a class="btn btn--primary" href="{% url 'expenses:create' %}?partition={{ partition.pk }}">+ Add Expense</a>
           <a class="btn btn--ghost" href="{% url 'villas:partition_edit' partition.pk %}">Edit</a>
           <a class="btn btn--ghost" href="{% url 'villas:partition_photo_add' partition.pk %}">+ Add Photo</a>
@@ -39,14 +39,14 @@
         {% for photo in photos %}
           <figure class="gallery__item" style="margin:0;">
             <img src="{% url 'villas:photo_file' photo.pk %}" alt="{{ photo.caption|default:partition.name }}" loading="lazy">
-            <figcaption class="gallery__caption"><span>{{ photo.caption }}</span>{% if can_delete_photos %}<a href="{% url 'villas:photo_delete' photo.pk %}">Remove</a>{% endif %}</figcaption>
+            <figcaption class="gallery__caption"><span>{{ photo.caption }}</span>{% if photo.can_delete %}<a href="{% url 'villas:photo_delete' photo.pk %}">Remove</a>{% endif %}</figcaption>
           </figure>
         {% endfor %}
       </div>
     {% else %}
       <div class="empty-state">
         <div class="empty-state__title">No photos of this partition yet.</div>
-        {% if can_manage and partition.status != 'archived' %}<a class="btn btn--primary" href="{% url 'villas:partition_photo_add' partition.pk %}">+ Add Photo</a>{% endif %}
+        {% if can_manage and partition.status != 'archived' and not villa.is_archived and not villa.business.is_archived %}<a class="btn btn--primary" href="{% url 'villas:partition_photo_add' partition.pk %}">+ Add Photo</a>{% endif %}
       </div>
     {% endif %}
   </div>
@@ -56,20 +56,20 @@
       <span>Tenant</span>
       <span class="list-row__meta" style="font-weight: normal; font-size: 0.875rem;">
         Partition Rent: <strong>{% if partition.rent %}QAR {{ partition.rent|floatformat:"2" }}/mo{% else %}Not set{% endif %}</strong>
-        {% if can_manage and partition.status != 'archived' %}<a href="{% url 'villas:partition_edit' partition.pk %}" style="margin-left: 0.5rem;">Edit</a>{% endif %}
+        {% if can_manage and partition.status != 'archived' and not villa.is_archived and not villa.business.is_archived %}<a href="{% url 'villas:partition_edit' partition.pk %}" style="margin-left: 0.5rem;">Edit</a>{% endif %}
       </span>
     </div>
     {% if current_tenant %}
       <div class="list-row">
         <a class="list-row__title" href="{% url 'tenancy:detail' current_tenant.pk %}">{{ current_tenant.name }}</a>
         <span class="list-row__meta">QAR {{ current_tenant.monthly_rent|floatformat:"2" }}/mo since {{ current_tenant.move_in_date }}</span>
-        {% if can_manage %}<a class="btn btn--ghost" href="{% url 'tenancy:move_out' current_tenant.pk %}">Move out &amp; mark vacant</a>{% endif %}
+        {% if can_manage and not villa.is_archived and not villa.business.is_archived %}<a class="btn btn--ghost" href="{% url 'tenancy:move_out' current_tenant.pk %}">Move out &amp; mark vacant</a>{% endif %}
       </div>
-    {% elif partition.status == 'archived' %}
+    {% elif partition.status == 'archived' or villa.is_archived or villa.business.is_archived %}
       <div class="empty-state">
         <div class="empty-state__title">This partition is archived.</div>
         <p>Unarchive this partition to assign tenants or record new activity.</p>
-        {% if can_archive %}
+        {% if can_archive and not villa.is_archived and not villa.business.is_archived %}
           <form method="post" action="{% url 'villas:partition_unarchive' partition.pk %}">
             {% csrf_token %}
             <button class="btn btn--ghost" type="submit">Unarchive Partition</button>
@@ -80,7 +80,7 @@
       <div class="empty-state">
         <div class="empty-state__title">This partition is vacant.</div>
         <p>{% if partition.rent %}Rent is set to QAR {{ partition.rent|floatformat:"2" }}/mo. {% endif %}Move in a tenant to start billing.</p>
-        {% if can_manage %}<a class="btn btn--primary" href="{% url 'tenancy:create' partition.pk %}">+ Move In Tenant</a>{% endif %}
+        {% if can_manage and not villa.is_archived and not villa.business.is_archived %}<a class="btn btn--primary" href="{% url 'tenancy:create' partition.pk %}">+ Move In Tenant</a>{% endif %}
       </div>
     {% endif %}
   </div>
@@ -148,10 +148,10 @@
         <div class="empty-state">
           <div class="empty-state__title">No charges configured yet.</div>
           <p>Add rent and utility charges so invoices can be generated.</p>
-          {% if can_manage %}<a class="btn btn--primary" href="{% url 'billing:charge_create' partition.pk %}">+ Add Charge</a>{% endif %}
+          {% if can_manage and can_add_charge %}<a class="btn btn--primary" href="{% url 'billing:charge_create' partition.pk %}">+ Add Charge</a>{% endif %}
         </div>
       {% endif %}
-      {% if charges and can_manage %}
+      {% if charges and can_manage and can_add_charge %}
         <a class="btn btn--ghost" href="{% url 'billing:charge_create' partition.pk %}">+ Add Charge</a>
       {% endif %}
     </div>
@@ -164,8 +164,10 @@
       {% if invoices %}
         {% for invoice in invoices %}
           <div class="list-row">
-            <a class="list-row__title" href="{% url 'billing:invoice_detail' invoice.pk %}">{{ invoice.invoice_number }}</a>
-            <span class="list-row__meta">{{ invoice.billing_period_start }} – {{ invoice.billing_period_end }}</span>
+            <div>
+              <a class="list-row__title" href="{% url 'billing:invoice_detail' invoice.pk %}">{{ invoice.invoice_number }}</a>
+              <div class="list-row__meta">{% if invoice.tenant %}{{ invoice.tenant.name }} · {% endif %}{{ invoice.billing_period_start }} – {{ invoice.billing_period_end }}</div>
+            </div>
             {% if invoice.computed_status == "paid" %}<span class="pill pill--success">Paid</span>
             {% elif invoice.computed_status == "overdue" %}<span class="pill pill--danger">Overdue</span>
             {% elif invoice.computed_status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
@@ -183,4 +185,21 @@
       {% endif %}
     </div>
   </div>
+
+  {% if past_tenants %}
+    <div class="detail-section" id="past-tenants">
+      <div class="detail-section__title">Past Tenants</div>
+      <div class="card card--tight">
+        {% for old_tenant in past_tenants %}
+          <div class="list-row list-row--compact">
+            <div class="list-row__main">
+              <a class="list-row__title" href="{% url 'tenancy:detail' old_tenant.pk %}">{{ old_tenant.name }}</a>
+              <div class="list-row__meta">QAR {{ old_tenant.monthly_rent|floatformat:"2" }}/mo · {{ old_tenant.move_in_date|date:"d M Y" }} – {{ old_tenant.move_out_date|date:"d M Y"|default:"Moved out" }}{% if old_tenant.mobile %} · {{ old_tenant.mobile }}{% endif %}</div>
+            </div>
+            <span class="pill pill--neutral">Moved out</span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
 {% endblock %}

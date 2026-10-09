@@ -7,9 +7,20 @@ from apps.tenancy.models import Tenant
 from apps.villas.models import Partition, Villa
 from .models import Assignment
 
+def can_view_financial_kpis(user) -> bool:
+    if user.is_owner:
+        return True
+    return Assignment.objects.filter(user=user, role__in=[Assignment.Role.BUSINESS_MANAGER, Assignment.Role.ACCOUNTANT]).exists()
+
+def is_field_staff(user) -> bool:
+    """Operational users (villa staff) who must not see owner-level finance such as villa rent, P&L or verification."""
+    return not user.is_owner and not can_view_financial_kpis(user)
+
 def businesses_visible_to(user) -> QuerySet[Business]:
     if user.is_owner:
         return Business.objects.all()
+    if is_field_staff(user):
+        return Business.objects.none()
     return Business.objects.filter(Q(manager_assignments__user=user) | Q(villas__staff_assignments__user=user)).distinct()
 
 def villas_visible_to(user) -> QuerySet[Villa]:
@@ -49,10 +60,6 @@ def businesses_managed_by(user) -> QuerySet[Business]:
 
 LANDLORD_RENT_REGEX = r'(villa.*rent|landlord)'
 
-def is_field_staff(user) -> bool:
-    """Operational users (villa staff) who must not see owner-level finance such as villa rent, P&L or verification."""
-    return not user.is_owner and not can_view_financial_kpis(user)
-
 def expenses_visible_to(user) -> QuerySet[Expense]:
     if user.is_owner:
         return Expense.objects.all()
@@ -90,11 +97,6 @@ def is_accountant_for(user, *, business=None, villa=None) -> bool:
         qs = qs.filter(Q(villa=villa) | Q(business=villa.business))
     return qs.exists()
 
-def can_view_financial_kpis(user) -> bool:
-    if user.is_owner:
-        return True
-    return Assignment.objects.filter(user=user, role__in=[Assignment.Role.BUSINESS_MANAGER, Assignment.Role.ACCOUNTANT]).exists()
-
 def can_manage_villas_and_tenants(user) -> bool:
     if user.is_owner:
         return True
@@ -108,6 +110,8 @@ def role_labels_for(user) -> list[str]:
 
 def can_manage_villa(user, villa) -> bool:
     """Owner, the villa's Business Manager, or Villa Staff assigned to that villa — object-scoped, never global."""
+    if is_field_staff(user) and (villa.is_archived or villa.business.is_archived):
+        return False
     if user.is_owner:
         return True
     return Assignment.objects.filter(user=user).filter(Q(role=Assignment.Role.BUSINESS_MANAGER, business_id=villa.business_id) | Q(role=Assignment.Role.VILLA_STAFF, villa=villa)).exists()
@@ -118,6 +122,16 @@ def can_add_partition(user, villa) -> bool:
     if user.is_owner:
         return True
     return Assignment.objects.filter(user=user).filter(Q(role=Assignment.Role.BUSINESS_MANAGER, business_id=villa.business_id) | Q(role=Assignment.Role.VILLA_STAFF, villa=villa, can_add_partitions=True)).exists()
+
+def can_delete_photo(user, photo) -> bool:
+    if user.is_owner:
+        return True
+    villa = photo.villa
+    if is_business_manager_of(user, villa.business):
+        return True
+    if photo.uploaded_by_id == user.id and not (villa.is_archived or villa.business.is_archived):
+        return Assignment.objects.filter(user=user, role=Assignment.Role.VILLA_STAFF, villa=villa).exists()
+    return False
 
 def partition_creatable_villas(user) -> QuerySet[Villa]:
     if user.is_owner:

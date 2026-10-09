@@ -6,6 +6,7 @@
     <p class="page-header__meta" style="margin-bottom: var(--space-4);">{{ message }}</p>
     <form method="post" novalidate>
       {% csrf_token %}
+      {% if request.GET.next %}<input type="hidden" name="next" value="{{ request.GET.next }}">{% endif %}
       {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors.0 }}</div>{% endif %}
       <div class="field">
         <label for="{{ form.reason.id_for_label }}">Reason <span class="field__required">*</span></label>
@@ -15,7 +16,7 @@
       </div>
       <div class="form-actions">
         <button class="btn btn--danger" type="submit">{{ submit_label|default:"Confirm" }}</button>
-        {% if cancel_url %}<a class="btn btn--ghost" href="{{ cancel_url }}">Cancel</a>{% endif %}
+        {% if cancel_url or request.GET.next %}<a class="btn btn--ghost" href="{{ request.GET.next|default:cancel_url }}">Cancel</a>{% endif %}
       </div>
     </form>
   </div>

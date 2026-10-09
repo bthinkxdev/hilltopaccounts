@@ -21,7 +21,7 @@
         <div class="detail-section__title">Villas</div>
         <div class="card">
           {% for villa in results.villas %}
-            <div class="list-row"><a class="list-row__title" href="{% url 'villas:villa_detail' villa.pk %}">{{ villa.name }}</a><span class="list-row__meta">{{ villa.business.name }}</span></div>
+            <div class="list-row"><a class="list-row__title" href="{% url 'villas:villa_detail' villa.pk %}">{{ villa.name }}</a>{% if not nav_is_field_staff %}<span class="list-row__meta">{{ villa.business.name }}</span>{% endif %}</div>
           {% endfor %}
         </div>
       </div>

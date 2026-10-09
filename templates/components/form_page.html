@@ -5,6 +5,7 @@
   <div class="card card--narrow" style="max-width: 600px;">
     <form method="post" enctype="multipart/form-data" novalidate>
       {% csrf_token %}
+      {% if request.GET.next %}<input type="hidden" name="next" value="{{ request.GET.next }}">{% endif %}
       {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors.0 }}</div>{% endif %}
       {% for field in form %}
         <div class="field">
@@ -32,7 +33,7 @@
       {% endif %}
       <div class="form-actions">
         <button class="btn btn--primary" type="submit">{{ submit_label|default:"Save" }}</button>
-        {% if cancel_url %}<a class="btn btn--ghost" href="{{ cancel_url }}">Cancel</a>{% endif %}
+        {% if cancel_url or request.GET.next %}<a class="btn btn--ghost" href="{{ request.GET.next|default:cancel_url }}">Cancel</a>{% endif %}
       </div>
     </form>
   </div>

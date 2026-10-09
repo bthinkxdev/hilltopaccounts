@@ -23,26 +23,33 @@ def charge_create(request, partition_pk):
     partition = get_object_or_404(selectors.partitions_visible_to(request.user).select_related('villa', 'villa__business'), pk=partition_pk)
     if not _can_manage(request.user, partition.villa):
         raise PermissionDenied('You cannot add a charge to this partition.')
+    today = date.today()
+    active_type_ids = Charge.objects.filter(partition=partition, is_active=True).filter(Q(end_date__isnull=True) | Q(end_date__gt=today)).values_list('charge_type_id', flat=True)
+    if not ChargeType.objects.filter(is_active=True).exclude(id__in=active_type_ids).exists():
+        messages.info(request, 'All available charges have already been added.')
+        return redirect('villas:partition_detail', pk=partition.pk)
     rent_type = ChargeType.objects.filter(name__iexact='Rent', is_active=True).first()
     current_tenant = partition.current_tenant
     assigned_rent = (current_tenant.monthly_rent if current_tenant else None) or partition.rent
     if request.method == 'POST':
-        form = ChargeForm(request.POST)
+        form = ChargeForm(request.POST, partition=partition)
         if form.is_valid():
-            charge = create_charge(partition=partition, created_by=request.user, **form.cleaned_data)
-            messages.success(request, f'Charge “{charge.charge_type}” added.')
-            return redirect('villas:partition_detail', pk=partition.pk)
+            try:
+                charge = create_charge(partition=partition, created_by=request.user, **form.cleaned_data)
+                messages.success(request, f'Charge “{charge.charge_type}” added.')
+                return redirect('villas:partition_detail', pk=partition.pk)
+            except DomainError as exc:
+                form.add_error('charge_type', str(exc))
     else:
         initial = {}
         if current_tenant:
             initial['start_date'] = current_tenant.move_in_date
         else:
             initial['start_date'] = date.today()
-        form = ChargeForm(initial=initial)
+        form = ChargeForm(initial=initial, partition=partition)
 
-    breadcrumbs = [
-        ('Businesses', reverse('businesses:list')),
-        (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk])),
+    prefix = [('Villas', reverse('villas:villa_list'))] if selectors.is_field_staff(request.user) else [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk]))]
+    breadcrumbs = prefix + [
         (partition.villa.name, reverse('villas:villa_detail', args=[partition.villa.pk])),
         (partition.name, reverse('villas:partition_detail', args=[partition.pk])),
         ('Add Charge', None),
