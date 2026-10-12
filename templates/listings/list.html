@@ -1,0 +1,64 @@
+{% extends "listings/base.html" %}
+{% load humanize %}
+{% block title %}Find your space{% endblock %}
+{% block style %}
+<style>
+.top{position:sticky;top:0;z-index:5;background:rgba(255,255,255,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:calc(env(safe-area-inset-top) + 18px) 0 12px;border-bottom:1px solid var(--line)}
+.top .wrap{padding:0 20px}
+.top h1{font-size:28px;letter-spacing:-.03em;line-height:1.1}
+.top p{color:var(--mute);font-size:14px;margin-top:4px}
+.chips{display:flex;gap:8px;margin-top:14px}
+.chip{padding:8px 16px;border-radius:99px;font-size:13px;font-weight:600;background:var(--soft)}
+.chip.on{background:var(--fg);color:#fff}
+.feed{max-width:1200px;margin:0 auto;padding:16px 16px calc(env(safe-area-inset-bottom) + 28px);display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr))}
+@media(min-width:900px){.feed{gap:24px;padding:24px 20px 48px}.top h1{font-size:34px}.card{transition:box-shadow .2s,transform .2s}.card:hover{box-shadow:0 10px 30px rgba(0,0,0,.1);transform:translateY(-2px)}}
+.empty{grid-column:1/-1}
+.card{border-radius:var(--r);overflow:hidden;background:#fff;border:1px solid var(--line)}
+.card .car{aspect-ratio:4/3}
+.card .car__track{height:100%}
+.card__badges{position:absolute;top:12px;left:12px;z-index:2}
+.card__body{display:block;padding:14px 16px 16px}
+.card__row{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.card__name{font-size:18px;font-weight:700;letter-spacing:-.02em}
+.card__price{font-size:17px;font-weight:700;white-space:nowrap}
+.card__price small{font-size:12px;color:var(--mute);font-weight:500}
+.card__loc{color:var(--mute);font-size:13.5px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empty{text-align:center;color:var(--mute);padding:80px 20px}
+</style>
+{% endblock %}
+{% block body %}
+<header class="top"><div class="wrap">
+  <h1>Find your space</h1>
+  <p>{{ total }} partition{{ total|pluralize }} listed</p>
+  <div class="chips">
+    <a class="chip{% if available_only %} on{% endif %}" href="{% url 'listings:list' %}">Available</a>
+    <a class="chip{% if not available_only %} on{% endif %}" href="{% url 'listings:list' %}?show=all">All</a>
+  </div>
+</div></header>
+<main class="feed">
+{% for it in items %}
+  <article class="card">
+    <div class="car" data-car>
+      <div class="card__badges"><span class="badge{% if not it.occupied %} badge--dark{% endif %}">{% if it.occupied %}Rented{% else %}Available{% endif %}</span></div>
+      <div class="car__track">
+        {% for ph in it.photos %}
+          <a class="car__slide" href="{% url 'listings:detail' it.p.pk %}"><img src="{% url 'listings:photo' ph.pk %}" alt="{{ it.p.name }}"{% if not forloop.first %} loading="lazy"{% endif %}></a>
+        {% empty %}
+          <a class="car__slide" href="{% url 'listings:detail' it.p.pk %}"><div class="car__empty">No photos yet</div></a>
+        {% endfor %}
+      </div>
+      {% if it.photos|length > 1 %}<div class="car__dots">{% for _ in it.photos %}<span class="car__dot"></span>{% endfor %}</div>{% endif %}
+    </div>
+    <a class="card__body" href="{% url 'listings:detail' it.p.pk %}">
+      <div class="card__row">
+        <div class="card__name">{{ it.p.name }}</div>
+        {% if it.p.rent %}<div class="card__price">QAR {{ it.p.rent|floatformat:"0g" }} <small>/ month</small></div>{% endif %}
+      </div>
+      <div class="card__loc">{{ it.p.villa.name }}{% if it.p.villa.address %} · {{ it.p.villa.address }}{% endif %}</div>
+    </a>
+  </article>
+{% empty %}
+  <div class="empty">Nothing to show right now.<br>Please check back soon.</div>
+{% endfor %}
+</main>
+{% endblock %}

@@ -8,7 +8,7 @@ DEBUG = env('DEBUG')
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=[])
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
 DJANGO_APPS = ['django.contrib.admin', 'django.contrib.auth', 'django.contrib.contenttypes', 'django.contrib.sessions', 'django.contrib.messages', 'django.contrib.staticfiles', 'django.contrib.humanize']
-LOCAL_APPS = ['apps.shared', 'apps.businesses', 'apps.villas', 'apps.tenancy', 'apps.billing', 'apps.expenses', 'apps.cash', 'apps.accounts', 'apps.audit', 'apps.dashboard', 'apps.notifications']
+LOCAL_APPS = ['apps.shared', 'apps.businesses', 'apps.villas', 'apps.tenancy', 'apps.billing', 'apps.expenses', 'apps.cash', 'apps.accounts', 'apps.audit', 'apps.dashboard', 'apps.notifications', 'apps.listings']
 INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS
 MIDDLEWARE = ['django.middleware.security.SecurityMiddleware', 'django.contrib.sessions.middleware.SessionMiddleware', 'django.middleware.common.CommonMiddleware', 'django.middleware.csrf.CsrfViewMiddleware', 'django.contrib.auth.middleware.AuthenticationMiddleware', 'django.contrib.messages.middleware.MessageMiddleware', 'django.middleware.clickjacking.XFrameOptionsMiddleware', 'apps.audit.middleware.CurrentRequestMiddleware']
 ROOT_URLCONF = 'config.urls'

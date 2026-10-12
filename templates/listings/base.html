@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>{% block title %}Partitions for Rent{% endblock %}</title>
+<style>
+:root{--bg:#fff;--fg:#0a0a0a;--mute:#6b6b6b;--line:#e8e8e8;--soft:#f5f5f5;--r:20px}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;min-height:100dvh}
+a{color:inherit;text-decoration:none}
+.app{min-height:100dvh;position:relative;background:var(--bg)}
+.wrap{max-width:1200px;margin:0 auto}
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;height:54px;border-radius:16px;background:var(--fg);color:#fff;font-weight:600;font-size:16px;border:0;width:100%}
+.btn:active{transform:scale(.98)}
+.btn--off{background:var(--soft);color:var(--mute);pointer-events:none}
+.badge{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.02em;padding:4px 10px;border-radius:99px;background:#fff;color:var(--fg)}
+.badge--dark{background:var(--fg);color:#fff}
+.car{position:relative;overflow:hidden;background:var(--soft)}
+.car__track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+.car__track::-webkit-scrollbar{display:none}
+.car__slide{flex:0 0 100%;scroll-snap-align:center;scroll-snap-stop:always}
+.car__slide img{display:block;width:100%;height:100%;object-fit:cover}
+.car__empty{display:grid;place-items:center;height:100%;min-height:200px;color:var(--mute);font-size:13px}
+.car__dots{position:absolute;left:0;right:0;bottom:12px;display:flex;justify-content:center;gap:5px;pointer-events:none}
+.car__dot{width:6px;height:6px;border-radius:99px;background:rgba(255,255,255,.6);transition:all .25s}
+.car__dot.on{width:18px;background:#fff}
+</style>
+{% block style %}{% endblock %}
+</head>
+<body>
+<div class="app">{% block body %}{% endblock %}</div>
+<script>
+(function(){
+  document.querySelectorAll('[data-car]').forEach(function(car){
+    var track=car.querySelector('.car__track'),dots=car.querySelectorAll('.car__dot'),n=track.children.length,i=0,timer,paused=false;
+    if(n<2)return;
+    function show(k){dots.forEach(function(d,j){d.classList.toggle('on',j===k)})}
+    track.addEventListener('scroll',function(){var k=Math.round(track.scrollLeft/track.clientWidth);if(k!==i){i=k;show(k)}},{passive:true});
+    function go(k){i=(k+n)%n;track.scrollTo({left:i*track.clientWidth,behavior:'smooth'})}
+    function start(){clearInterval(timer);timer=setInterval(function(){if(!paused&&!document.hidden)go(i+1)},3500)}
+    ['touchstart','pointerdown'].forEach(function(e){track.addEventListener(e,function(){paused=true},{passive:true})});
+    ['touchend','pointerup','pointercancel'].forEach(function(e){track.addEventListener(e,function(){paused=false;start()},{passive:true})});
+    show(0);start();
+  });
+})();
+</script>
+</body>
+</html>

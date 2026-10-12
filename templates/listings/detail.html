@@ -1,0 +1,64 @@
+{% extends "listings/base.html" %}
+{% block title %}{{ p.name }} · {{ p.villa.name }}{% endblock %}
+{% block style %}
+<style>
+.hero{position:relative}
+.hero .car{aspect-ratio:1/1;max-height:62dvh}
+.hero .car__track{height:100%}
+.back{position:absolute;top:calc(env(safe-area-inset-top) + 14px);left:14px;z-index:3;width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.92);display:grid;place-items:center;box-shadow:0 2px 10px rgba(0,0,0,.15)}
+.count{position:absolute;top:calc(env(safe-area-inset-top) + 22px);right:14px;z-index:3;background:rgba(0,0,0,.65);color:#fff;font-size:12px;font-weight:600;padding:4px 10px;border-radius:99px}
+.sheet{position:relative;margin-top:-22px;background:#fff;border-radius:24px 24px 0 0;padding:22px 20px calc(env(safe-area-inset-bottom) + 110px);z-index:2}
+.sheet h1{font-size:26px;letter-spacing:-.03em;line-height:1.15}
+.sub{color:var(--mute);margin-top:4px}
+.status{display:inline-block;margin-top:12px;background:var(--soft);color:var(--fg)}
+.price{margin-top:16px;display:flex;align-items:baseline;gap:6px}
+.price b{font-size:30px;letter-spacing:-.03em}
+.price span{color:var(--mute)}
+.sec{margin-top:26px;padding-top:22px;border-top:1px solid var(--line)}
+.sec h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);margin-bottom:8px}
+.sec p{white-space:pre-line}
+.bar{position:fixed;left:0;right:0;bottom:0;z-index:10;padding:12px 16px calc(env(safe-area-inset-bottom) + 12px);background:rgba(255,255,255,.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line)}
+.bar__in{max-width:520px;margin:0 auto}
+@media(min-width:560px){.hero .car{aspect-ratio:16/10}}
+@media(min-width:900px){
+  .split{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(360px,1fr);gap:40px;max-width:1200px;margin:0 auto;padding:24px 20px 56px;align-items:start}
+  .hero{position:sticky;top:24px}
+  .hero .car{aspect-ratio:4/3;max-height:none;border-radius:var(--r)}
+  .back{top:16px;left:16px}.count{top:24px;right:16px}
+  .sheet{margin:0;padding:0;border-radius:0}
+  .sheet h1{font-size:34px}
+  .bar{position:static;padding:24px 0 0;background:none;border:0;backdrop-filter:none;-webkit-backdrop-filter:none}
+  .bar__in{max-width:none}
+}
+</style>
+{% endblock %}
+{% block body %}
+<div class="split">
+<div class="hero">
+  <a class="back" href="{% url 'listings:list' %}" aria-label="Back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0a0a0a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></a>
+  <div class="car" data-car>
+    <div class="car__track">
+      {% for ph in photos %}<div class="car__slide"><img src="{% url 'listings:photo' ph.pk %}" alt="{{ ph.caption|default:p.name }}"></div>{% empty %}<div class="car__slide"><div class="car__empty">No photos yet</div></div>{% endfor %}
+    </div>
+    {% if photos|length > 1 %}<div class="car__dots">{% for _ in photos %}<span class="car__dot"></span>{% endfor %}</div>{% endif %}
+  </div>
+  {% if photos|length > 1 %}<div class="count">{{ photos|length }} photos</div>{% endif %}
+</div>
+<main class="sheet">
+  <h1>{{ p.name }}</h1>
+  <div class="sub">{{ p.villa.name }}</div>
+  <span class="badge status">{% if occupied %}Currently rented{% else %}Available now{% endif %}</span>
+  {% if p.rent %}<div class="price"><b>QAR {{ p.rent|floatformat:"0g" }}</b><span>/ month</span></div>{% endif %}
+  {% if p.description %}<section class="sec"><h2>About this space</h2><p>{{ p.description }}</p></section>{% endif %}
+  {% if p.villa.address %}<section class="sec"><h2>Address</h2><p>{{ p.villa.address }}</p></section>{% endif %}
+  {% if contact %}<section class="sec"><h2>Contact</h2><p>{{ contact.name }}</p></section>{% endif %}
+<div class="bar"><div class="bar__in">
+  {% if wa_url %}
+    <a class="btn" href="{{ wa_url }}" target="_blank" rel="noopener"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.2L2 22l4.9-1.5A10 10 0 1 0 12 2zm5.2 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.100-1.500-1.100-2.800s.7-2 1-2.300c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 2c.1.2.1.3 0 .5l-.4.6c-.1.1-.3.3-.1.6.2.3.8 1.300 1.700 2.100 1.200 1 2.100 1.300 2.400 1.500.3.1.5.1.6-.1l.9-1.100c.2-.3.4-.2.6-.1l1.900.9c.3.1.5.2.5.3.1.2.1.8-.1 1.300z"/></svg>Enquire on WhatsApp</a>
+  {% else %}
+    <span class="btn btn--off">Contact unavailable</span>
+  {% endif %}
+</div></div>
+</main>
+</div>
+{% endblock %}
