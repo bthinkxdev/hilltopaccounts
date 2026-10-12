@@ -52,9 +52,13 @@ def _create_assignment(*, user, role, business, villa, assigned_by, can_add_part
     return assignment
 
 def assign_business_manager(*, user, business, assigned_by) -> Assignment:
+    if Assignment.objects.filter(user=user, role=Assignment.Role.VILLA_STAFF, villa__business=business).exists():
+        raise ValidationError(f'{user.username} is already assigned as Villa Staff to a villa in {business.name}.')
     return _create_assignment(user=user, role=Assignment.Role.BUSINESS_MANAGER, business=business, villa=None, assigned_by=assigned_by)
 
 def assign_villa_staff(*, user, villa, assigned_by, can_add_partitions=False) -> Assignment:
+    if Assignment.objects.filter(user=user, role=Assignment.Role.BUSINESS_MANAGER, business=villa.business).exists():
+        raise ValidationError(f'{user.username} is already the Business Manager of {villa.business.name} and cannot be assigned to its villas.')
     return _create_assignment(user=user, role=Assignment.Role.VILLA_STAFF, business=None, villa=villa, assigned_by=assigned_by, can_add_partitions=can_add_partitions)
 
 def assign_accountant(*, user, assigned_by, business=None, villa=None) -> Assignment:

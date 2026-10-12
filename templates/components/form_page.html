@@ -169,4 +169,30 @@
   })();
   </script>
 {% endif %}
+{% if assignment_form %}
+  <script>
+  (function () {
+    var r = document.getElementById('{{ form.role.id_for_label }}');
+    var b = document.getElementById('{{ form.business.id_for_label }}');
+    var v = document.getElementById('{{ form.villa.id_for_label }}');
+    if (!b || !v) return;
+    function update() {
+      var isManager = r && r.value === 'business_manager';
+      var vField = v.closest('.field');
+      if (vField) vField.style.display = isManager ? 'none' : '';
+      if (isManager) {
+        v.value = '';
+        return;
+      }
+      Array.from(v.options).forEach(function (opt) {
+        if (opt.value) opt.hidden = opt.disabled = opt.getAttribute('data-business') !== b.value;
+      });
+      if (v.selectedOptions[0] && v.selectedOptions[0].disabled) v.value = '';
+    }
+    if (r) r.addEventListener('change', update);
+    b.addEventListener('change', update);
+    update();
+  })();
+  </script>
+{% endif %}
 {% endblock %}

@@ -75,7 +75,7 @@ def assignment_create(request, staff_pk):
     _owner_only(request.user)
     staff = get_object_or_404(User.objects.exclude(username='system'), pk=staff_pk)
     if request.method == 'POST':
-        form = AssignmentForm(request.POST)
+        form = AssignmentForm(request.POST, staff=staff)
         if form.is_valid():
             role = form.cleaned_data['role']
             business = form.cleaned_data.get('business')
@@ -94,8 +94,8 @@ def assignment_create(request, staff_pk):
                 messages.success(request, f'Assignment added for {staff.username}.')
                 return redirect('accounts:staff_detail', pk=staff.pk)
     else:
-        form = AssignmentForm()
-    return render(request, 'components/form_page.html', {'form': form, 'title': f'Assign — {staff.username}', 'submit_label': 'Add Assignment', 'cancel_url': reverse('accounts:staff_detail', args=[staff.pk])})
+        form = AssignmentForm(staff=staff, initial={'role': Assignment.Role.VILLA_STAFF})
+    return render(request, 'components/form_page.html', {'form': form, 'title': f'Assign — {staff.username}', 'submit_label': 'Add Assignment', 'cancel_url': reverse('accounts:staff_detail', args=[staff.pk]), 'assignment_form': True})
 
 @login_required
 def assignment_remove(request, pk):
