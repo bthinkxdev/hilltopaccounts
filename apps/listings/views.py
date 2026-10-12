@@ -32,8 +32,8 @@ def contact_for(partition):
         User.objects.filter(is_active=True, is_owner=True),
     ]
     for users in tiers:
-        for user in users.exclude(phone='').order_by('id'):
-            number = _whatsapp_number(user.phone)
+        for user in users.exclude(whatsapp_number='').order_by('id'):
+            number = _whatsapp_number(user.whatsapp_number)
             if number:
                 return {'name': user.get_full_name() or user.username, 'number': number}
     return None

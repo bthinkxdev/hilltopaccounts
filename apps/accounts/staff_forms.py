@@ -1,3 +1,4 @@
+import re
 from django import forms
 from django.contrib.auth.password_validation import validate_password
 from apps.businesses.models import Business
@@ -5,13 +6,23 @@ from apps.shared.forms import TaggedSelect
 from apps.villas.models import Villa
 from .models import Assignment, User
 
+def validate_whatsapp(value):
+    value = (value or '').strip()
+    if not re.fullmatch(r'\+?[0-9][0-9 \-]{6,17}[0-9]', value):
+        raise forms.ValidationError('Enter a valid WhatsApp number (digits only, optional leading +, 8–18 digits).')
+    return value
+
 class StaffCreateForm(forms.Form):
     username = forms.CharField(max_length=150)
     first_name = forms.CharField(max_length=150, required=False)
     last_name = forms.CharField(max_length=150, required=False)
     email = forms.EmailField(required=False)
+    whatsapp_number = forms.CharField(max_length=32, label='WhatsApp number', help_text='Include the country code, e.g. +974 5555 1234. Used for listing enquiries.')
     password1 = forms.CharField(widget=forms.PasswordInput, label='Password')
     password2 = forms.CharField(widget=forms.PasswordInput, label='Confirm password')
+
+    def clean_whatsapp_number(self):
+        return validate_whatsapp(self.cleaned_data['whatsapp_number'])
 
     def clean_username(self):
         username = self.cleaned_data['username']
@@ -31,6 +42,12 @@ class StaffCreateForm(forms.Form):
                 except forms.ValidationError as exc:
                     self.add_error('password1', exc)
         return cleaned
+
+class StaffWhatsAppForm(forms.Form):
+    whatsapp_number = forms.CharField(max_length=32, label='WhatsApp number', help_text='Include the country code, e.g. +974 5555 1234.')
+
+    def clean_whatsapp_number(self):
+        return validate_whatsapp(self.cleaned_data['whatsapp_number'])
 
 class AssignmentForm(forms.Form):
     role = forms.ChoiceField(choices=Assignment.Role.choices)

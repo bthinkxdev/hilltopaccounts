@@ -5,6 +5,7 @@ from django.db import models
 class User(AbstractUser):
     is_owner = models.BooleanField(default=False, help_text='Sees and can operate on every business/villa/financial record.')
     phone = models.CharField(max_length=32, blank=True)
+    whatsapp_number = models.CharField(max_length=32, blank=True, help_text='Used for public listing enquiries. Include the country code, e.g. +974 5555 1234.')
 
     class Meta:
         ordering = ['username']

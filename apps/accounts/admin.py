@@ -7,7 +7,7 @@ from .models import Assignment, User
 
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
-    fieldsets = DjangoUserAdmin.fieldsets + (('ERP access', {'fields': ('is_owner', 'phone')}),)
+    fieldsets = DjangoUserAdmin.fieldsets + (('ERP access', {'fields': ('is_owner', 'phone', 'whatsapp_number')}),)
     list_display = ('username', 'first_name', 'last_name', 'email', 'is_owner', 'is_active')
     list_filter = ('is_owner', 'is_active', 'is_superuser')
     search_fields = ('username', 'first_name', 'last_name', 'email')

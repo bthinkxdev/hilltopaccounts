@@ -11,7 +11,7 @@ class ListingTests(TestCase):
         biz = Business.objects.create(name='B', created_by=owner)
         cls.villa = Villa.objects.create(business=biz, name='V', address='Doha', created_by=owner)
         cls.part = Partition.objects.create(villa=cls.villa, name='P1', rent=1500, created_by=owner)
-        staff = User.objects.create_user('staff', password='x', phone='5551 2345')
+        staff = User.objects.create_user('staff', password='x', whatsapp_number='5551 2345')
         Assignment.objects.create(user=staff, role='villa_staff', villa=cls.villa, created_by=owner)
 
     def test_public_pages_and_whatsapp(self):

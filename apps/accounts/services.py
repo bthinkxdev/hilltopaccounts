@@ -12,9 +12,9 @@ def get_system_user() -> User:
         user.save(update_fields=['password'])
     return user
 
-def create_user(*, username, email='', first_name='', last_name='', is_owner=False, created_by, password=None) -> User:
+def create_user(*, username, email='', first_name='', last_name='', whatsapp_number='', is_owner=False, created_by, password=None) -> User:
     with transaction.atomic():
-        user = User(username=username, email=email, first_name=first_name, last_name=last_name, is_owner=is_owner)
+        user = User(username=username, email=email, first_name=first_name, last_name=last_name, whatsapp_number=whatsapp_number, is_owner=is_owner)
         if password:
             user.set_password(password)
         else:

@@ -4,7 +4,7 @@
   <div class="page-header">
     <div>
       <h1>{{ staff.get_full_name|default:staff.username }}</h1>
-      <div class="page-header__meta">{{ staff.email|default:"No email on file" }} · Last login: {{ staff.last_login|date:"d M Y H:i"|default:"Never" }}</div>
+      <div class="page-header__meta">{{ staff.email|default:"No email on file" }} · WhatsApp: {% if staff.whatsapp_number %}{{ staff.whatsapp_number }}{% else %}<strong>not set</strong>{% endif %} · <a href="{% url 'accounts:staff_whatsapp_edit' staff.pk %}">Edit</a> · Last login: {{ staff.last_login|date:"d M Y H:i"|default:"Never" }}</div>
     </div>
     {% if staff.is_active %}
       <a class="btn btn--ghost" href="{% url 'accounts:staff_deactivate' staff.pk %}">Deactivate</a>

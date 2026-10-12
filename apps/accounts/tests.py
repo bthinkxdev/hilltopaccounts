@@ -138,3 +138,18 @@ class AuthAuditTests(TestCase):
         client.force_login(self.user)
         client.post(reverse('accounts:logout'))
         self.assertTrue(AuditLog.objects.filter(action=Action.AUTH_LOGOUT, user=self.user).exists())
+
+
+class StaffWhatsAppTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user('own', password='x', is_owner=True)
+        self.client.force_login(self.owner)
+
+    def test_create_requires_valid_whatsapp(self):
+        data = {'username': 'new1', 'password1': 'Str0ng!Pass#2026', 'password2': 'Str0ng!Pass#2026'}
+        r = self.client.post(reverse('accounts:staff_create'), data)
+        self.assertEqual(User.objects.filter(username='new1').count(), 0)
+        r = self.client.post(reverse('accounts:staff_create'), {**data, 'whatsapp_number': 'abc'})
+        self.assertEqual(User.objects.filter(username='new1').count(), 0)
+        self.client.post(reverse('accounts:staff_create'), {**data, 'whatsapp_number': '+974 5555 1234'})
+        self.assertEqual(User.objects.get(username='new1').whatsapp_number, '+974 5555 1234')
