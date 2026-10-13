@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>{% block title %}Faisal Accounting{% endblock %}</title>
+  <title>{% block title %}Hilltop Accounting{% endblock %}</title>
   <script>
     (function () {
       try {
@@ -24,7 +24,7 @@
 
   <div class="app-shell">
     <aside class="sidebar" aria-label="Main navigation">
-      <div class="sidebar__brand">Faisal Accounting</div>
+      <div class="sidebar__brand">Hilltop Accounting</div>
 
       {% if user.is_authenticated %}
         <a class="sidebar__link{% if request.resolver_match.url_name == 'home' %} sidebar__link--active{% endif %}" href="{% url 'dashboard:home' %}">Dashboard</a>

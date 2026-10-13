@@ -36,7 +36,7 @@ def _whatsapp_url(partition, contact):
     return f'https://wa.me/{contact["number"]}?text={quote(message)}'
 
 def _brand(extra=None):
-    ctx = {'brand': settings.LISTING_BRAND, 'currency': settings.LISTING_CURRENCY}
+    ctx = {'brand': settings.LISTING_BRAND, 'currency': settings.LISTING_CURRENCY, 'brand_phone': settings.LISTING_FALLBACK_WHATSAPP, 'brand_wa': _whatsapp_number(settings.LISTING_FALLBACK_WHATSAPP), 'instagram': settings.LISTING_INSTAGRAM, 'facebook_name': settings.LISTING_FACEBOOK_NAME, 'facebook_url': settings.LISTING_FACEBOOK_URL}
     ctx.update(extra or {})
     return ctx
 
@@ -53,7 +53,8 @@ def contact_for(partition):
             number = _whatsapp_number(user.whatsapp_number)
             if number:
                 return {'name': user.get_full_name() or user.username, 'number': number}
-    return None
+    number = _whatsapp_number(settings.LISTING_FALLBACK_WHATSAPP)
+    return {'name': settings.LISTING_BRAND, 'number': number} if number else None
 
 def _photos(partition):
     return list(partition.photos.all()) or list(partition.villa.photos.all())

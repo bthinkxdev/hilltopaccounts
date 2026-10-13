@@ -14,34 +14,34 @@
 .count{top:calc(env(safe-area-inset-top) + 22px);right:14px;background:rgba(10,10,10,.7);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#fff;font-size:12px;font-weight:600;padding:5px 11px;border-radius:99px}
 .zoom{cursor:zoom-in}
 .thumbs{display:none}
-.sheet{position:relative;margin-top:-26px;background:#fff;border-radius:28px 28px 0 0;padding:24px 18px calc(env(safe-area-inset-bottom) + 120px);z-index:2}
-.crumb{font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
-.sheet h1{font-size:clamp(26px,7vw,40px);letter-spacing:-.035em;line-height:1.08;margin-top:8px}
+.sheet{position:relative;margin-top:-26px;background:var(--bg);border-radius:28px 28px 0 0;padding:24px 18px calc(env(safe-area-inset-bottom) + 120px);z-index:2}
+.crumb{display:inline-block;font-size:11.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--green);background:rgba(242,194,48,.35);padding:5px 10px;border-radius:99px}
+.sheet h1{font-size:clamp(26px,7vw,40px);letter-spacing:-.035em;line-height:1.08;margin-top:8px;color:var(--green)}
 .loc{display:flex;align-items:flex-start;gap:6px;color:var(--mute);margin-top:8px;font-size:14px}
 .loc svg{margin-top:3px;flex:none}
 .facts{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:20px}
-.fact{background:var(--soft);border-radius:16px;padding:14px 16px}
+.fact{background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:0 6px 18px rgba(11,61,46,.06)}
 .fact small{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);font-weight:600}
-.fact b{display:block;font-size:20px;letter-spacing:-.02em;margin-top:3px}
+.fact b{display:block;font-size:20px;letter-spacing:-.02em;margin-top:3px;color:var(--green)}
 .fact b span{font-size:12px;color:var(--mute);font-weight:500}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#16a34a;margin-right:6px}
 .dot--off{background:#9a9a9a}
 .sec{margin-top:28px;padding-top:24px;border-top:1px solid var(--line)}
-.sec h2{font-size:19px;letter-spacing:-.02em;margin-bottom:10px}
-.sec p{white-space:pre-line;color:#2a2a2a;line-height:1.65}
-.why{display:grid;gap:10px}
-.why>div{display:flex;gap:12px;align-items:flex-start;font-size:14px}.why>div>div{font-weight:600}
-.why i{font-style:normal;width:36px;height:36px;border-radius:12px;background:var(--soft);display:grid;place-items:center;flex:none}
-.why span{color:var(--mute);display:block;font-size:13px;font-weight:400}
-.agent{display:flex;align-items:center;gap:14px;margin-top:28px;padding:16px;border:1px solid var(--line);border-radius:20px;box-shadow:0 8px 24px rgba(0,0,0,.05)}
-.agent .av{width:46px;height:46px;border-radius:50%;background:#0a0a0a;color:#fff;display:grid;place-items:center;font-weight:700;font-size:17px;flex:none}
+.sec h2{font-size:19px;letter-spacing:-.02em;margin-bottom:10px;color:var(--green)}
+.sec p{white-space:pre-line;color:#26382f;line-height:1.65}
+.why{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.why>div{display:flex;gap:10px;align-items:center;font-size:13.5px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:12px}.why>div>div{font-weight:700;line-height:1.25}
+.why i{width:36px;height:36px;border-radius:50%;background:var(--green);box-shadow:inset 0 0 0 2px rgba(242,194,48,.7);display:grid;place-items:center;flex:none}.why i svg{width:18px;height:18px;stroke:#fff}
+.why span{color:var(--mute);display:block;font-size:11.5px;font-weight:500}
+.agent{display:flex;align-items:center;gap:14px;margin-top:28px;padding:16px;background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:0 10px 28px rgba(11,61,46,.1)}
+.agent .av{width:46px;height:46px;border-radius:50%;background:var(--green);box-shadow:inset 0 0 0 2px var(--gold);color:#fff;display:grid;place-items:center;font-weight:700;font-size:17px;flex:none}
 .agent b{display:block;font-size:15px}
 .agent span{font-size:12.5px;color:var(--mute)}
-.bar{position:fixed;left:0;right:0;bottom:0;z-index:10;padding:10px 16px calc(env(safe-area-inset-bottom) + 10px);background:rgba(255,255,255,.92);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid var(--line)}
+.bar{position:fixed;left:0;right:0;bottom:0;z-index:10;padding:10px 16px calc(env(safe-area-inset-bottom) + 10px);background:rgba(247,244,234,.94);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid var(--line)}
 .bar__in{max-width:1200px;margin:0 auto;display:flex;align-items:center;gap:14px}
 .bar__price{flex:none;line-height:1.15}
 .bar__price small{display:block;font-size:11px;color:var(--mute)}
-.bar__price b{font-size:19px;letter-spacing:-.02em;white-space:nowrap}
+.bar__price b{font-size:19px;letter-spacing:-.02em;white-space:nowrap;color:var(--green)}
 .bar .btn{flex:1;min-width:0}
 .side-price{display:none}
 .lb{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.94);display:grid;place-items:center}
@@ -61,11 +61,11 @@
   .thumbs{display:flex;gap:10px;margin-top:12px;overflow-x:auto;scrollbar-width:none}
   .thumbs::-webkit-scrollbar{display:none}
   .thumbs button{flex:0 0 84px;height:64px;border:2px solid transparent;border-radius:12px;overflow:hidden;padding:0;background:var(--soft);cursor:pointer;opacity:.75;transition:all .2s}
-  .thumbs button:hover,.thumbs button.on{opacity:1;border-color:#0a0a0a}
+  .thumbs button:hover,.thumbs button.on{opacity:1;border-color:var(--gold)}
   .thumbs img{width:100%;height:100%;object-fit:cover;display:block}
   .sheet{margin:0;padding:0;border-radius:0}
   .side-price{display:block;margin-top:18px}
-  .side-price b{font-size:36px;letter-spacing:-.035em}
+  .side-price b{font-size:36px;letter-spacing:-.035em;color:var(--green)}
   .side-price span{color:var(--mute);margin-left:4px}
   .facts .fact--price{display:none}
   .bar{position:static;padding:0;background:none;border:0;backdrop-filter:none;-webkit-backdrop-filter:none;margin-top:24px}
@@ -76,7 +76,7 @@
 {% block body %}
 <div class="split">
 <div class="hero">
-  <a class="back" href="{% url 'listings:list' %}#spaces" aria-label="Back to all spaces"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0a0a0a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></a>
+  <a class="back" href="{% url 'listings:list' %}#spaces" aria-label="Back to all spaces"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0b3d2e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></a>
   <div class="car" data-car>
     <div class="car__track" id="gallery">
       {% for ph in photos %}<div class="car__slide"><img class="zoom" data-zoom="{% url 'listings:photo' ph.pk %}" src="{% url 'listings:photo' ph.pk %}" alt="{{ ph.caption|default:p.name }}" decoding="async"{% if not forloop.first %} loading="lazy"{% endif %}></div>{% empty %}<div class="car__slide"><div class="car__empty">Photos coming soon</div></div>{% endfor %}
@@ -100,15 +100,16 @@
 
   {% if p.description %}<section class="sec"><h2>About this space</h2><p>{{ p.description }}</p></section>{% endif %}
 
-  <section class="sec"><h2>Why {{ brand }}</h2>
+  <section class="sec"><h2>What's included</h2>
     <div class="why">
-      <div><i>🏡</i><div>Hand-picked villas<span>Clean, well-kept homes in good UAE locations</span></div></div>
-      <div><i>💬</i><div>Direct, fast replies<span>Talk to our team on WhatsApp — no middlemen</span></div></div>
-      <div><i>🏷️</i><div>Simple monthly pricing<span>Clear rent, no hidden surprises</span></div></div>
+      <div><i><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.500a10 10 0 0114 0M8.500 16a5.500 5.500 0 017 0"/><circle cx="12" cy="19.500" r=".6"/></svg></i><div>Wi-Fi<span>Included</span></div></div>
+      <div><i><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.500 6.500l3 3M4 20l9-9M13 5l6 6-2 2-6-6z"/></svg></i><div>Maintenance<span>Included</span></div></div>
+      <div><i><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg></i><div>Electricity &amp; water<span>Included</span></div></div>
+      <div><i><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.800 5.200L19 10l-5.200 1.800L12 17l-1.800-5.200L5 10l5.200-1.800z"/></svg></i><div>Clean &amp; neat<span>Well-kept rooms</span></div></div>
     </div>
   </section>
 
-  {% if contact %}<div class="agent"><div class="av">{{ contact.name|slice:":1"|upper }}</div><div><b>{{ contact.name }}</b><span>Your {{ brand }} contact · replies on WhatsApp</span></div></div>{% endif %}
+  {% if contact %}<div class="agent"><div class="av">{{ contact.name|slice:":1"|upper }}</div><div><b>{{ contact.name }}</b><span>{{ brand }} · replies on WhatsApp</span></div></div>{% endif %}
 
   <div class="bar"><div class="bar__in">
     {% if p.rent %}<div class="bar__price"><small>per month</small><b>{{ currency }} {{ p.rent|floatformat:"0g" }}</b></div>{% endif %}

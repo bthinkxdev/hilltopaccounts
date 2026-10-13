@@ -18,7 +18,7 @@ class ListingTests(TestCase):
         r = self.client.get(reverse('listings:list'))
         self.assertContains(r, 'P1')
         r = self.client.get(reverse('listings:detail', args=[self.part.pk]))
-        self.assertContains(r, 'https://wa.me/97155512345')
+        self.assertContains(r, 'https://wa.me/97455512345')
 
     def test_archived_hidden(self):
         Partition.objects.filter(pk=self.part.pk).update(status='archived')
@@ -26,7 +26,11 @@ class ListingTests(TestCase):
 
     def test_number_normalising(self):
         from apps.listings.views import _whatsapp_number as n
-        self.assertEqual(n('050 123 4567'), '971501234567')
-        self.assertEqual(n('+971 50 123 4567'), '971501234567')
-        self.assertEqual(n('00971501234567'), '971501234567')
-        self.assertEqual(n('501234567'), '971501234567')
+        self.assertEqual(n('5179 2792'), '97451792792')
+        self.assertEqual(n('+974 5179 2792'), '97451792792')
+        self.assertEqual(n('00974 51792792'), '97451792792')
+
+    def test_fallback_contact_when_no_staff_number(self):
+        User.objects.update(whatsapp_number='')
+        r = self.client.get(reverse('listings:detail', args=[self.part.pk]))
+        self.assertContains(r, 'https://wa.me/97451792792')
