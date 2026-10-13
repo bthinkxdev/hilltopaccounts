@@ -1,64 +1,146 @@
 {% extends "listings/base.html" %}
-{% load humanize %}
-{% block title %}Find your space{% endblock %}
 {% block style %}
 <style>
-.top{position:sticky;top:0;z-index:5;background:rgba(255,255,255,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:calc(env(safe-area-inset-top) + 18px) 0 12px;border-bottom:1px solid var(--line)}
-.top .wrap{padding:0 20px}
-.top h1{font-size:28px;letter-spacing:-.03em;line-height:1.1}
-.top p{color:var(--mute);font-size:14px;margin-top:4px}
-.chips{display:flex;gap:8px;margin-top:14px}
-.chip{padding:8px 16px;border-radius:99px;font-size:13px;font-weight:600;background:var(--soft)}
-.chip.on{background:var(--fg);color:#fff}
-.feed{max-width:1200px;margin:0 auto;padding:16px 16px calc(env(safe-area-inset-bottom) + 28px);display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr))}
-@media(min-width:900px){.feed{gap:24px;padding:24px 20px 48px}.top h1{font-size:34px}.card{transition:box-shadow .2s,transform .2s}.card:hover{box-shadow:0 10px 30px rgba(0,0,0,.1);transform:translateY(-2px)}}
-.empty{grid-column:1/-1}
-.card{border-radius:var(--r);overflow:hidden;background:#fff;border:1px solid var(--line)}
-.card .car{aspect-ratio:4/3}
-.card .car__track{height:100%}
-.card__badges{position:absolute;top:12px;left:12px;z-index:2}
-.card__body{display:block;padding:14px 16px 16px}
-.card__row{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
-.card__name{font-size:18px;font-weight:700;letter-spacing:-.02em}
-.card__price{font-size:17px;font-weight:700;white-space:nowrap}
-.card__price small{font-size:12px;color:var(--mute);font-weight:500}
-.card__loc{color:var(--mute);font-size:13.5px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.empty{text-align:center;color:var(--mute);padding:80px 20px}
+.nav{position:absolute;top:0;left:0;right:0;z-index:5;padding:calc(env(safe-area-inset-top) + 16px) 0 0}
+.nav .wrap{display:flex;align-items:center;justify-content:space-between}
+.logo{display:flex;align-items:center;gap:10px;color:#fff;font-weight:700;letter-spacing:-.02em;font-size:17px}
+.logo svg{width:28px;height:28px}
+.logo small{display:block;font-size:10px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;opacity:.65;margin-top:-2px}
+.hero{position:relative;background:#0a0a0a;color:#fff;padding:calc(env(safe-area-inset-top) + 84px) 0 56px;border-radius:0 0 32px 32px;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:0;background:radial-gradient(900px 400px at 85% -10%,rgba(255,255,255,.14),transparent 60%),radial-gradient(500px 300px at -10% 110%,rgba(255,255,255,.07),transparent 60%)}
+.hero::after{content:"";position:absolute;right:-60px;bottom:-30px;width:340px;height:200px;opacity:.07;background:#fff;clip-path:polygon(0 100%,38% 18%,52% 46%,70% 8%,100% 100%)}
+.hero .wrap{position:relative;z-index:1}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.7)}
+.eyebrow::before{content:"";width:22px;height:1px;background:rgba(255,255,255,.5)}
+.hero h1{font-size:clamp(32px,8vw,64px);line-height:1.04;letter-spacing:-.035em;margin-top:14px;max-width:760px;font-weight:750}
+.hero h1 em{font-style:normal;color:rgba(255,255,255,.55)}
+.hero p{margin-top:14px;max-width:560px;color:rgba(255,255,255,.72);font-size:clamp(14.5px,3.8vw,17px)}
+.cta{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}
+.cta a{display:inline-flex;align-items:center;height:48px;padding:0 22px;border-radius:99px;font-weight:600;font-size:15px}
+.cta .primary{background:#fff;color:#0a0a0a}
+.cta .ghost{border:1px solid rgba(255,255,255,.28);color:#fff}
+.stats{display:flex;gap:28px;margin-top:34px;padding-top:22px;border-top:1px solid rgba(255,255,255,.14)}
+.stats b{display:block;font-size:24px;letter-spacing:-.02em}
+.stats span{font-size:12px;color:rgba(255,255,255,.6)}
+.perks{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:-26px;position:relative;z-index:2}
+.perk{background:#fff;border:1px solid var(--line);border-radius:18px;padding:14px 12px;box-shadow:0 10px 30px rgba(0,0,0,.07);text-align:center}
+.perk b{display:block;font-size:12.5px;letter-spacing:-.01em}
+.perk span{display:block;font-size:11px;color:var(--mute);margin-top:2px;line-height:1.35}
+.perk i{display:block;font-style:normal;font-size:20px;margin-bottom:4px}
+@media(min-width:700px){.perk{padding:20px;text-align:left;display:flex;gap:14px;align-items:flex-start}.perk i{font-size:24px;margin:0}.perk b{font-size:15px}.perk span{font-size:13px}}
+.sec-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding:34px 0 14px}
+.sec-head h2{font-size:clamp(22px,5.5vw,32px);letter-spacing:-.03em;line-height:1.1}
+.sec-head p{color:var(--mute);font-size:13.5px;margin-top:4px}
+.chips{display:flex;gap:6px;background:var(--soft);padding:4px;border-radius:99px;flex:none}
+.chip{padding:8px 16px;border-radius:99px;font-size:13px;font-weight:600;color:var(--mute);transition:all .2s}
+.chip.on{background:#fff;color:var(--fg);box-shadow:0 1px 6px rgba(0,0,0,.12)}
+.feed{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding-bottom:8px}
+@media(min-width:720px){.feed{grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}}
+@media(min-width:1100px){.feed{grid-template-columns:repeat(4,minmax(0,1fr));gap:24px}}
+.card{display:flex;flex-direction:column;background:#fff;border-radius:20px;border:1px solid var(--line);overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.05);transition:transform .3s var(--ease),box-shadow .3s;animation:rise .5s var(--ease) both}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@media(hover:hover){.card:hover{transform:translateY(-4px);box-shadow:0 2px 4px rgba(0,0,0,.05),0 22px 44px rgba(0,0,0,.12)}}
+.card .car{aspect-ratio:4/5}
+@media(min-width:720px){.card .car{aspect-ratio:4/3.4}}
+.card__badges{position:absolute;top:10px;left:10px;z-index:2}
+.card__body{display:block;padding:12px 12px 6px}
+.card__name{font-size:14.5px;font-weight:700;letter-spacing:-.02em;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card__loc{display:flex;align-items:center;gap:4px;color:var(--mute);font-size:12px;margin-top:3px;overflow:hidden;white-space:nowrap}
+.card__loc span{overflow:hidden;text-overflow:ellipsis}
+.card__loc svg{flex:none}
+.card__price{margin-top:8px;font-size:15px;font-weight:750;letter-spacing:-.02em}
+.card__price small{font-size:11px;color:var(--mute);font-weight:500;margin-left:2px}
+.card__act{padding:8px 12px 12px;margin-top:auto}
+.wa{display:flex;align-items:center;justify-content:center;gap:7px;height:40px;border-radius:12px;background:#0a0a0a;color:#fff;font-weight:600;font-size:13px;transition:transform .15s,background .2s;width:100%}
+.wa:active{transform:scale(.97)}
+.wa .ico{font-size:17px}
+.wa--off{background:var(--soft);color:var(--mute);pointer-events:none}
+@media(min-width:720px){.card__body{padding:16px 16px 6px}.card__name{font-size:17px}.card__loc{font-size:13px}.card__price{font-size:18px}.card__act{padding:10px 16px 16px}.wa{height:44px;font-size:14px}}
+.empty{grid-column:1/-1;text-align:center;color:var(--mute);padding:70px 20px}
+.foot{margin-top:56px;background:#0a0a0a;color:#fff;border-radius:32px 32px 0 0;padding:44px 0 calc(env(safe-area-inset-bottom) + 28px)}
+.foot h3{font-size:clamp(22px,5vw,30px);letter-spacing:-.03em;max-width:520px;line-height:1.15}
+.foot p{color:rgba(255,255,255,.65);margin-top:10px;max-width:480px;font-size:14px}
+.foot small{display:block;margin-top:30px;color:rgba(255,255,255,.4);font-size:12px}
 </style>
 {% endblock %}
 {% block body %}
-<header class="top"><div class="wrap">
-  <h1>Find your space</h1>
-  <p>{{ total }} partition{{ total|pluralize }} listed</p>
-  <div class="chips">
-    <a class="chip{% if available_only %} on{% endif %}" href="{% url 'listings:list' %}">Available</a>
-    <a class="chip{% if not available_only %} on{% endif %}" href="{% url 'listings:list' %}?show=all">All</a>
-  </div>
-</div></header>
-<main class="feed">
-{% for it in items %}
-  <article class="card">
-    <div class="car" data-car>
-      <div class="card__badges"><span class="badge{% if not it.occupied %} badge--dark{% endif %}">{% if it.occupied %}Rented{% else %}Available{% endif %}</span></div>
-      <div class="car__track">
-        {% for ph in it.photos %}
-          <a class="car__slide" href="{% url 'listings:detail' it.p.pk %}"><img src="{% url 'listings:photo' ph.pk %}" alt="{{ it.p.name }}"{% if not forloop.first %} loading="lazy"{% endif %}></a>
-        {% empty %}
-          <a class="car__slide" href="{% url 'listings:detail' it.p.pk %}"><div class="car__empty">No photos yet</div></a>
-        {% endfor %}
-      </div>
-      {% if it.photos|length > 1 %}<div class="car__dots">{% for _ in it.photos %}<span class="car__dot"></span>{% endfor %}</div>{% endif %}
-    </div>
-    <a class="card__body" href="{% url 'listings:detail' it.p.pk %}">
-      <div class="card__row">
-        <div class="card__name">{{ it.p.name }}</div>
-        {% if it.p.rent %}<div class="card__price">QAR {{ it.p.rent|floatformat:"0g" }} <small>/ month</small></div>{% endif %}
-      </div>
-      <div class="card__loc">{{ it.p.villa.name }}{% if it.p.villa.address %} · {{ it.p.villa.address }}{% endif %}</div>
+<header class="hero">
+  <div class="nav"><div class="wrap">
+    <a class="logo" href="{% url 'listings:list' %}" aria-label="{{ brand }}">
+      <svg viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="9" fill="#fff"/><path d="M5 23l7-12 4 7 3-5 8 10z" fill="#0a0a0a"/></svg>
+      <span>Hilltop<small>Villas</small></span>
     </a>
-  </article>
-{% empty %}
-  <div class="empty">Nothing to show right now.<br>Please check back soon.</div>
-{% endfor %}
-</main>
+  </div></div>
+  <div class="wrap">
+    <span class="eyebrow">Stay &amp; accommodation · UAE</span>
+    <h1>Live at the top. <em>Stay in comfort.</em></h1>
+    <p>{{ brand }} offers thoughtfully kept villa partitions and private rooms across the UAE — simple monthly pricing and a real person on WhatsApp to help you move in.</p>
+    <div class="cta">
+      <a class="primary" href="#spaces">Browse available spaces</a>
+      <a class="ghost" href="#why">Why Hilltop</a>
+    </div>
+    <div class="stats">
+      <div><b>{{ available_count }}</b><span>Available now</span></div>
+      <div><b>{{ villa_count }}</b><span>Villa{{ villa_count|pluralize }}</span></div>
+      <div><b>24/7</b><span>WhatsApp support</span></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap" id="why">
+  <div class="perks">
+    <div class="perk"><i>🏡</i><div><b>Hand-picked villas</b><span>Clean, well-kept homes in good locations</span></div></div>
+    <div class="perk"><i>💬</i><div><b>Instant enquiry</b><span>Chat with our team directly on WhatsApp</span></div></div>
+    <div class="perk"><i>🏷️</i><div><b>Clear pricing</b><span>Simple monthly rent, no surprises</span></div></div>
+  </div>
+
+  <div class="sec-head" id="spaces">
+    <div>
+      <h2>{% if available_only %}Available now{% else %}All spaces{% endif %}</h2>
+      <p>{{ items|length }} space{{ items|length|pluralize }} · swipe photos, tap to explore</p>
+    </div>
+    <div class="chips" role="tablist">
+      <a class="chip{% if available_only %} on{% endif %}" href="{% url 'listings:list' %}#spaces">Available</a>
+      <a class="chip{% if not available_only %} on{% endif %}" href="{% url 'listings:list' %}?show=all#spaces">All</a>
+    </div>
+  </div>
+
+  <main class="feed">
+  {% for it in items %}
+    <article class="card">
+      <div class="car" data-car>
+        <div class="card__badges"><span class="badge{% if it.occupied %} badge--rented{% endif %}">{% if it.occupied %}Rented{% else %}Available{% endif %}</span></div>
+        <div class="car__track">
+          {% for ph in it.photos %}
+            <a class="car__slide" href="{% url 'listings:detail' it.p.pk %}" tabindex="-1"><img src="{% url 'listings:photo' ph.pk %}" alt="{{ it.p.name }} — {{ it.p.villa.name }}" decoding="async"{% if forloop.counter0 > 0 or forloop.parentloop.counter0 > 3 %} loading="lazy"{% endif %}></a>
+          {% empty %}
+            <a class="car__slide" href="{% url 'listings:detail' it.p.pk %}" tabindex="-1"><div class="car__empty">Photos coming soon</div></a>
+          {% endfor %}
+        </div>
+        {% if it.photos|length > 1 %}<div class="car__dots">{% for _ in it.photos|slice:":6" %}<span class="car__dot"></span>{% endfor %}</div>{% endif %}
+      </div>
+      <a class="card__body" href="{% url 'listings:detail' it.p.pk %}">
+        <div class="card__name">{{ it.p.name }}</div>
+        <div class="card__loc"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.2 7-12a7 7 0 10-14 0c0 5.800 7 12 7 12z"/><circle cx="12" cy="10" r="2.500"/></svg><span>{{ it.p.villa.name }}{% if it.p.villa.address %} · {{ it.p.villa.address }}{% endif %}</span></div>
+        {% if it.p.rent %}<div class="card__price">{{ currency }} {{ it.p.rent|floatformat:"0g" }}<small>/ month</small></div>{% endif %}
+      </a>
+      <div class="card__act">
+        {% if it.wa_url %}
+          <a class="wa" href="{{ it.wa_url }}" target="_blank" rel="noopener"><svg class="ico"><use href="#wa"/></svg>WhatsApp</a>
+        {% else %}
+          <span class="wa wa--off">Unavailable</span>
+        {% endif %}
+      </div>
+    </article>
+  {% empty %}
+    <div class="empty">Nothing available right now.<br>Please check back soon or <a href="{% url 'listings:list' %}?show=all#spaces" style="text-decoration:underline">view all spaces</a>.</div>
+  {% endfor %}
+  </main>
+</div>
+
+<footer class="foot"><div class="wrap">
+  <h3>Looking for a place to stay in the UAE?</h3>
+  <p>Message us on WhatsApp from any listing and we'll help you find the right space.</p>
+  <small>© {% now "Y" %} {{ brand }}. Stay &amp; accommodation in the UAE.</small>
+</div></footer>
 {% endblock %}

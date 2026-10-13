@@ -1,13 +1,14 @@
 import re
 from urllib.parse import quote
+from django.conf import settings
 from django.db.models import Prefetch
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
 from apps.accounts.models import Assignment, User
 from apps.villas.models import Partition, Photo
 from apps.villas.photos import ALLOWED_EXTENSIONS
 
-DEFAULT_COUNTRY_CODE = '974'
 
 def _public_partitions():
     """Active partitions of non-archived villas/businesses. Public pages never expose tenant, billing or landlord data."""
@@ -19,9 +20,25 @@ def _whatsapp_number(phone: str) -> str:
     digits = re.sub(r'\D', '', phone or '')
     if digits.startswith('00'):
         digits = digits[2:]
-    if len(digits) == 8:
-        digits = DEFAULT_COUNTRY_CODE + digits
+    elif digits.startswith('0'):
+        digits = digits[1:]
+        if len(digits) in (8, 9):
+            digits = settings.LISTING_COUNTRY_CODE + digits
+    elif len(digits) in (8, 9):
+        digits = settings.LISTING_COUNTRY_CODE + digits
     return digits
+
+def _whatsapp_url(partition, contact):
+    if not contact:
+        return None
+    rent = f' ({settings.LISTING_CURRENCY} {partition.rent:,.0f}/month)' if partition.rent else ''
+    message = f'Hi {settings.LISTING_BRAND}, I am interested in {partition.name} at {partition.villa.name}{rent}. Is it available?'
+    return f'https://wa.me/{contact["number"]}?text={quote(message)}'
+
+def _brand(extra=None):
+    ctx = {'brand': settings.LISTING_BRAND, 'currency': settings.LISTING_CURRENCY}
+    ctx.update(extra or {})
+    return ctx
 
 def contact_for(partition):
     """The villa's staff first, then the business manager, then an owner: whoever has a phone number."""
@@ -45,20 +62,24 @@ def listing_list(request):
     partitions = list(_public_partitions().order_by('-created_at'))
     available_only = request.GET.get('show') != 'all'
     items = []
+    contacts = {}
     for p in partitions:
         photos = _photos(p)
         occupied = p.is_occupied
         if available_only and occupied:
             continue
-        items.append({'p': p, 'photos': photos, 'occupied': occupied})
-    return render(request, 'listings/list.html', {'items': items, 'available_only': available_only, 'total': len(partitions)})
+        if p.villa_id not in contacts:
+            contacts[p.villa_id] = contact_for(p)
+        items.append({'p': p, 'photos': photos, 'occupied': occupied, 'wa_url': _whatsapp_url(p, contacts[p.villa_id])})
+    available_count = sum(1 for p in partitions if not p.is_occupied)
+    return render(request, 'listings/list.html', _brand({'items': items, 'available_only': available_only, 'total': len(partitions), 'available_count': available_count, 'villa_count': len({p.villa_id for p in partitions})}))
 
 def listing_detail(request, pk):
     p = get_object_or_404(_public_partitions(), pk=pk)
     contact = contact_for(p)
-    message = f'Hi, I am interested in {p.name} at {p.villa.name}. Is it available?'
-    wa_url = f'https://wa.me/{contact["number"]}?text={quote(message)}' if contact else None
-    return render(request, 'listings/detail.html', {'p': p, 'photos': _photos(p), 'occupied': p.is_occupied, 'contact': contact, 'wa_url': wa_url})
+    photos = _photos(p)
+    og_image = request.build_absolute_uri(reverse('listings:photo', args=[photos[0].pk])) if photos else ''
+    return render(request, 'listings/detail.html', _brand({'p': p, 'photos': photos, 'occupied': p.is_occupied, 'contact': contact, 'wa_url': _whatsapp_url(p, contact), 'og_image': og_image}))
 
 def listing_photo(request, pk):
     """Public photo endpoint, limited to photos of listed (active, non-archived) partitions or villas."""
