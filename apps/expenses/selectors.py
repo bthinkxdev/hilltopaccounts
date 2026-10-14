@@ -111,7 +111,7 @@ def fixed_expense_checklist(villa, year: int, month: int, today=None):
     from .models import RecurringExpense
     today = today or date.today()
     period = date_type(year, month, 1)
-    generated = {e.recurring_id: e for e in Expense.objects.filter(villa=villa, period=period, recurring__isnull=False).select_related('category', 'recurring')}
+    generated = {e.recurring_id: e for e in Expense.objects.filter(villa=villa, period=period, recurring__isnull=False).select_related('category', 'recurring', 'paid_by_user')}
     templates = {t.pk: t for t in RecurringExpense.objects.filter(villa=villa).filter(pk__in=list(generated)).select_related('category')}
     for template in RecurringExpense.objects.filter(villa=villa, is_active=True).select_related('category'):
         templates[template.pk] = template

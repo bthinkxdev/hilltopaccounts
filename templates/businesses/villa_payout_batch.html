@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Record Partner Payouts — {{ villa.name }} — Hilltop Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Record Partner Payouts — {{ villa.name }}</h1>
+      <div class="page-header__meta">Profit distribution for {{ month_label }} · Villa Net Profit: <b>QAR {{ net_profit|floatformat:"2g" }}</b></div>
+    </div>
+    <a class="btn btn--ghost" href="{% url 'villas:villa_detail' villa.pk %}?period=month&year={{ year }}&month={{ month }}">Cancel</a>
+  </div>
+
+  <div class="card card--tight" style="margin-bottom: var(--space-4);">
+    <div class="card__title">Partner Share Distribution ({{ month_label }})</div>
+    {% for share in shares %}
+      <div class="partner-row">
+        <div class="partner-row__main">
+          <div class="list-row__title">{{ share.partner.name }}</div>
+          <div class="list-row__meta">
+            Share: <b>{{ share.percentage }}%</b> · Net Base: QAR {{ net_profit|floatformat:"2g" }}
+            {% if share.partner.phone %} · {{ share.partner.phone }}{% endif %}
+          </div>
+        </div>
+        <div class="partner-row__side">
+          <div class="partner-row__amount">
+            <div style="font-weight: 700; font-size: 15px; color: {% if share.cut >= 0 %}var(--success, #22c55e){% else %}var(--danger, #ef4444){% endif %};">
+              QAR {{ share.cut|floatformat:"2g" }}
+            </div>
+            <div class="list-row__meta">{{ share.percentage }}% of villa profit</div>
+          </div>
+          <div class="partner-row__actions">
+            {% if share.existing_payout %}
+              <span class="pill pill--success">Paid ({{ share.existing_payout.get_payment_method_display }})</span>
+            {% else %}
+              <span class="pill pill--warning">Pending</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  {% if unpaid_shares %}
+    <form method="post" class="card">
+      {% csrf_token %}
+      <div class="card__title">Payment Details for Unpaid Partners</div>
+      <p style="color: var(--text-secondary); margin-bottom: var(--space-4); font-size: 14px;">
+        Recording payouts will mark all {{ unpaid_shares|length }} unpaid partner(s) as paid with their exact calculated share amounts, totalling <b>QAR {{ total_unpaid|floatformat:"2g" }}</b>.
+      </p>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-3);">
+        <div class="field">
+          <label for="paid_on">Payment Date</label>
+          <input type="date" id="paid_on" name="paid_on" value="{{ today }}" required>
+        </div>
+
+        <div class="field">
+          <label for="payment_method">Payment Method</label>
+          <select id="payment_method" name="payment_method">
+            <option value="bank_transfer" selected>Bank Transfer</option>
+            <option value="cash">Cash</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field" style="margin-bottom: var(--space-2);">
+        <label for="notes">Notes (optional)</label>
+        <textarea id="notes" name="notes" rows="2" placeholder="e.g. Monthly profit distribution for {{ month_label }}"></textarea>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn btn--primary" type="submit">Confirm &amp; Record All Payouts (QAR {{ total_unpaid|floatformat:"2g" }})</button>
+        <a class="btn btn--ghost" href="{% url 'villas:villa_detail' villa.pk %}?period=month&year={{ year }}&month={{ month }}">Cancel</a>
+      </div>
+    </form>
+  {% else %}
+    <div class="empty-state">
+      <div class="empty-state__title">All partners are already paid for {{ month_label }}.</div>
+      <p>No pending partner profit payouts remain for this villa.</p>
+      <a class="btn btn--primary btn--sm" href="{% url 'villas:villa_detail' villa.pk %}?period=month&year={{ year }}&month={{ month }}">Return to Villa</a>
+    </div>
+  {% endif %}
+{% endblock %}

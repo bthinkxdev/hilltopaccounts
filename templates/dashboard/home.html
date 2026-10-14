@@ -67,6 +67,10 @@
         <div class="kpi__label">Staff bills due</div>
         <div class="kpi__value {% if staff_bills_due > 0 %}kpi__value--danger{% endif %}">QAR {{ staff_bills_due|floatformat:"2" }}</div>
       </div>
+      <div class="kpi kpi--ic-receipt">
+        <div class="kpi__label">Paid by you</div>
+        <div class="kpi__value kpi__value--success">QAR {{ my_expenses_paid|floatformat:"2" }}</div>
+      </div>
       <div class="kpi kpi--ic-cash">
         <div class="kpi__label">{% if is_cash_negative %}Out-of-pocket (To reimburse){% else %}Cash in hand{% endif %}</div>
         <div class="kpi__value {% if is_cash_negative %}kpi__value--danger{% elif outstanding_cash > 0 %}kpi__value--warning{% endif %}">QAR {{ abs_outstanding_cash|floatformat:"2" }}</div>
@@ -97,6 +101,12 @@
       <div class="kpi kpi--ic-chart"><div class="kpi__label">{% if period_pnl.net >= 0 %}Profit{% else %}Loss{% endif %}</div><div class="kpi__value {% if period_pnl.net >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">QAR {{ period_pnl.net|floatformat:"2" }}</div></div>
       <div class="kpi kpi--ic-clock"><div class="kpi__label">Unpaid expenses</div><div class="kpi__value">QAR {{ period_pnl.unpaid_expenses|floatformat:"2" }}</div></div>
     </div>
+    {% if period_pnl.staff_expenses or period_pnl.owner_expenses %}
+    <div class="stat-line" style="margin-top: var(--space-2);">
+      <span>Paid by staff: <b>QAR {{ period_pnl.staff_expenses|floatformat:"2" }}</b></span>
+      <span>Paid by owner: <b>QAR {{ period_pnl.owner_expenses|floatformat:"2" }}</b></span>
+    </div>
+    {% endif %}
     <p class="list-row__meta">Open the Villas page to see this broken down villa by villa.</p>
   </div>
   {% endif %}

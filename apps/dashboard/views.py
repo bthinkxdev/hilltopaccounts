@@ -71,6 +71,7 @@ class HomeView(LoginRequiredMixin, TemplateView):
             staff_bills_count = staff_bills.count()
             ctx['staff_bills_due'] = staff_bills_due
             ctx['staff_bills_count'] = staff_bills_count
+            ctx['my_expenses_paid'] = cash_selectors.total_staff_paid_expenses(user)
             if staff_bills_count > 0:
                 needs_attention.append({'label': 'Staff bills due (Utilities / Maintenance)', 'count': staff_bills_count, 'meta': f'QAR {staff_bills_due} to pay from cash', 'url': reverse('expenses:list') + '?due=unpaid&status=active'})
         else:

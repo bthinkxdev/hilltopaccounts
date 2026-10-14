@@ -31,8 +31,9 @@
 
         {% if nav_has_scope %}
           <div class="sidebar__section">Organization</div>
-          {% if not nav_is_field_staff %}<a class="sidebar__link{% if request.resolver_match.app_name == 'businesses' %} sidebar__link--active{% endif %}" href="{% url 'businesses:list' %}">Businesses</a>{% endif %}
+          {% if not nav_is_field_staff %}<a class="sidebar__link{% if request.resolver_match.app_name == 'businesses' and 'partner' not in request.resolver_match.url_name %} sidebar__link--active{% endif %}" href="{% url 'businesses:list' %}">Businesses</a>{% endif %}
           <a class="sidebar__link{% if request.resolver_match.url_name == 'villa_list' or request.resolver_match.url_name == 'villa_detail' or request.resolver_match.url_name == 'partition_detail' %} sidebar__link--active{% endif %}" href="{% url 'villas:villa_list' %}">Villas</a>
+          {% if user.is_owner %}<a class="sidebar__link{% if 'partner' in request.resolver_match.url_name %} sidebar__link--active{% endif %}" href="{% url 'businesses:partner_list' %}">Partners</a>{% endif %}
 
           <div class="sidebar__section">Finance</div>
           {# <a class="sidebar__link{% if request.resolver_match.url_name == 'invoice_list' or request.resolver_match.url_name == 'invoice_detail' %} sidebar__link--active{% endif %}" href="{% url 'billing:invoice_list' %}">Invoices</a> #}

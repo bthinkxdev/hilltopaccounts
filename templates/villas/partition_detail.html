@@ -105,18 +105,20 @@
 
   <div class="detail-section">
     <div class="detail-section__title">Expenses in {{ period_label }}</div>
-    <div class="card">
+    <div class="card card--tight">
       {% if recent_expenses %}
         {% for expense in recent_expenses %}
-          <div class="list-row">
-            <span class="list-row__title">{{ expense.category }} — QAR {{ expense.amount|floatformat:"2" }}</span>
-            <span class="list-row__meta">{{ expense.date }}{% if expense.due_date %} — due {{ expense.due_date }}{% endif %}</span>
+          <div class="list-row list-row--compact">
+            <div class="list-row__main">
+              <span class="list-row__title">{{ expense.category }} — {{ expense.amount|floatformat:"2g" }}</span>
+              <div class="list-row__meta">{{ expense.date|date:"d M" }}{% if expense.due_date %} · due {{ expense.due_date|date:"d M" }}{% endif %} · {% if expense.paid_on and expense.paid_by_user %}Paid by {% if expense.paid_by_user == request.user %}you{% else %}{{ expense.paid_by_user.get_full_name|default:expense.paid_by_user.username }}{% endif %}{% else %}{{ expense.get_paid_by_display }}{% endif %}{% if expense.created_by %} · created by {{ expense.created_by.get_full_name|default:expense.created_by.username }}{% endif %}</div>
+            </div>
             {% if expense.due_state == "paid" %}<span class="pill pill--success">Paid</span>
             {% elif expense.due_state == "verify" %}<span class="pill pill--warning">Paid — to verify</span>
             {% elif expense.due_state == "overdue" %}<span class="pill pill--danger">Overdue</span>
             {% elif expense.due_state == "today" %}<span class="pill pill--warning">Due today</span>
             {% elif expense.due_state == "upcoming" %}<span class="pill pill--neutral">Upcoming</span>
-            {% elif expense.due_state == "unpaid" %}<span class="pill pill--warning">Unpaid</span>
+            {% elif expense.due_state == "unpaid" %}<span class="pill pill--neutral">Unpaid</span>
             {% else %}<span class="pill pill--neutral">{{ expense.get_status_display }}</span>{% endif %}
             {% include "components/expense_actions.html" %}
           </div>

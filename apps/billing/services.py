@@ -1,9 +1,12 @@
 from datetime import date, timedelta
+from decimal import Decimal
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.db.models import Q
 from apps.accounts import selectors as access
 from apps.audit import services as audit_services
 from apps.audit.models import Action
+from apps.shared.exceptions import DomainError
 from . import selectors
 from .exceptions import DuplicateInvoicePeriod, InvoiceCancelled, InvoiceHasPayments, NothingToBill, NothingToCollect, PartitionVacant, PaymentExceedsOutstanding, PaymentInHandover
 from .models import Charge, ChargeType, Invoice, InvoiceItem, Payment
@@ -16,14 +19,14 @@ def get_or_create_charge_type(*, name) -> ChargeType:
 def ensure_rent_charge(*, partition, tenant, created_by):
     """Create the tenant's monthly Rent charge unless the partition already has an active one."""
     rent_type = get_or_create_charge_type(name='Rent')
-    if Charge.objects.filter(partition=partition, charge_type=rent_type, is_active=True).exists():
+    if Charge.objects.filter(partition=partition, charge_type=rent_type, is_active=True).filter(Q(end_date__isnull=True) | Q(end_date__gt=tenant.move_in_date)).exists():
         return None
     return create_charge(partition=partition, charge_type=rent_type, amount=tenant.monthly_rent, start_date=tenant.move_in_date, created_by=created_by, frequency=Charge.Frequency.MONTHLY)
 
 def close_future_charges(*, partition, move_out_date, closed_by):
     """Move-out: end running monthly charges at the move-out date and deactivate anything starting after it."""
     for charge in Charge.objects.filter(partition=partition, is_active=True):
-        if charge.start_date > move_out_date:
+        if charge.start_date >= move_out_date:
             cancel_charge(charge=charge, cancelled_by=closed_by, reason='Tenant moved out')
         elif charge.frequency == Charge.Frequency.MONTHLY and (charge.end_date is None or charge.end_date > move_out_date):
             update_charge(charge=charge, updated_by=closed_by, end_date=move_out_date)
@@ -136,12 +139,12 @@ def correct_payment(*, payment: Payment, new_amount, corrected_by, reason, metho
     return new_payment
 
 
-def collect_rent(*, partition, year, month, method, collected_by) -> Payment:
-    """One-tap monthly rent collection for a partition.
+def collect_rent(*, partition, year, month, method, collected_by, amount=None, rent_amount=None) -> Payment:
+    """Monthly rent collection for a partition.
 
     Creates the month's invoice on first use (and the rent charge from the tenant's monthly rent when the
-    partition has no charges yet), then records a payment for the full balance. The partition row is locked,
-    so a double-tap or two staff acting together can never bill or collect the month twice.
+    partition has no charges yet), supports rent amount edits and partial payments, then records the payment.
+    The partition row is locked, so concurrent staff actions cannot conflict.
     """
     from apps.villas.models import Partition
     if not access.can_manage_villa(collected_by, partition.villa):
@@ -154,8 +157,7 @@ def collect_rent(*, partition, year, month, method, collected_by) -> Payment:
             raise PartitionVacant(f'{locked} has no active tenant — nothing to collect.')
         invoices = list(Invoice.objects.filter(partition=locked, billing_period_start__lte=end, billing_period_end__gte=start, is_cancelled=False))
         if not invoices:
-            if not Charge.objects.filter(partition=locked, is_active=True).exists():
-                ensure_rent_charge(partition=locked, tenant=tenant, created_by=collected_by)
+            ensure_rent_charge(partition=locked, tenant=tenant, created_by=collected_by)
             inv = generate_monthly_invoice(partition=locked, billing_period_start=start, billing_period_end=end, issue_date=start, due_date=min(end, start + timedelta(days=9)), generated_by=collected_by)
             invoices = [inv]
         target_invoice = None
@@ -169,5 +171,34 @@ def collect_rent(*, partition, year, month, method, collected_by) -> Payment:
                 target_invoice = inv
             except (DuplicateInvoicePeriod, NothingToBill):
                 raise NothingToCollect(f'{locked.name}: rent for {start:%B %Y} is already fully collected, or there is nothing to bill.')
+
+        if rent_amount is not None and str(rent_amount).strip() != '':
+            rent_val = Decimal(str(rent_amount))
+            rent_item = target_invoice.items.filter(charge__charge_type__name='Rent').first()
+            if rent_item:
+                paid_so_far = selectors.invoice_paid_amount(target_invoice)
+                other_items_sum = sum((item.amount for item in target_invoice.items.exclude(pk=rent_item.pk)), start=Decimal('0.00'))
+                if (rent_val + other_items_sum) < paid_so_far:
+                    raise DomainError(f'Total rent cannot be less than already collected amount (QAR {paid_so_far}).')
+                if rent_item.amount != rent_val:
+                    rent_item.amount = rent_val
+                    rent_item.save(update_fields=['amount'])
+            if tenant and tenant.monthly_rent != rent_val:
+                tenant.monthly_rent = rent_val
+                tenant.save(update_fields=['monthly_rent'])
+            Charge.objects.filter(partition=locked, charge_type__name='Rent', is_active=True).update(amount=rent_val)
+
         outstanding = selectors.invoice_outstanding(target_invoice)
-        return record_payment(invoice=target_invoice, amount=outstanding, method=method, collected_by=collected_by, collected_at=date.today(), created_by=collected_by)
+        if outstanding <= Decimal('0.00'):
+            raise NothingToCollect(f'{locked.name}: rent for {start:%B %Y} is already fully collected, or there is nothing to bill.')
+
+        if amount is not None and str(amount).strip() != '':
+            pay_amount = Decimal(str(amount))
+            if pay_amount <= Decimal('0.00'):
+                raise DomainError('Received amount must be greater than zero.')
+            if pay_amount > outstanding:
+                raise PaymentExceedsOutstanding(f'Payment {pay_amount} exceeds outstanding balance {outstanding}.')
+        else:
+            pay_amount = outstanding
+
+        return record_payment(invoice=target_invoice, amount=pay_amount, method=method, collected_by=collected_by, collected_at=date.today(), created_by=collected_by)

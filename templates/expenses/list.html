@@ -77,7 +77,7 @@
               <span class="sep">•</span>
               <span>{{ expense.date|date:"d M Y" }}{% if expense.due_date %} · due {{ expense.due_date|date:"d M" }}{% endif %}</span>
               <span class="sep">•</span>
-              <span class="expense-row__payer">{{ expense.get_paid_by_display }}</span>
+              <span class="expense-row__payer">{% if expense.paid_on and expense.paid_by_user %}Paid by {% if expense.paid_by_user == request.user %}you{% else %}{{ expense.paid_by_user.get_full_name|default:expense.paid_by_user.username }}{% endif %}{% else %}{{ expense.get_paid_by_display }}{% endif %}</span>
             </div>
           </div>
           <div class="expense-row__side">
@@ -92,7 +92,7 @@
             </div>
             <div class="expense-row__actions">
               {% include "components/expense_actions.html" %}
-              {% if expense.status == "active" %}
+              {% if expense.status == "active" and not is_field_staff %}
                 <a class="btn btn--ghost btn--sm" href="{% url 'expenses:cancel' expense.pk %}">Cancel</a>
                 <a class="btn btn--ghost btn--sm" href="{% url 'expenses:reverse' expense.pk %}">Reverse</a>
               {% endif %}

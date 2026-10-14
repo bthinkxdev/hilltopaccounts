@@ -1,3 +1,4 @@
+import re
 from django.db.models import Q, QuerySet
 from apps.billing.models import Charge, Invoice, Payment
 from apps.businesses.models import Business
@@ -13,7 +14,7 @@ def can_view_financial_kpis(user) -> bool:
     return Assignment.objects.filter(user=user, role__in=[Assignment.Role.BUSINESS_MANAGER, Assignment.Role.ACCOUNTANT]).exists()
 
 def is_field_staff(user) -> bool:
-    """Operational users (villa staff) who must not see owner-level finance such as villa rent, P&L or verification."""
+    """Operational users (villa staff) who must not see business-level finance, P&L or verification."""
     return not user.is_owner and not can_view_financial_kpis(user)
 
 def businesses_visible_to(user) -> QuerySet[Business]:
@@ -58,15 +59,12 @@ def businesses_managed_by(user) -> QuerySet[Business]:
         return Business.objects.all()
     return Business.objects.filter(manager_assignments__user=user).distinct()
 
-LANDLORD_RENT_REGEX = r'(villa.*rent|landlord)'
+LANDLORD_RENT_REGEX = r'(villa.*rent|landlord|^rent$)'
 
 def expenses_visible_to(user) -> QuerySet[Expense]:
     if user.is_owner:
         return Expense.objects.all()
-    qs = Expense.objects.filter(Q(villa__in=villas_visible_to(user)) | Q(villa__isnull=True, business__in=businesses_managed_by(user))).distinct()
-    if is_field_staff(user):
-        qs = qs.exclude(category__name__iregex=LANDLORD_RENT_REGEX)
-    return qs
+    return Expense.objects.filter(Q(villa__in=villas_visible_to(user)) | Q(villa__isnull=True, business__in=businesses_managed_by(user))).distinct()
 
 def cash_handovers_visible_to(user) -> QuerySet[CashHandover]:
     if user.is_owner:
@@ -194,4 +192,8 @@ class ManageScope:
         """Mirrors expenses.services.can_pay_expense — owner-account expenses need an admin; staff-paid ones any villa manager."""
         if self.is_admin(expense.business_id):
             return True
-        return expense.paid_by == 'staff' and expense.villa_id is not None and expense.villa_id in self.staff_villa_ids
+        if expense.recurring_id is not None and getattr(expense.recurring, 'paid_by', '') == 'owner':
+            return False
+        if expense.category_id and re.search(LANDLORD_RENT_REGEX, expense.category.name, re.I):
+            return False
+        return expense.villa_id is not None and expense.villa_id in self.staff_villa_ids

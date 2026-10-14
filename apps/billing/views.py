@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -227,8 +228,24 @@ def rent_collect(request, partition_pk):
     back = f'{back}?period=month&year={year}&month={month}#rent'
     if not _can_manage(request.user, partition.villa):
         raise PermissionDenied('You cannot collect rent for this villa.')
+    amount_str = request.POST.get('amount', '').strip()
+    rent_amount_str = request.POST.get('rent_amount', '').strip()
     try:
-        payment = collect_rent(partition=partition, year=year, month=month, method=method, collected_by=request.user)
+        amount = Decimal(amount_str) if amount_str else None
+        rent_amount = Decimal(rent_amount_str) if rent_amount_str else None
+    except Exception:
+        messages.error(request, 'Please enter a valid amount.')
+        return redirect(back)
+    try:
+        payment = collect_rent(
+            partition=partition,
+            year=year,
+            month=month,
+            method=method,
+            collected_by=request.user,
+            amount=amount,
+            rent_amount=rent_amount,
+        )
     except DomainError as exc:
         messages.error(request, str(exc))
     else:

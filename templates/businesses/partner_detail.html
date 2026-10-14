@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}{{ partner.name }} — Partners — Hilltop Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <div>
+      <div style="display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1);">
+        <h1>{{ partner.name }}</h1>
+        {% if not partner.is_active %}<span class="pill pill--neutral">Inactive</span>{% else %}<span class="pill pill--success">Active</span>{% endif %}
+      </div>
+      <div class="page-header__meta">
+        {% if partner.phone %}{{ partner.phone }}{% endif %}
+        {% if partner.email %}{% if partner.phone %} · {% endif %}{{ partner.email }}{% endif %}
+      </div>
+    </div>
+    <div class="quick-actions" style="display: flex; flex-wrap: wrap; gap: var(--space-2);">
+      <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_edit' partner.pk %}">Edit Partner</a>
+      <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_share_create' partner.pk %}">+ Assign Villa</a>
+      {% if total_payout > 0 and not is_fully_paid %}
+        <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?year={{ year }}&month={{ month }}&amount={{ remaining_payout }}">Record Payout</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="period-bar">
+    <span class="period-bar__label">{{ period_label }}</span>
+    {% include "components/period_picker.html" %}
+  </div>
+
+  <div class="grid--kpi grid--kpi-3" style="margin-bottom: var(--space-4);">
+    <div class="kpi">
+      <div class="kpi__label">Assigned villas</div>
+      <div class="kpi__value">{{ shares|length }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi__label">Total payout</div>
+      <div class="kpi__value {% if total_payout >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">
+        QAR {{ total_payout|floatformat:"2g" }}
+      </div>
+    </div>
+    <div class="kpi">
+      <div class="kpi__label">Payment status</div>
+      <div class="kpi__value" style="font-size: 15px; padding-top: 4px;">
+        {% if is_fully_paid %}
+          <span class="pill pill--success" style="font-size: 13px;">Paid (QAR {{ period_paid_amount|floatformat:"2g" }})</span>
+        {% elif period_paid_amount > 0 %}
+          <span class="pill pill--warning" style="font-size: 13px;">Partial (Paid QAR {{ period_paid_amount|floatformat:"2g" }})</span>
+        {% else %}
+          <span class="pill pill--warning" style="font-size: 13px;">Pending</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="detail-section">
+    <div class="detail-section__title">Assigned Villas &amp; Profit Cut — {{ period_label }}</div>
+    <div class="card card--tight">
+      {% if shares %}
+        {% for share in shares %}
+          <div class="partner-row">
+            <div class="partner-row__main">
+              <a class="list-row__title" href="{% url 'villas:villa_detail' share.villa.pk %}?period={{ period }}&year={{ year }}&month={{ month }}">{{ share.villa.name }}</a>
+              <div class="list-row__meta">
+                {{ partner.name }}: <b>{{ share.percentage }}%</b>
+                {% if share.co_partners %}
+                  · Other: {% for cp in share.co_partners %}<a href="{% url 'businesses:partner_detail' cp.partner.pk %}?period={{ period }}&year={{ year }}&month={{ month }}" style="color: inherit; text-decoration: underline;">{{ cp.partner.name }}</a>: <b>{{ cp.percentage }}%</b> (QAR {{ cp.cut|floatformat:"2g" }}){% if not forloop.last %}, {% endif %}{% endfor %}
+                {% endif %}
+                · You: <b>{{ share.owner_percentage }}%</b> · Net: QAR {{ share.villa_net|floatformat:"2g" }}
+              </div>
+            </div>
+            <div class="partner-row__side">
+              <div class="partner-row__amount">
+                <div style="font-weight: 700; font-size: 15px; color: {% if share.cut >= 0 %}var(--success, #22c55e){% else %}var(--danger, #ef4444){% endif %};">
+                  QAR {{ share.cut|floatformat:"2g" }}
+                </div>
+                <div class="list-row__meta" style="font-size: 12px;">Partner cut · You: QAR {{ share.owner_cut|floatformat:"2g" }}</div>
+              </div>
+              <div class="partner-row__actions">
+                {% if share.payout %}
+                  <span class="pill pill--success">Paid</span>
+                {% else %}
+                  <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?villa={{ share.villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.cut }}">Pay</a>
+                {% endif %}
+                <button type="button" class="btn btn--ghost btn--sm" onclick="openEditShareModal('{% url 'businesses:partner_share_edit' share.pk %}', '{{ share.villa.name|escapejs }}', '{{ share.percentage }}', '{{ share.owner_percentage }}')" title="Edit percentage">Edit</button>
+                <button type="button" class="btn btn--ghost btn--sm" style="color: var(--danger, #ef4444); padding: 0 8px;" onclick="openDeleteShareModal('{% url 'businesses:partner_share_delete' share.pk %}', '{{ partner.name|escapejs }}', '{{ share.villa.name|escapejs }}')" title="Remove villa share">✕</button>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state__title">No villas assigned to {{ partner.name }} yet.</div>
+          <p>Assign this partner to one or more villas and set their percentage share.</p>
+          <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_share_create' partner.pk %}">+ Assign Villa Share</a>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="detail-section" style="margin-top: var(--space-4);">
+    <div class="detail-section__title">Payout History</div>
+    <div class="card card--tight">
+      {% if payout_history %}
+        {% for payout in payout_history %}
+          <div class="partner-row">
+            <div class="partner-row__main">
+              <div class="list-row__title">QAR {{ payout.amount|floatformat:"2g" }} via {{ payout.get_payment_method_display }}</div>
+              <div class="list-row__meta">
+                Period: <b>{{ payout.period_year }}-{{ payout.period_month|stringformat:"02d" }}</b>
+                {% if payout.villa %} · Villa: {{ payout.villa.name }}{% endif %}
+                {% if payout.notes %} · {{ payout.notes }}{% endif %}
+              </div>
+            </div>
+            <div class="partner-row__side">
+              <div class="partner-row__amount">
+                <div style="font-weight: 500; font-size: 13px;">{{ payout.paid_on|date:"j M Y" }}</div>
+                <div class="list-row__meta" style="font-size: 11px;">By {{ payout.created_by.first_name|default:payout.created_by.username }}</div>
+              </div>
+
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state__title">No payouts recorded yet.</div>
+          <p>Record a payout when profit shares are distributed to {{ partner.name }}.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <dialog id="edit-share-modal" style="width: calc(100% - var(--space-6)); max-width: 420px;">
+    <h3 style="margin-bottom: var(--space-2);">Edit Villa Share</h3>
+    <p id="edit-share-modal-msg" style="color: var(--text-secondary); margin-bottom: var(--space-3); font-size: 14px; line-height: 1.5;"></p>
+    <form id="edit-share-form" method="post" style="margin: 0;">
+      {% csrf_token %}
+      <div class="field" style="margin-bottom: var(--space-4);">
+        <label for="modal-share-percentage">Partner Percentage Share (%)</label>
+        <input type="number" step="0.01" min="0.01" max="100" id="modal-share-percentage" name="percentage" required>
+        <div id="modal-share-hint" style="font-size: 12px; color: var(--text-secondary); margin-top: var(--space-1);"></div>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: var(--space-2);">
+        <button type="button" class="btn btn--ghost" onclick="closeEditShareModal()">Cancel</button>
+        <button type="submit" class="btn btn--primary">Save Changes</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="delete-share-modal" style="width: calc(100% - var(--space-6)); max-width: 420px;">
+    <h3 style="margin-bottom: var(--space-2);">Remove Villa Share</h3>
+    <p id="delete-share-modal-msg" style="color: var(--text-secondary); margin-bottom: var(--space-4); font-size: 14px; line-height: 1.5;"></p>
+    <div style="display: flex; justify-content: flex-end; gap: var(--space-2);">
+      <button type="button" class="btn btn--ghost" onclick="closeDeleteShareModal()">Cancel</button>
+      <form id="delete-share-form" method="post" style="margin: 0;">
+        {% csrf_token %}
+        <button type="submit" class="btn btn--primary" style="background: var(--danger, #ef4444); border-color: var(--danger, #ef4444);">Remove</button>
+      </form>
+    </div>
+  </dialog>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function openEditShareModal(actionUrl, villaName, currentPct, ownerPct) {
+  const form = document.getElementById('edit-share-form');
+  form.action = actionUrl;
+  document.getElementById('edit-share-modal-msg').textContent =
+    `Update ${villaName} share percentage for {{ partner.name|escapejs }}.`;
+  document.getElementById('modal-share-percentage').value = currentPct;
+  document.getElementById('modal-share-hint').textContent =
+    `Current: ${currentPct}% · Current remaining for you: ${ownerPct}%`;
+  document.getElementById('edit-share-modal').showModal();
+}
+
+function closeEditShareModal() {
+  document.getElementById('edit-share-modal')?.close();
+}
+
+function openDeleteShareModal(actionUrl, partnerName, villaName) {
+  document.getElementById('delete-share-form').action = actionUrl;
+  document.getElementById('delete-share-modal-msg').textContent =
+    `Are you sure you want to remove ${partnerName}'s share from ${villaName}? This will return the share to you.`;
+  document.getElementById('delete-share-modal').showModal();
+}
+
+function closeDeleteShareModal() {
+  document.getElementById('delete-share-modal')?.close();
+}
+
+document.getElementById('edit-share-modal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'edit-share-modal') closeEditShareModal();
+});
+document.getElementById('delete-share-modal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'delete-share-modal') closeDeleteShareModal();
+});
+</script>
+{% endblock %}

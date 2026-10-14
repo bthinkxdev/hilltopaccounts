@@ -1,4 +1,5 @@
 import calendar
+import re
 from datetime import date as date_type
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
@@ -33,7 +34,9 @@ def can_pay_expense(user, expense: Expense) -> bool:
     """Owner-account expenses are settled by the Owner or the villa's Business Manager; staff-paid ones by anyone on the villa."""
     if user.is_owner:
         return True
-    if expense.paid_by == PaidBy.OWNER:
+    if expense.recurring_id is not None and getattr(expense.recurring, 'paid_by', '') == PaidBy.OWNER:
+        return selectors.is_business_manager_of(user, expense.business)
+    if expense.category_id and re.search(selectors.LANDLORD_RENT_REGEX, expense.category.name, re.I):
         return selectors.is_business_manager_of(user, expense.business)
     if expense.villa_id:
         return selectors.can_manage_villa(user, expense.villa)
@@ -54,6 +57,7 @@ def _record_payment_fields(expense: Expense, *, paid_on, payment_method, payer, 
         expense.verified_at = timezone.now()
         expense.verified_by = payer
     else:
+        expense.paid_by = PaidBy.STAFF
         expense.verified_at = None
         expense.verified_by = None
 

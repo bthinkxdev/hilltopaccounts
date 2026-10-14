@@ -85,8 +85,22 @@ def villa_list(request):
     overdue_expenses = {row['villa_id']: row['n'] for row in selectors.expenses_visible_to(request.user).filter(villa_id__in=villa_ids, status=Expense.Status.ACTIVE, paid_on__isnull=True, due_date__lt=today).order_by().values('villa_id').annotate(n=Count('pk'))}
     to_verify = {row['villa_id']: row['n'] for row in selectors.expenses_visible_to(request.user).filter(villa_id__in=financial_ids, status=Expense.Status.ACTIVE, paid_on__isnull=False, verified_at__isnull=True).order_by().values('villa_id').annotate(n=Count('pk'))}
     unconfirmed_cash = {row['invoice__partition__villa_id']: row['total'] for row in Payment.objects.filter(handovers__status=CashHandover.Status.SUBMITTED, invoice__partition__villa_id__in=financial_ids).order_by().values('invoice__partition__villa_id').annotate(total=Sum('amount'))}
+    partner_shares_by_villa = {}
+    if request.user.is_owner:
+        from apps.businesses.models import PartnerVillaShare
+        shares_by_v = {}
+        for share in PartnerVillaShare.objects.filter(partner__is_active=True, villa_id__in=villa_ids).select_related('partner'):
+            shares_by_v.setdefault(share.villa_id, []).append(share)
+        for v_id, s_list in shares_by_v.items():
+            tot_p = sum((s.percentage for s in s_list), Decimal('0.00'))
+            labels = [f"{s.partner.name} ({s.percentage}%)" for s in s_list]
+            if tot_p < Decimal('100.00'):
+                labels.append(f"You ({Decimal('100.00') - tot_p}%)")
+            partner_shares_by_villa[v_id] = labels
+
     for villa in page_obj:
         villa.staff_names = staff_names.get(villa.pk, [])
+        villa.partner_share_labels = partner_shares_by_villa.get(villa.pk, [])
         villa.pending_rent = pending_rent.get(villa.pk, 0)
         villa.overdue_expense_count = overdue_expenses.get(villa.pk, 0)
         villa.fixed_pending = fixed_pending.get(villa.pk, 0)
@@ -114,7 +128,8 @@ def villa_detail(request, pk):
     from apps.tenancy.models import Tenant
     today = date.today()
     villa = get_object_or_404(selectors.villas_visible_to(request.user).select_related('business'), pk=pk)
-    if selectors.is_field_staff(request.user) and (villa.is_archived or villa.business.is_archived):
+    is_field_staff = selectors.is_field_staff(request.user)
+    if is_field_staff and (villa.is_archived or villa.business.is_archived):
         messages.info(request, 'This villa has been archived.')
         return redirect('villas:villa_list')
     period = period_context(request, today, allow_future=True)
@@ -128,7 +143,7 @@ def villa_detail(request, pk):
     all_partitions = list(selectors.partitions_visible_to(request.user).filter(villa=villa).order_by('name'))
     active_partitions = [p for p in all_partitions if p.status == 'active']
     status = request.GET.get('status', 'active')
-    if selectors.is_field_staff(request.user) or status == 'active':
+    if is_field_staff or status == 'active':
         status = 'active'
         partitions = active_partitions
     elif status == 'archived':
@@ -155,10 +170,10 @@ def villa_detail(request, pk):
         expense.due_state = expenses_selectors.due_state(expense, today)
         expense.can_pay = scope.can_pay_expense(expense)
         expense.can_verify = scope.can_verify_expense(expense)
-        expense.can_edit = can_manage and expense.status == 'active' and expense.paid_on is None
+        expense.can_edit = can_manage and expense.status == 'active' and expense.paid_on is None and not (is_field_staff and expense.paid_by == 'owner')
         return expense
 
-    one_off = [decorate(e) for e in expenses.filter(date__gte=start, date__lte=end, recurring__isnull=True).select_related('category', 'partition', 'created_by').order_by('-date', '-id')[:15]]
+    one_off = [decorate(e) for e in expenses.filter(date__gte=start, date__lte=end, recurring__isnull=True).select_related('category', 'partition', 'created_by', 'paid_by_user').order_by('-date', '-id')[:15]]
     rent_rows, rent_totals = (billing_selectors.rent_sheet(partitions=active_partitions, tenant_by_partition=tenant_by_partition, invoice_queryset=invoices, year=period['year'], month=period['month'], today=today) if period['period'] == 'month' else (None, None))
     fixed_rows, fixed_totals = expenses_selectors.fixed_expense_checklist(villa, period['year'], period['month'], today) if period['period'] == 'month' else (None, None)
     for row in fixed_rows or []:
@@ -179,16 +194,10 @@ def villa_detail(request, pk):
         return sub
 
     fixed_templates = list(RecurringExpense.objects.filter(villa=villa, is_active=True).select_related('category')) if period['period'] == 'year' else []
-    if selectors.is_field_staff(request.user):
-        owner_fixed_rows = None
-        owner_fixed_totals = None
-        owner_fixed_templates = []
-        owner_one_off = []
-    else:
-        owner_fixed_rows = [r for r in (fixed_rows or []) if getattr(r['template'], 'paid_by', '') == 'owner'] if fixed_rows is not None else None
-        owner_fixed_totals = compute_fixed_subset(owner_fixed_rows) if owner_fixed_rows is not None else None
-        owner_fixed_templates = [t for t in fixed_templates if t.paid_by == 'owner']
-        owner_one_off = [e for e in one_off if e.paid_by == 'owner']
+    owner_fixed_rows = [r for r in (fixed_rows or []) if getattr(r['template'], 'paid_by', '') == 'owner'] if fixed_rows is not None else None
+    owner_fixed_totals = compute_fixed_subset(owner_fixed_rows) if owner_fixed_rows is not None else None
+    owner_fixed_templates = [t for t in fixed_templates if t.paid_by == 'owner']
+    owner_one_off = [e for e in one_off if e.paid_by == 'owner']
 
     staff_fixed_rows = [r for r in (fixed_rows or []) if getattr(r['template'], 'paid_by', '') == 'staff'] if fixed_rows is not None else None
     staff_fixed_totals = compute_fixed_subset(staff_fixed_rows) if staff_fixed_rows is not None else None
@@ -222,7 +231,7 @@ def villa_detail(request, pk):
         'fixed_templates': fixed_templates,
         'owner_fixed_templates': owner_fixed_templates,
         'staff_fixed_templates': staff_fixed_templates,
-        'one_off_expenses': staff_one_off if selectors.is_field_staff(request.user) else one_off,
+        'one_off_expenses': one_off,
         'owner_one_off': owner_one_off,
         'staff_one_off': staff_one_off,
         'cash': cash_selectors.villa_cash_position(villa),
@@ -236,6 +245,24 @@ def villa_detail(request, pk):
         context['pnl'] = billing_selectors.period_profit_loss(invoices, expenses, start, end)
         context['total_outstanding'] = billing_selectors.outstanding_amount(invoices)
         context['activity'] = AuditLog.objects.filter(villa=villa).select_related('user').order_by('-timestamp')[:8]
+        if request.user.is_owner:
+            from apps.businesses.models import PartnerPayout, PartnerVillaShare
+            shares = list(PartnerVillaShare.objects.filter(villa=villa, partner__is_active=True).select_related('partner'))
+            if shares:
+                net_profit = context['pnl'].get('net', Decimal('0.00'))
+                total_partner_pct = sum((s.percentage for s in shares), Decimal('0.00'))
+                existing_payouts = {
+                    p.partner_id: p
+                    for p in PartnerPayout.objects.filter(villa=villa, period_year=period['year'], period_month=period['month'])
+                }
+                for s in shares:
+                    s.cut = (net_profit * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
+                    s.payout = existing_payouts.get(s.partner_id)
+                owner_pct = max(Decimal('0.00'), Decimal('100.00') - total_partner_pct)
+                owner_cut = (net_profit * (owner_pct / Decimal('100.00'))).quantize(Decimal('0.01'))
+                context['villa_partner_shares'] = shares
+                context['villa_owner_share'] = {'percentage': owner_pct, 'cut': owner_cut}
+                context['has_unpaid_partners'] = any(not s.payout for s in shares)
     return render(request, 'villas/villa_detail.html', context)
 
 @login_required
@@ -391,14 +418,15 @@ def partition_detail(request, pk):
         invoice.computed_status = billing_selectors.invoice_status(invoice)
         invoice.computed_outstanding = billing_selectors.invoice_outstanding(invoice)
     expenses = selectors.expenses_visible_to(request.user).filter(partition=partition)
-    recent_expenses = list(expenses.filter(date__gte=start, date__lte=end).select_related('category').order_by('-date', '-id')[:8])
+    recent_expenses = list(expenses.filter(date__gte=start, date__lte=end).select_related('category', 'paid_by_user', 'created_by').order_by('-date', '-id')[:8])
     scope = selectors.ManageScope(request.user)
     can_manage_here = scope.can_manage_villa(villa.pk, villa.business_id)
+    is_staff = selectors.is_field_staff(request.user)
     for expense in recent_expenses:
         expense.due_state = expenses_selectors.due_state(expense, today)
         expense.can_pay = scope.can_pay_expense(expense)
         expense.can_verify = scope.can_verify_expense(expense)
-        expense.can_edit = can_manage_here and expense.status == 'active' and expense.paid_on is None
+        expense.can_edit = can_manage_here and expense.status == 'active' and expense.paid_on is None and not (is_staff and expense.paid_by == 'owner')
     from apps.tenancy.models import Tenant
     past_tenants = list(selectors.tenants_visible_to(request.user).filter(partition=partition, status=Tenant.Status.MOVED_OUT).order_by('-move_out_date', '-id'))
     can_view_financials = selectors.can_view_villa_financials(request.user, villa)

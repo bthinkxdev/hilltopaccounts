@@ -50,6 +50,62 @@
         <span>Rent outstanding <b>{{ pnl.outstanding|floatformat:"2g" }}</b></span>
       </div>
     </div>
+
+    {% if user.is_owner and villa_partner_shares %}
+      <div class="card card--tight">
+        <div class="card__title" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-2);">
+          <span>Profit Sharing Breakdown (100%) — {{ period_label }}</span>
+          <div style="display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;">
+            <span class="pill pill--neutral">Villa Net: QAR {{ pnl.net|floatformat:"2g" }}</span>
+            {% if has_unpaid_partners %}
+              <a class="btn btn--primary btn--sm" href="{% url 'businesses:villa_partner_payout_batch' villa.pk %}?year={{ year }}&month={{ month }}">Pay All Partners</a>
+            {% endif %}
+          </div>
+        </div>
+        {% if villa_owner_share %}
+          <div class="partner-row" style="background: rgba(59, 130, 246, 0.05); border-left: 3px solid var(--accent-primary, #3b82f6); padding-left: var(--space-3); padding-right: var(--space-3); border-radius: var(--radius-sm);">
+            <div class="partner-row__main">
+              <div class="list-row__title" style="font-weight: 600;">Your Share</div>
+              <div class="list-row__meta">Retained: <b>{{ villa_owner_share.percentage }}%</b></div>
+            </div>
+            <div class="partner-row__side">
+              <div class="partner-row__amount">
+                <div style="font-weight: 700; font-size: 15px; color: {% if villa_owner_share.cut >= 0 %}var(--success, #22c55e){% else %}var(--danger, #ef4444){% endif %};">
+                  QAR {{ villa_owner_share.cut|floatformat:"2g" }}
+                </div>
+                <div class="list-row__meta">{{ villa_owner_share.percentage }}% of profit</div>
+              </div>
+              <div class="partner-row__actions">
+                <span class="pill pill--neutral" style="font-size: 11px;">You</span>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+        {% for share in villa_partner_shares %}
+          <div class="partner-row" style="padding-left: var(--space-2); padding-right: var(--space-2);">
+            <div class="partner-row__main">
+              <a class="list-row__title" href="{% url 'businesses:partner_detail' share.partner.pk %}?period={{ period }}&year={{ year }}&month={{ month }}">{{ share.partner.name }}</a>
+              <div class="list-row__meta">Partner: <b>{{ share.percentage }}%</b>{% if share.partner.phone %} · {{ share.partner.phone }}{% endif %}</div>
+            </div>
+            <div class="partner-row__side">
+              <div class="partner-row__amount">
+                <div style="font-weight: 600; font-size: 15px; color: {% if share.cut >= 0 %}var(--success, #22c55e){% else %}var(--danger, #ef4444){% endif %};">
+                  QAR {{ share.cut|floatformat:"2g" }}
+                </div>
+                <div class="list-row__meta">{{ share.percentage }}% of profit</div>
+              </div>
+              <div class="partner-row__actions">
+                {% if share.payout %}
+                  <span class="pill pill--success">Paid ({{ share.payout.get_payment_method_display }})</span>
+                {% else %}
+                  <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' share.partner.pk %}?villa={{ villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.cut }}">Pay</a>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
   {% endif %}
 
   <div class="card card--tight">
@@ -132,19 +188,32 @@
           <div class="list-row list-row--compact">
             <div class="list-row__main">
               <a class="list-row__title" href="{% url 'villas:partition_detail' row.partition.pk %}?period=month&year={{ year }}&month={{ month }}">{{ row.partition.name }}</a>
-              <div class="list-row__meta">{{ row.tenant.name }} · {{ row.due|floatformat:"2g" }}{% if row.paid and row.status != "collected" %} · paid {{ row.paid|floatformat:"2g" }}{% endif %}</div>
+              <div class="list-row__meta">{{ row.tenant.name }} · {{ row.due|floatformat:"2g" }}{% if row.paid and row.status != "collected" %} · paid {{ row.paid|floatformat:"2g" }}{% endif %}{% if row.prior_unpaid_total and row.prior_unpaid_total > 0 %} · <span style="color:var(--danger, #ef4444); font-weight:600;">Past overdue: QAR {{ row.prior_unpaid_total|floatformat:"2g" }}</span>{% endif %}</div>
             </div>
             {% if row.status == "collected" %}<span class="pill pill--success">Collected</span>
             {% elif row.status == "partial" %}<span class="pill pill--warning">{{ row.balance|floatformat:"2g" }} left</span>
             {% elif row.status == "overdue" %}<span class="pill pill--danger">Overdue</span>
             {% else %}<span class="pill pill--neutral">Pending</span>{% endif %}
             {% if row.status != "collected" and can_manage %}
-              <form method="post" action="{% url 'billing:rent_collect' row.partition.pk %}" class="inline-form">
-                {% csrf_token %}
-                <input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}">
-                <button class="btn btn--primary btn--sm" type="submit" name="method" value="cash">Collected</button>
-                <button class="btn btn--ghost btn--sm" type="submit" name="method" value="bank_transfer">Bank</button>
-              </form>
+              <button class="btn btn--primary btn--sm" type="button"
+                data-action-url="{% url 'billing:rent_collect' row.partition.pk %}"
+                data-partition="{{ row.partition.name }}"
+                data-tenant="{{ row.tenant.name }}"
+                data-rent="{{ row.rent_amount }}"
+                data-due="{{ row.due }}"
+                data-paid="{{ row.paid }}"
+                data-balance="{{ row.balance }}"
+                data-charges='[{% for c in row.charges %}{"name":"{{ c.name|escapejs }}","amount":{{ c.amount }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
+                data-prior-unpaid='[{% for p in row.prior_unpaid %}{"period":"{{ p.period|escapejs }}","outstanding":{{ p.outstanding }},"paid":{{ p.paid }},"total":{{ p.total }},"charges":[{% for c in p.charges %}{"name":"{{ c.name|escapejs }}","amount":{{ c.amount }}}{% if not forloop.last %},{% endif %}{% endfor %}]}{% if not forloop.last %},{% endif %}{% endfor %}]'
+                onclick="openRentCollectModal(this)">Collect</button>
+              <noscript>
+                <form method="post" action="{% url 'billing:rent_collect' row.partition.pk %}" class="inline-form">
+                  {% csrf_token %}
+                  <input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}">
+                  <button class="btn btn--primary btn--sm" type="submit" name="method" value="cash">Collected</button>
+                  <button class="btn btn--ghost btn--sm" type="submit" name="method" value="bank_transfer">Bank</button>
+                </form>
+              </noscript>
             {% endif %}
           </div>
         {% empty %}
@@ -155,7 +224,7 @@
   </div>
 
   <div class="detail-section" id="expenses">
-    <div class="detail-section__title">Fixed expenses — {{ period_label }}</div>
+    <div class="detail-section__title">Villa expenses — {{ period_label }}</div>
     {% if fixed_rows is None %}
       {% if owner_fixed_templates %}
         <div class="card card--tight">
@@ -187,7 +256,7 @@
       {% endif %}
       {% if not fixed_templates %}
         <div class="card card--tight">
-          <div class="empty-state"><div class="empty-state__title">No fixed expenses set up for this villa.</div></div>
+          <div class="empty-state"><div class="empty-state__title">No villa expenses set up for this villa.</div></div>
         </div>
       {% endif %}
       <p class="list-row__meta" style="margin-top: var(--space-2);">Switch to Monthly to tick off each month.</p>
@@ -208,7 +277,7 @@
             <div class="list-row list-row--compact">
               <div class="list-row__main">
                 <span class="list-row__title">{{ row.template.category }}</span>
-                <div class="list-row__meta">{{ row.amount|floatformat:"2g" }} · due {{ row.due_date|date:"d M" }} · {{ row.template.get_paid_by_display }}{% if row.template.auto_debit %} · auto-debit{% endif %}{% if row.expense.paid_on %} · paid {{ row.expense.paid_on|date:"d M" }}{% endif %}</div>
+                <div class="list-row__meta">{{ row.amount|floatformat:"2g" }} · due {{ row.due_date|date:"d M" }} · {{ row.template.get_paid_by_display }}{% if row.template.auto_debit %} · auto-debit{% endif %}{% if row.expense.paid_on %} · paid {{ row.expense.paid_on|date:"d M" }}{% if row.expense.paid_by_user %} by {% if row.expense.paid_by_user == request.user %}you{% else %}{{ row.expense.paid_by_user.get_full_name|default:row.expense.paid_by_user.username }}{% endif %}{% endif %}{% endif %}</div>
               </div>
               {% if row.status == "paid" %}<span class="pill pill--success">Paid</span>
               {% elif row.status == "to_verify" %}<span class="pill pill--warning">Paid — to verify</span>
@@ -241,7 +310,7 @@
             <div class="list-row list-row--compact">
               <div class="list-row__main">
                 <span class="list-row__title">{{ row.template.category }}</span>
-                <div class="list-row__meta">{{ row.amount|floatformat:"2g" }} · due {{ row.due_date|date:"d M" }} · {{ row.template.get_paid_by_display }}{% if row.template.auto_debit %} · auto-debit{% endif %}{% if row.expense.paid_on %} · paid {{ row.expense.paid_on|date:"d M" }}{% endif %}</div>
+                <div class="list-row__meta">{{ row.amount|floatformat:"2g" }} · due {{ row.due_date|date:"d M" }} · {{ row.template.get_paid_by_display }}{% if row.template.auto_debit %} · auto-debit{% endif %}{% if row.expense.paid_on %} · paid {{ row.expense.paid_on|date:"d M" }}{% if row.expense.paid_by_user %} by {% if row.expense.paid_by_user == request.user %}you{% else %}{{ row.expense.paid_by_user.get_full_name|default:row.expense.paid_by_user.username }}{% endif %}{% endif %}{% endif %}</div>
               </div>
               {% if row.status == "paid" %}<span class="pill pill--success">Paid</span>
               {% elif row.status == "to_verify" %}<span class="pill pill--warning">Paid — to verify</span>
@@ -261,7 +330,7 @@
       {% if not owner_fixed_rows and not staff_fixed_rows %}
         <div class="card card--tight">
           <div class="empty-state">
-            <div class="empty-state__title">No fixed expenses set up for this villa.</div>
+            <div class="empty-state__title">No villa expenses set up for this villa.</div>
             <p>Set the villa rent, electricity, Wi-Fi, cleaning and maintenance once — they then appear every month, ready to tick as paid.</p>
           </div>
         </div>
@@ -269,20 +338,20 @@
     {% else %}
       <div class="card card--tight">
         <div class="empty-state">
-          <div class="empty-state__title">No fixed expenses set up for this villa.</div>
+          <div class="empty-state__title">No villa expenses set up for this villa.</div>
           <p>Set the villa rent, electricity, Wi-Fi, cleaning and maintenance once — they then appear every month, ready to tick as paid.</p>
         </div>
       </div>
     {% endif %}
-    {% if can_admin_fixed %}<div class="quick-actions" style="margin-top: var(--space-2);"><a class="btn btn--ghost btn--sm" href="{% url 'expenses:recurring_create' villa.pk %}">+ Add fixed expense</a></div>{% endif %}
+    {% if can_admin_fixed %}<div class="quick-actions" style="margin-top: var(--space-2);"><a class="btn btn--ghost btn--sm" href="{% url 'expenses:recurring_create' villa.pk %}">+ Add villa expense</a></div>{% endif %}
 
-    <div class="detail-section__title" style="margin-top: var(--space-3);">Other expenses — {{ period_label }}</div>
+    <div class="detail-section__title" style="margin-top: var(--space-3);">Partition expenses — {{ period_label }}</div>
     <div class="card card--tight">
       {% for expense in one_off_expenses %}
         <div class="list-row list-row--compact">
           <div class="list-row__main">
             <span class="list-row__title">{{ expense.category }} — {{ expense.amount|floatformat:"2g" }}</span>
-            <div class="list-row__meta">{% if expense.partition %}{{ expense.partition.name }} · {% endif %}{{ expense.date|date:"d M" }}{% if expense.due_date %} · due {{ expense.due_date|date:"d M" }}{% endif %} · {{ expense.get_paid_by_display }}{% if expense.created_by %} · created by {{ expense.created_by.get_full_name|default:expense.created_by.username }}{% endif %}</div>
+            <div class="list-row__meta">{% if expense.partition %}{{ expense.partition.name }} · {% endif %}{{ expense.date|date:"d M" }}{% if expense.due_date %} · due {{ expense.due_date|date:"d M" }}{% endif %} · {% if expense.paid_on and expense.paid_by_user %}Paid by {% if expense.paid_by_user == request.user %}you{% else %}{{ expense.paid_by_user.get_full_name|default:expense.paid_by_user.username }}{% endif %}{% else %}{{ expense.get_paid_by_display }}{% endif %}{% if expense.created_by %} · created by {{ expense.created_by.get_full_name|default:expense.created_by.username }}{% endif %}</div>
           </div>
           {% if expense.due_state == "paid" %}<span class="pill pill--success">Paid</span>
           {% elif expense.due_state == "verify" %}<span class="pill pill--warning">Paid — to verify</span>
@@ -294,7 +363,7 @@
           {% include "components/expense_actions.html" %}
         </div>
       {% empty %}
-        <div class="empty-state"><div class="empty-state__title">No other expenses in {{ period_label }}.</div>{% if can_manage and not villa.is_archived or user.is_owner %}<a class="btn btn--primary btn--sm" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>{% endif %}</div>
+        <div class="empty-state"><div class="empty-state__title">No partition expenses in {{ period_label }}.</div>{% if can_manage and not villa.is_archived or user.is_owner %}<a class="btn btn--primary btn--sm" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>{% endif %}</div>
       {% endfor %}
       <a class="btn btn--ghost btn--sm" href="{% url 'expenses:list' %}?villa={{ villa.pk }}">All expenses for this villa</a>
     </div>
@@ -355,4 +424,190 @@
       </div>
     </div>
   {% endif %}
+
+  {% if can_manage %}
+    <dialog id="rent-collect-modal" tabindex="-1" style="width: calc(100% - var(--space-6)); max-width: 460px; outline: none;">
+      <h3 style="margin-bottom:var(--space-1);">Collect Rent & Charges</h3>
+      <div style="color:var(--text-secondary); margin-bottom:var(--space-4); font-size:14px;">
+        <span id="modal-partition-name" style="font-weight:600; color:var(--text-primary);"></span> · <span id="modal-tenant-name"></span>
+      </div>
+
+      <!-- previous overdue section (visible when there are overdue charges from prior months) -->
+      <div id="modal-prior-overdue-container" style="display:none; background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.3); border-radius:var(--radius-sm); padding:var(--space-3); margin-bottom:var(--space-3);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--space-2);">
+          <span style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--danger, #ef4444); display:flex; align-items:center; gap:4px;">
+            ⚠️ Previous Overdue
+          </span>
+          <span id="modal-prior-overdue-total" style="font-size:12px; font-weight:700; color:var(--danger, #ef4444);"></span>
+        </div>
+        <div id="modal-prior-overdue-list" style="display:flex; flex-direction:column; gap:var(--space-2);">
+          <!-- injected dynamically by JS -->
+        </div>
+      </div>
+
+      <!-- current Month Charges Breakdown List -->
+      <div id="modal-charges-container" style="background:var(--surface-sunken, rgba(255,255,255,0.04)); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:var(--space-3); margin-bottom:var(--space-3);">
+        <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-secondary); margin-bottom:var(--space-2);">Current Month Charges Breakdown</div>
+        <div id="modal-charges-list" style="display:flex; flex-direction:column; gap:var(--space-1); font-size:13px;">
+          <!-- injected dynamically by JS -->
+        </div>
+        <div style="display:flex; justify-content:space-between; border-top:1px dashed var(--border-subtle); margin-top:var(--space-2); padding-top:var(--space-2); font-weight:600; font-size:13px;">
+          <span>Total Monthly Charges</span>
+          <span id="modal-charges-total"></span>
+        </div>
+        <div id="modal-paid-row" style="display:none; justify-content:space-between; color:var(--success, #10b981); font-size:13px; margin-top:var(--space-1);">
+          <span>Already Paid</span>
+          <span id="modal-paid-amount"></span>
+        </div>
+      </div>
+
+      <form id="rent-collect-form" method="post" style="margin:0;">
+        {% csrf_token %}
+        <input type="hidden" name="year" value="{{ year }}">
+        <input type="hidden" name="month" value="{{ month }}">
+
+        <div class="field" style="margin-bottom:var(--space-3);">
+          <label for="modal-rent-amount" style="font-size:13px; font-weight:600;">Monthly Rent Amount (QAR)</label>
+          <input type="number" step="0.01" min="0.01" id="modal-rent-amount" name="rent_amount" required>
+          <div style="font-size:12px; color:var(--text-secondary); margin-top:var(--space-1);">Base rent for this tenant (adjust only if rent changed).</div>
+        </div>
+
+        <div class="field" style="margin-bottom:var(--space-3);">
+          <label for="modal-received-amount" style="font-size:13px; font-weight:600;">Amount Received Now (QAR)</label>
+          <input type="number" step="0.01" min="0.01" id="modal-received-amount" name="amount" required>
+          <div id="modal-calc-hint" style="font-size:12px; margin-top:var(--space-1); font-weight:500;"></div>
+        </div>
+
+        <div class="field" style="margin-bottom:var(--space-4);">
+          <label for="modal-payment-method" style="font-size:13px; font-weight:600;">Payment Method</label>
+          <select id="modal-payment-method" name="method">
+            <option value="cash">Cash</option>
+            <option value="bank_transfer">Bank Transfer</option>
+          </select>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:var(--space-2);">
+          <button type="button" class="btn btn--ghost" onclick="closeRentCollectModal()">Cancel</button>
+          <button type="submit" class="btn btn--primary">Record Payment</button>
+        </div>
+      </form>
+    </dialog>
+  {% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let rentModalState = { rent: 0, due: 0, paid: 0, balance: 0, charges: [], priorUnpaid: [] };
+
+function openRentCollectModal(btn) {
+  const g = attr => btn.getAttribute(attr);
+  let charges = [], prior = [];
+  try { charges = JSON.parse(g('data-charges') || '[]'); } catch(e) {}
+  try { prior = JSON.parse(g('data-prior-unpaid') || '[]'); } catch(e) {}
+
+  const rent = parseFloat(g('data-rent')) || (charges.find(c => c.name === 'Rent')?.amount) || parseFloat(g('data-due')) || 0;
+  rentModalState = {
+    rent,
+    due: parseFloat(g('data-due')) || 0,
+    paid: parseFloat(g('data-paid')) || 0,
+    balance: parseFloat(g('data-balance')) || 0,
+    charges,
+    priorUnpaid: prior
+  };
+
+  const modal = document.getElementById('rent-collect-modal');
+  document.getElementById('rent-collect-form').action = g('data-action-url');
+  document.getElementById('modal-partition-name').textContent = g('data-partition');
+  document.getElementById('modal-tenant-name').textContent = g('data-tenant');
+
+  //overdue section
+  const priorBox = document.getElementById('modal-prior-overdue-container');
+  if (prior.length > 0) {
+    const totalPrior = prior.reduce((s, p) => s + (parseFloat(p.outstanding) || 0), 0);
+    document.getElementById('modal-prior-overdue-total').textContent = `Total: QAR ${totalPrior.toFixed(2)}`;
+    document.getElementById('modal-prior-overdue-list').innerHTML = prior.map(p => `
+      <div style="background:rgba(0,0,0,0.2); border:1px solid rgba(239,68,68,0.25); border-radius:4px; padding:6px 8px; font-size:12px;">
+        <div style="display:flex; justify-content:space-between; font-weight:600; margin-bottom:3px;">
+          <span>${p.period}</span><span style="color:var(--danger,#ef4444);">QAR ${parseFloat(p.outstanding).toFixed(2)} pending</span>
+        </div>
+        ${(p.charges || []).map(c => `<div style="display:flex; justify-content:space-between; color:var(--text-secondary); font-size:11px;"><span>• ${c.name}</span><span>QAR ${parseFloat(c.amount).toFixed(2)}</span></div>`).join('')}
+        ${p.paid > 0 ? `<div style="display:flex; justify-content:space-between; font-size:11px; color:var(--success,#10b981); border-top:1px dashed rgba(255,255,255,0.1); padding-top:2px; margin-top:2px;"><span>Paid</span><span>QAR ${parseFloat(p.paid).toFixed(2)}</span></div>` : ''}
+      </div>
+    `).join('');
+    priorBox.style.display = 'block';
+  } else {
+    priorBox.style.display = 'none';
+  }
+
+  //current charges
+  const list = charges.length ? charges : [{ name: 'Rent', amount: rent }];
+  document.getElementById('modal-charges-list').innerHTML = list.map(c => `
+    <div style="display:flex; justify-content:space-between; font-size:13px;">
+      <span>${c.name}</span>
+      <span ${c.name === 'Rent' ? 'id="modal-charge-rent-val"' : ''} style="font-weight:500;">QAR ${parseFloat(c.amount).toFixed(2)}</span>
+    </div>
+  `).join('');
+
+  document.getElementById('modal-paid-row').style.display = rentModalState.paid > 0 ? 'flex' : 'none';
+  if (rentModalState.paid > 0) document.getElementById('modal-paid-amount').textContent = `- QAR ${rentModalState.paid.toFixed(2)}`;
+
+  const rentInput = document.getElementById('modal-rent-amount');
+  rentInput.value = rent.toFixed(2);
+  document.getElementById('modal-received-amount').value = rentModalState.balance.toFixed(2);
+
+  updateRentBalanceCalc();
+  modal.showModal();
+  modal.focus();
+  setTimeout(() => rentInput.blur(), 20);
+}
+
+function updateRentBalanceCalc() {
+  const rentVal = parseFloat(document.getElementById('modal-rent-amount').value) || 0;
+  const otherSum = rentModalState.charges.reduce((s, c) => c.name !== 'Rent' ? s + (parseFloat(c.amount) || 0) : s, 0);
+  const total = rentVal + otherSum;
+  document.getElementById('modal-charges-total').textContent = `QAR ${total.toFixed(2)}`;
+  const rentRow = document.getElementById('modal-charge-rent-val');
+  if (rentRow) rentRow.textContent = `QAR ${rentVal.toFixed(2)}`;
+
+  const received = parseFloat(document.getElementById('modal-received-amount').value) || 0;
+  const hint = document.getElementById('modal-calc-hint');
+  const rem = total - rentModalState.paid - received;
+  if (rem > 0.009) {
+    hint.textContent = `Partial payment: QAR ${rem.toFixed(2)} will remain unpaid.`;
+    hint.style.color = 'var(--warning, #f59e0b)';
+  } else if (rem < -0.009) {
+    hint.textContent = `Note: Received amount exceeds remaining balance.`;
+    hint.style.color = 'var(--danger, #ef4444)';
+  } else {
+    hint.textContent = `Full payment: No remaining balance.`;
+    hint.style.color = 'var(--success, #10b981)';
+  }
+}
+
+function closeRentCollectModal() {
+  document.getElementById('rent-collect-modal')?.close();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const rentInput = document.getElementById('modal-rent-amount');
+  const receivedInput = document.getElementById('modal-received-amount');
+
+  if (rentInput) {
+    rentInput.addEventListener('input', () => {
+      const rentVal = parseFloat(rentInput.value) || 0;
+      const otherSum = rentModalState.charges.reduce((s, c) => c.name !== 'Rent' ? s + (parseFloat(c.amount) || 0) : s, 0);
+      const newTotal = rentVal + otherSum;
+      const newBalance = Math.max(0, newTotal - rentModalState.paid);
+      if (receivedInput) {
+        receivedInput.value = newBalance.toFixed(2);
+      }
+      updateRentBalanceCalc();
+    });
+  }
+
+  if (receivedInput) {
+    receivedInput.addEventListener('input', updateRentBalanceCalc);
+  }
+});
+</script>
 {% endblock %}

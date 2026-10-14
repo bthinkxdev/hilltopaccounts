@@ -48,6 +48,13 @@ class Action(models.TextChoices):
     DOCUMENT_UPLOADED = ('document.uploaded', 'Document uploaded')
     DOCUMENT_DOWNLOADED = ('document.downloaded', 'Document downloaded')
     DOCUMENT_DELETED = ('document.deleted', 'Document deleted')
+    PARTNER_CREATED = ('partner.created', 'Partner created')
+    PARTNER_UPDATED = ('partner.updated', 'Partner updated')
+    PARTNER_SHARE_CREATED = ('partner.share_created', 'Partner share assigned')
+    PARTNER_SHARE_UPDATED = ('partner.share_updated', 'Partner share updated')
+    PARTNER_SHARE_DELETED = ('partner.share_deleted', 'Partner share removed')
+    PARTNER_PAYOUT_CREATED = ('partner.payout_created', 'Partner payout recorded')
+    PARTNER_PAYOUT_DELETED = ('partner.payout_deleted', 'Partner payout deleted')
 
 class AuditLog(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True, db_index=True)

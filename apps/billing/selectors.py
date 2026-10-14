@@ -140,7 +140,15 @@ def rent_invoice_queryset(invoice_queryset, year: int, month: int):
     start, end = period_bounds(year, month)
     return with_computed_totals(invoice_queryset.filter(is_cancelled=False, billing_period_start__lte=end, billing_period_end__gte=start))
 
-def unbilled_charges_by_partition(partition_pks, year: int, month: int):
+def unbilled_charges_by_partition(partition_pks, year: int, month: int, tenant_by_partition=None):
+    from collections import defaultdict
+    details = unbilled_charges_details_by_partition(partition_pks, year, month, tenant_by_partition)
+    res = defaultdict(lambda: Decimal('0.00'))
+    for pid, items in details.items():
+        res[pid] = sum((c['amount'] for c in items), Decimal('0.00'))
+    return res
+
+def unbilled_charges_details_by_partition(partition_pks, year: int, month: int, tenant_by_partition=None):
     from collections import defaultdict
     start, end = period_bounds(year, month)
     live_items = InvoiceItem.objects.filter(invoice__is_cancelled=False)
@@ -157,31 +165,72 @@ def unbilled_charges_by_partition(partition_pks, year: int, month: int):
         invoice_items__in=live_items
     ).exclude(
         invoice_items__in=overlapping_items
-    ).distinct()
-    res = defaultdict(lambda: Decimal('0.00'))
+    ).select_related('charge_type').distinct()
+    res = defaultdict(list)
     for c in unbilled_qs:
-        res[c.partition_id] += c.amount
+        if tenant_by_partition:
+            t = tenant_by_partition.get(c.partition_id)
+            if t:
+                if c.end_date and c.end_date < t.move_in_date:
+                    continue
+                if t.move_out_date and c.start_date > t.move_out_date:
+                    continue
+        name = c.description or c.charge_type.name
+        res[c.partition_id].append({'name': name, 'amount': c.amount})
+    return res
+
+def prior_unpaid_invoices_by_partition(partition_pks, start_date):
+    from collections import defaultdict
+    prior_invs = Invoice.objects.filter(
+        partition_id__in=partition_pks,
+        is_cancelled=False,
+        billing_period_end__lt=start_date
+    ).prefetch_related('items', 'payments').order_by('billing_period_start')
+    res = defaultdict(list)
+    for inv in prior_invs:
+        total = sum((item.amount for item in inv.items.all()), start=Decimal('0.00'))
+        paid = sum((p.amount for p in inv.payments.all() if not p.is_cancelled), start=Decimal('0.00'))
+        outstanding = total - paid
+        if outstanding > 0:
+            charges = [{'name': item.description, 'amount': item.amount} for item in inv.items.all()]
+            res[(inv.partition_id, inv.tenant_id)].append({
+                'id': inv.pk,
+                'period': inv.billing_period_start.strftime('%B %Y'),
+                'total': total,
+                'paid': paid,
+                'outstanding': outstanding,
+                'charges': charges,
+            })
     return res
 
 def rent_sheet(*, partitions, tenant_by_partition: dict, invoice_queryset, year: int, month: int, today: date):
     """Month-end collection sheet for one villa: per occupied partition, what is due, collected and still pending."""
     from collections import defaultdict
-    invoices_by_partition = defaultdict(list)
-    for invoice in rent_invoice_queryset(invoice_queryset, year, month):
-        invoices_by_partition[invoice.partition_id].append(invoice)
-    unbilled_map = unbilled_charges_by_partition([p.pk for p in partitions], year, month)
+    start, end = period_bounds(year, month)
+    invoices_by_partition_tenant = defaultdict(list)
+    for invoice in rent_invoice_queryset(invoice_queryset, year, month).prefetch_related('items'):
+        invoices_by_partition_tenant[(invoice.partition_id, invoice.tenant_id)].append(invoice)
+    unbilled_map = unbilled_charges_by_partition([p.pk for p in partitions], year, month, tenant_by_partition)
+    unbilled_details_map = unbilled_charges_details_by_partition([p.pk for p in partitions], year, month, tenant_by_partition)
+    prior_unpaid_map = prior_unpaid_invoices_by_partition([p.pk for p in partitions], start)
     zero = Decimal('0.00')
     rows, expected, collected = [], zero, zero
     for partition in partitions:
         tenant = tenant_by_partition.get(partition.pk)
         if tenant is None:
             continue
-        p_invoices = invoices_by_partition.get(partition.pk, [])
+        p_invoices = invoices_by_partition_tenant.get((partition.pk, tenant.pk), [])
         unbilled = unbilled_map[partition.pk]
+        charges_breakdown = []
         if p_invoices:
             due = sum((inv._total for inv in p_invoices), start=zero) + unbilled
             paid = sum((inv._paid for inv in p_invoices), start=zero)
             primary_invoice = p_invoices[0]
+            for inv in p_invoices:
+                for item in inv.items.all():
+                    charges_breakdown.append({'name': item.description, 'amount': item.amount})
+            for c in unbilled_details_map.get(partition.pk, []):
+                charges_breakdown.append(c)
             if due > 0 and paid >= due:
                 status = RentStatus.COLLECTED
             elif paid > 0:
@@ -195,7 +244,31 @@ def rent_sheet(*, partitions, tenant_by_partition: dict, invoice_queryset, year:
             due = unbilled if unbilled > 0 else tenant.monthly_rent
             paid = zero
             status = RentStatus.PENDING
-        rows.append({'partition': partition, 'tenant': tenant, 'invoice': primary_invoice, 'due': due, 'paid': paid, 'balance': due - paid, 'status': status})
+            unbilled_items = unbilled_details_map.get(partition.pk, [])
+            if unbilled_items:
+                charges_breakdown.extend(unbilled_items)
+            else:
+                charges_breakdown.append({'name': 'Rent', 'amount': tenant.monthly_rent})
+        prior_unpaid = prior_unpaid_map.get((partition.pk, tenant.pk), [])
+        prior_unpaid_total = sum((p['outstanding'] for p in prior_unpaid), start=zero)
+        rent_amount = tenant.monthly_rent
+        for item in charges_breakdown:
+            if item.get('name') == 'Rent':
+                rent_amount = item.get('amount', tenant.monthly_rent)
+                break
+        rows.append({
+            'partition': partition,
+            'tenant': tenant,
+            'invoice': primary_invoice,
+            'due': due,
+            'paid': paid,
+            'balance': due - paid,
+            'status': status,
+            'charges': charges_breakdown,
+            'prior_unpaid': prior_unpaid,
+            'prior_unpaid_total': prior_unpaid_total,
+            'rent_amount': rent_amount,
+        })
         expected += due
         collected += paid
     return rows, {'expected': expected, 'collected': collected, 'pending': expected - collected, 'pending_count': sum(1 for r in rows if r['status'] != RentStatus.COLLECTED)}

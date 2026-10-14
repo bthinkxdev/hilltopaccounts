@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Partners — Hilltop Accounting{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Partners</h1>
+      <div class="page-header__meta">Profit sharing across villas for {{ period_label }} · amounts in QAR</div>
+    </div>
+    {% if user.is_owner %}<a class="btn btn--primary" href="{% url 'businesses:partner_create' %}">+ Add Partner</a>{% endif %}
+  </div>
+
+  <div class="period-bar">
+    {% include "components/period_picker.html" %}
+    <form class="filter-bar" method="get">
+      <input type="hidden" name="period" value="{{ period }}"><input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}">
+      <input type="search" name="q" placeholder="Search partners…" value="{{ q }}">
+      <button class="btn btn--ghost" type="submit">Search</button>
+      <select name="status" onchange="this.form.submit()" aria-label="Status">
+        <option value="active" {% if selected_status == "active" %}selected{% endif %}>Active</option>
+        <option value="inactive" {% if selected_status == "inactive" %}selected{% endif %}>Inactive</option>
+        <option value="all" {% if selected_status == "all" %}selected{% endif %}>All</option>
+      </select>
+      {% if q or selected_status != "active" %}<a class="btn btn--ghost" href="?period={{ period }}&year={{ year }}&month={{ month }}">Clear</a>{% endif %}
+    </form>
+  </div>
+
+  <div class="card card--tight">
+    {% if page_obj %}
+      {% for partner in page_obj %}
+        <div class="partner-row">
+          <div class="partner-row__main">
+            <div style="display: flex; align-items: center; gap: var(--space-2); margin-bottom: 2px;">
+              <a class="list-row__title" href="{% url 'businesses:partner_detail' partner.pk %}?period={{ period }}&year={{ year }}&month={{ month }}">{{ partner.name }}</a>
+              {% if not partner.is_active %}<span class="pill pill--neutral">Inactive</span>{% endif %}
+            </div>
+            <div class="list-row__meta">
+              {% if partner.phone %}{{ partner.phone }} · {% endif %}{% if partner.email %}{{ partner.email }} · {% endif %}
+              {% if partner.shares_label %}
+                Villas: {{ partner.shares_label|join:", " }}
+              {% else %}
+                No villas assigned yet
+              {% endif %}
+            </div>
+          </div>
+          <div class="partner-row__side">
+            <div class="partner-row__amount">
+              <div style="font-weight: 700; color: {% if partner.total_payout >= 0 %}var(--success, #22c55e){% else %}var(--danger, #ef4444){% endif %}; font-size: 15px;">
+                QAR {{ partner.total_payout|floatformat:"2g" }}
+              </div>
+              <div class="list-row__meta" style="font-size: 12px;">Payout for {{ period_label }}</div>
+            </div>
+            <div class="partner-row__actions">
+              {% if partner.total_payout > 0 %}
+                {% if partner.payment_status == 'paid' %}
+                  <span class="pill pill--success">Paid</span>
+                {% elif partner.payment_status == 'partial' %}
+                  <span class="pill pill--warning">Partial</span>
+                {% else %}
+                  <span class="pill pill--warning">Pending</span>
+                {% endif %}
+              {% endif %}
+              <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_edit' partner.pk %}">Edit</a>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state__title">No partners recorded yet.</div>
+        <p>Set up partners and their villa percentage shares to calculate profit distributions automatically.</p>
+        {% if user.is_owner %}<a class="btn btn--primary" href="{% url 'businesses:partner_create' %}">+ Add Partner</a>{% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  {% include "components/pagination.html" %}
+{% endblock %}

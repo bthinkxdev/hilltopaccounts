@@ -64,12 +64,8 @@ def tenant_edit(request, pk):
     partition = tenant.partition
     if not (request.user.is_owner or selectors.can_manage_villa(request.user, partition.villa)):
         raise PermissionDenied('You cannot edit this tenant.')
-    lock_rent = partition.rent is not None
     if request.method == 'POST':
-        data = request.POST.copy()
-        if lock_rent:
-            data['monthly_rent'] = str(partition.rent)
-        form = TenantForm(data, lock_rent=lock_rent)
+        form = TenantForm(request.POST, lock_rent=False)
         if form.is_valid():
             try:
                 update_tenant(tenant=tenant, updated_by=request.user, **form.cleaned_data)
@@ -83,7 +79,7 @@ def tenant_edit(request, pk):
                 messages.success(request, f'{tenant.name} updated.')
                 return redirect('tenancy:detail', pk=tenant.pk)
     else:
-        form = TenantForm(initial=model_to_dict(tenant), lock_rent=lock_rent)
+        form = TenantForm(initial=model_to_dict(tenant), lock_rent=False)
 
     prefix = [('Villas', reverse('villas:villa_list'))] if selectors.is_field_staff(request.user) else [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk]))]
     breadcrumbs = prefix + [
@@ -109,16 +105,12 @@ def tenant_create(request, partition_pk):
         if selectors.is_field_staff(request.user):
             return redirect('villas:villa_list')
         return redirect('villas:partition_detail', pk=partition.pk)
-    lock_rent = partition.rent is not None
     initial = {}
-    if lock_rent:
+    if partition.rent is not None:
         initial['monthly_rent'] = partition.rent
 
     if request.method == 'POST':
-        data = request.POST.copy()
-        if lock_rent:
-            data['monthly_rent'] = str(partition.rent)
-        form = TenantForm(data, initial=initial, restrict_past_move_in=not request.user.is_owner, lock_rent=lock_rent)
+        form = TenantForm(request.POST, initial=initial, restrict_past_move_in=not request.user.is_owner, lock_rent=False)
         if form.is_valid():
             try:
                 tenant = create_tenant(partition=partition, created_by=request.user, **form.cleaned_data)
@@ -128,7 +120,7 @@ def tenant_create(request, partition_pk):
                 messages.success(request, f'{tenant.name} moved in to {partition.name}.')
                 return redirect('tenancy:detail', pk=tenant.pk)
     else:
-        form = TenantForm(initial=initial, restrict_past_move_in=not request.user.is_owner, lock_rent=lock_rent)
+        form = TenantForm(initial=initial, restrict_past_move_in=not request.user.is_owner, lock_rent=False)
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Move In Tenant — {partition.name}', 'submit_label': 'Move In', 'cancel_url': reverse('villas:partition_detail', args=[partition.pk]), 'breadcrumbs': [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk])), (partition.villa.name, reverse('villas:villa_detail', args=[partition.villa.pk])), (partition.name, reverse('villas:partition_detail', args=[partition.pk])), ('Move In Tenant', None)]})
 
 @login_required

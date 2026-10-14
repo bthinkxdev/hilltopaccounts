@@ -27,9 +27,7 @@ def _can_manage_expense(user, expense):
 def expense_list(request):
     today = date.today()
     visible = selectors.expenses_visible_to(request.user)
-    if selectors.is_field_staff(request.user):
-        visible = visible.filter(paid_by=PaidBy.STAFF)
-    qs = visible.select_related('business', 'villa', 'partition', 'category')
+    qs = visible.select_related('business', 'villa', 'partition', 'category', 'paid_by_user')
     villa_id = request.GET.get('villa', '')
     if villa_id.isdigit():
         qs = qs.filter(villa_id=villa_id)
@@ -42,15 +40,16 @@ def expense_list(request):
     summary_base = visible.filter(villa_id=villa_id) if villa_id.isdigit() else visible
     page_obj = paginate_queryset(request, qs.order_by('due_date', '-date', '-id') if due in (DueBucket.UNPAID, DueBucket.OVERDUE, DueBucket.TODAY, DueBucket.UPCOMING) else qs.order_by('-date', '-id'))
     scope = selectors.ManageScope(request.user)
+    is_field_staff = selectors.is_field_staff(request.user)
     for expense in page_obj:
         expense.due_state = expense_selectors.due_state(expense, today)
         expense.can_manage = scope.can_manage_villa(expense.villa_id, expense.business_id) if expense.villa_id else scope.is_admin(expense.business_id)
         expense.can_pay = scope.can_pay_expense(expense)
         expense.can_verify = scope.can_verify_expense(expense)
-        expense.can_edit = expense.can_manage and expense.status == 'active' and expense.paid_on is None
+        expense.can_edit = expense.can_manage and expense.status == 'active' and expense.paid_on is None and not (is_field_staff and expense.paid_by == PaidBy.OWNER)
     villas = selectors.villas_visible_to(request.user).filter(is_archived=False).select_related('business')
     has_filters = bool(villa_id.isdigit() or (due in dict(DueBucket.CHOICES)) or ('status' in request.GET and status != Expense.Status.ACTIVE))
-    context = {'page_obj': page_obj, 'status': status, 'due': due, 'due_choices': DueBucket.CHOICES, 'is_field_staff': selectors.is_field_staff(request.user), 'villas': villas, 'selected_villa': villa_id, 'has_filters': has_filters, 'summary': expense_selectors.due_summary(summary_base, today), 'can_add': selectors.manageable_villas(request.user).filter(is_archived=False).exists(), 'breadcrumbs': [('Expenses', None)]}
+    context = {'page_obj': page_obj, 'status': status, 'due': due, 'due_choices': DueBucket.CHOICES, 'is_field_staff': is_field_staff, 'villas': villas, 'selected_villa': villa_id, 'has_filters': has_filters, 'summary': expense_selectors.due_summary(summary_base, today), 'can_add': selectors.manageable_villas(request.user).filter(is_archived=False).exists(), 'breadcrumbs': [('Expenses', None)]}
     return render(request, 'expenses/list.html', context)
 
 def _expense_form_context(request, form, villa_pk, visible_expenses):
@@ -173,7 +172,7 @@ def expense_reverse(request, pk):
 @login_required
 def expense_revise(request, pk):
     expense = get_object_or_404(selectors.expenses_visible_to(request.user).select_related('villa', 'business', 'category'), pk=pk)
-    if not _can_manage_expense(request.user, expense):
+    if not _can_manage_expense(request.user, expense) or (selectors.is_field_staff(request.user) and expense.paid_by == PaidBy.OWNER):
         raise PermissionDenied('You cannot edit this expense.')
     back = reverse('villas:villa_detail', args=[expense.villa_id]) if expense.villa_id else reverse('expenses:list')
     if request.method == 'POST':
