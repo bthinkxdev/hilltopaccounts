@@ -3,21 +3,52 @@
 {% block title %}{{ brand }} — Find your perfect home in Al Khor, Qatar{% endblock %}
 {% block style %}
 <style>
-.hero{position:relative;overflow:hidden;background:var(--bg)}
+.hero{position:relative;background:var(--bg)}
 .hero__bg{position:absolute;inset:0;background:url("{% static 'listings/hero.jpg' %}") right center/cover no-repeat}
 .hero__bg::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(251,250,245,.97) 0%,rgba(251,250,245,.9) 48%,rgba(251,250,245,.25) 100%)}
 @media(min-width:860px){.hero__bg{left:32%;background-position:left center}.hero__bg::after{background:linear-gradient(90deg,#fbfaf5 0%,rgba(251,250,245,.7) 18%,rgba(251,250,245,0) 55%)}}
-.hero .wrap{position:relative;z-index:2;padding-top:30px;padding-bottom:36px}
+.hero .wrap{position:relative;padding-top:30px;padding-bottom:36px}
 @media(min-width:860px){.hero .wrap{padding-top:54px;padding-bottom:64px}}
 .hero__loc{display:flex;align-items:center;gap:8px;color:var(--fg);font-size:15px;font-weight:500}
 .hero__loc svg{width:20px;height:20px;fill:var(--green)}
 .hero h1{margin-top:14px;font-size:clamp(34px,8.6vw,64px);line-height:1.08;letter-spacing:-.03em;font-weight:700;color:#10261d;max-width:620px}
 .hero h1 b{display:block;color:var(--green);font-weight:800;font-size:1.22em;line-height:1.04}
 .hero p{margin-top:16px;max-width:430px;font-size:clamp(15px,3.8vw,19px);color:#26382f;line-height:1.5}
-.hero__script{position:absolute;z-index:3;right:6%;top:46px;transform:rotate(-8deg);font-size:clamp(26px,4vw,38px);line-height:1;color:#18372b;text-align:left}
-@media(max-width:859px){.hero__script{position:relative;display:block;transform:rotate(-3deg);margin:16px 0 0 18px;font-size:28px}}
+.hero__script{position:absolute;z-index:3;right:0;top:22px;transform:rotate(-8deg);font-size:clamp(26px,4vw,38px);line-height:1;color:#18372b;text-align:left}
+@media(max-width:859px){.hero__script{position:relative;right:auto;top:auto;display:block;width:max-content;transform:rotate(-3deg);margin:0 0 18px 2px;font-size:28px}}
 .glance{margin-top:20px;background:var(--mint);border-radius:30px;padding:22px 16px 20px}
 @media(min-width:700px){.glance{padding:28px 32px}}
+.search{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:26px;background:#fff;border-radius:28px;padding:8px;box-shadow:0 18px 44px rgba(11,91,65,.16),0 2px 6px rgba(0,0,0,.05);max-width:760px}
+.search label{position:relative;display:flex;align-items:center;gap:10px;flex:1 1 200px;min-width:0;padding:0 14px;height:50px}
+.search label+label{border-left:1px solid var(--line)}
+.search svg{width:22px;height:22px;flex:none;fill:#10261d}
+.search select{appearance:none;-webkit-appearance:none;border:0;background:transparent;font:500 15px var(--font);color:#26382f;width:100%;height:100%;padding-right:22px;outline:0;cursor:pointer;text-overflow:ellipsis}
+.search label::after{content:"";position:absolute;right:14px;width:7px;height:7px;border-right:2px solid #26382f;border-bottom:2px solid #26382f;transform:rotate(45deg) translateY(-2px);pointer-events:none}
+.search>button{flex:1 1 100%;display:flex;align-items:center;justify-content:center;gap:10px;height:50px;border:0;border-radius:99px;background:var(--green);color:#fff;font:600 16px var(--font);cursor:pointer;box-shadow:0 8px 20px rgba(11,91,65,.3)}
+.search>button svg{width:20px;height:20px;fill:none;stroke:#fff;stroke-width:2.4}
+@media(min-width:700px){.search{flex-wrap:nowrap;border-radius:99px}.search>button{flex:0 0 auto;padding:0 38px}}
+.early{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #cfe6d8;border-radius:18px;padding:10px 20px 10px 12px;font-size:13px;line-height:1.3}
+.early b{display:block;font-size:14.5px}
+.early svg{width:40px;height:40px;stroke:var(--green);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.types{display:grid;gap:14px;margin-top:20px;background:#fff;border-radius:24px;padding:14px}
+@media(min-width:860px){.types{grid-template-columns:repeat(3,1fr);padding:18px;gap:18px}}
+.type{display:flex;flex-direction:column;gap:14px;border-radius:20px;padding:16px;--c:#0e5c43;--tb:#e5f3ea;background:var(--tb)}
+.type--blue{--c:#0e5a8a;--tb:#e3effa}
+.type--sand{--c:#a8730e;--tb:#fbecda}
+.type__head{display:flex;align-items:center;gap:12px}
+.type__ic{flex:none;width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.7);display:grid;place-items:center}
+.type__ic svg{width:30px;height:30px;stroke:var(--c);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.type__head b{display:block;font-size:20px;letter-spacing:-.02em;color:#10261d;line-height:1.15}
+.type__head span{font-size:13px;color:#33463d}
+.type__count{display:flex;align-items:center;gap:14px;background:var(--c);color:#fff;border-radius:16px;padding:12px 20px;box-shadow:0 8px 18px rgba(0,0,0,.14)}
+.type__count strong{font-size:44px;line-height:1;letter-spacing:-.04em;font-weight:700}
+.type__count span{font-size:16px;font-weight:600;line-height:1.2}
+.type__feat{display:flex;align-items:flex-start;gap:10px;background:rgba(255,255,255,.55);border-radius:14px;padding:12px;font-size:13.5px;min-height:62px;font-weight:500;color:#15291f}
+.type__feat svg{width:20px;height:20px;flex:none;margin-top:1px}
+.type__btn{display:flex;align-items:center;justify-content:center;gap:8px;height:48px;border-radius:99px;border:1.5px solid var(--c);color:var(--c);font-weight:600;font-size:15px;background:rgba(255,255,255,.6);margin-top:auto;transition:background .2s,color .2s}
+.type__btn:hover{background:var(--c);color:#fff}
+.type__btn--off{border-color:#d3cdc2;color:#8a867d;background:#ecebe6;pointer-events:none;font-size:14px}
+.type__btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .cta-hero{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}
 .cta-hero a{display:inline-flex;align-items:center;height:50px;padding:0 26px;border-radius:99px;font-weight:600;font-size:15px}
 .cta-hero .primary{background:var(--green);color:#fff;box-shadow:0 10px 24px rgba(11,91,65,.28)}
@@ -48,6 +79,78 @@
 .incl__item svg{width:28px;height:28px;stroke:#fff;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 @media(min-width:900px){.incl{grid-template-columns:.9fr 1.6fr;padding:28px 36px}.incl__grid{grid-template-columns:repeat(4,1fr);gap:0}.incl__item{padding:0 14px}.incl__item+.incl__item{border-left:1px solid #c9ddcf}}
 .cta-band{margin-top:20px}
+@media(max-width:700px){
+  .hero .wrap{padding-top:16px;padding-bottom:20px}
+  .hero__script{font-size:22px!important;margin:0 0 8px 2px!important}
+  .hero__loc{font-size:12.5px;gap:5px}.hero__loc svg{width:16px;height:16px}
+  .hero h1{margin-top:8px;font-size:28px;line-height:1.08}
+  .hero h1 b{font-size:1.18em}
+  .hero p{margin-top:8px;font-size:13px;max-width:none;line-height:1.45}
+  .search{margin-top:14px;padding:6px;border-radius:20px;display:grid;grid-template-columns:1fr 1fr;gap:4px}
+  .search label{flex:none;height:42px;padding:0 10px;gap:7px;background:var(--soft);border-radius:14px}
+  .search label+label{border-left:0}
+  .search label::after{right:10px;width:6px;height:6px}
+  .search svg{width:17px;height:17px}
+  .search select{font-size:13px;padding-right:16px}
+  .search>button{grid-column:1/-1;height:44px;font-size:14.5px;border-radius:14px;margin-top:2px}
+  .glance{margin-top:12px;padding:14px 0 12px;border-radius:22px}
+  .glance__top,.glance>.viewall-row,.glance .glance__cards{padding-left:12px;padding-right:12px}
+  .glance__top{gap:8px 12px;align-items:flex-start}
+  .glance__top>div:first-child{flex:1 1 100%}
+  .glance-badge{font-size:11px;padding:5px 11px}
+  .glance h2{font-size:20px;margin-top:8px}
+  .glance .sub{font-size:12px;margin-top:2px}
+  .limited{font-size:20px;margin-right:auto}
+  .early{padding:5px 12px 5px 8px;border-radius:14px;font-size:11px;gap:8px}
+  .early b{font-size:12px}.early svg{width:26px;height:26px}
+  .glance__top .viewall{display:inline-flex;position:absolute;right:12px;top:0}
+  .glance{position:relative}
+  .glance>.glance__top{position:relative}
+  .glance>.glance__top .viewall{top:0;height:34px;padding:0 14px;font-size:12.5px}
+  .viewall-row{display:none}
+  /* option cards: swipeable row like an app carousel */
+  .types{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;margin:12px 0 0;padding:2px 12px 6px;background:transparent;border-radius:0}
+  .types::-webkit-scrollbar{display:none}
+  .type{flex:0 0 76%;scroll-snap-align:start;padding:12px;gap:9px;border-radius:18px;box-shadow:0 6px 16px rgba(11,91,65,.1)}
+  .type__ic{width:40px;height:40px}.type__ic svg{width:23px;height:23px}
+  .type__head{gap:10px}.type__head b{font-size:17px}.type__head span{font-size:11.5px}
+  .type__count{padding:8px 14px;border-radius:13px;gap:10px}
+  .type__count strong{font-size:32px}.type__count span{font-size:13px}
+  .type__feat{min-height:0;padding:8px 10px;font-size:12px;border-radius:11px;gap:8px}
+  .type__feat svg{width:16px;height:16px}
+  .type__btn{height:40px;font-size:13.5px}
+  .glance__cards{margin-top:12px}
+  #rooms .glance__top>div:first-child{flex:1 1 70%}
+  .incl{margin-top:12px;padding:14px 12px;border-radius:22px;gap:12px}
+  .incl h2{font-size:19px}.incl p{font-size:12px;margin-top:3px}
+  .incl__grid{grid-template-columns:repeat(4,1fr);gap:4px}
+  .incl__item{font-size:10.5px;gap:6px;line-height:1.25}
+  .incl__item i{width:40px;height:40px}.incl__item svg{width:21px;height:21px}
+  .cta-band{margin-top:12px!important}
+}
+.hero{overflow:visible}
+.hero__bg{overflow:hidden}
+.dd{position:relative;flex:1;min-width:0;height:100%}
+.dd__btn{display:flex;align-items:center;width:100%;height:100%;border:0;background:transparent;font:500 15px var(--font);color:#26382f;text-align:left;cursor:pointer;padding:0 22px 0 0;outline:0}
+.dd__btn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dd__btn:focus-visible{outline:2px solid var(--green);outline-offset:4px;border-radius:8px}
+.dd__menu{position:absolute;left:-14px;right:-14px;top:calc(100% + 14px);z-index:30;list-style:none;margin:0;padding:6px;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 22px 50px rgba(11,91,65,.22),0 2px 8px rgba(0,0,0,.06);min-width:200px;opacity:0;visibility:hidden;transform:translateY(-6px) scale(.98);transform-origin:top center;transition:opacity .16s,transform .16s,visibility .16s}
+.dd.open .dd__menu{opacity:1;visibility:visible;transform:none}
+.dd__menu li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 14px;border-radius:12px;font-size:14.5px;font-weight:500;color:#26382f;cursor:pointer;transition:background .12s}
+.dd__menu li:hover,.dd__menu li.hl{background:var(--mint)}
+.dd__menu li[aria-selected="true"]{color:var(--green);font-weight:700;background:var(--mint)}
+.dd__menu li[aria-selected="true"]::after{content:"";width:16px;height:16px;flex:none;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230b5b41' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.500 4.500L19 7'/%3E%3C/svg%3E") center/contain no-repeat}
+.dd__menu li.dd__sheet-title{display:none}
+.dd__backdrop{position:fixed;inset:0;z-index:90;background:rgba(10,30,22,.45);opacity:0;visibility:hidden;transition:opacity .2s,visibility .2s}
+.dd__backdrop.on{opacity:1;visibility:visible}
+@media(max-width:700px){
+  .dd__btn{font-size:13px;padding-right:16px}
+  .dd__menu{position:fixed;left:0;right:0;top:auto;bottom:0;z-index:100;border:0;border-radius:24px 24px 0 0;padding:8px 12px calc(14px + env(safe-area-inset-bottom));transform:translateY(100%);opacity:1;transition:transform .26s cubic-bezier(.2,.8,.2,1),visibility .26s;box-shadow:0 -12px 40px rgba(0,0,0,.2)}
+  .dd.open .dd__menu{transform:none}
+  .dd__menu::before{content:"";display:block;width:40px;height:4px;border-radius:4px;background:#d5ddd8;margin:4px auto 6px}
+  .dd__menu li.dd__sheet-title{display:block;padding:6px 12px 10px;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);cursor:default;background:none!important}
+  .dd__menu li{padding:14px;font-size:15.5px}
+}
 </style>
 {% endblock %}
 {% block body %}
@@ -55,25 +158,61 @@
 
 <section class="hero">
   <div class="hero__bg" role="img" aria-label="Bright, comfortable bedroom with a city view"></div>
-  <div class="hero__script script">Better Homes<br><span class="ul-gold">Brighter Days</span></div>
   <div class="wrap">
+    <div class="hero__script script">Better Homes<br><span class="ul-gold">Brighter Days</span></div>
     <div class="hero__loc"><svg viewBox="0 0 24 24"><path d="M12 22s7-6.200 7-12a7 7 0 10-14 0c0 5.800 7 12 7 12zm0-9a3 3 0 110-6 3 3 0 010 6z"/></svg>Al Khor, Qatar</div>
     <h1>Find Your <b>Perfect Home</b> in Al Khor, Qatar</h1>
     <p>Comfortable rooms, modern studios and spacious apartments — all in one place.</p>
-    <div class="cta-hero"><a class="primary" href="#rooms">Browse available rooms</a><a class="ghost" href="{% url 'listings:list' %}?show=all">View all properties</a></div>
+    <form class="search" action="{% url 'listings:list' %}" method="get" role="search">
+      <label><svg viewBox="0 0 24 24"><path d="M12 22s7-6.200 7-12a7 7 0 10-14 0c0 5.800 7 12 7 12zm0-9a3 3 0 110-6 3 3 0 010 6z"/></svg><select aria-label="Location"><option>Al Khor, Qatar</option></select></label>
+      <label><svg viewBox="0 0 24 24"><path d="M12 3l9 8h-2.500v9h-5v-6h-3v6h-5v-9H3z"/></svg><select name="type" aria-label="Room type"><option value="">All Room Types</option>{% for t in types %}<option value="{{ t.key }}">{{ t.label }}</option>{% endfor %}</select></label>
+      <button type="submit"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Search</button>
+    </form>
   </div>
 </section>
 
 <div class="wrap">
-  <section class="glance" id="rooms">
+  <section class="glance" id="options">
     <div class="glance__top">
       <div>
         <span class="glance-badge"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M12 3l9 8h-2.500v9h-5v-6h-3v6h-5v-9H3z"/></svg>Available Rooms</span>
-        <h2>Find Your <em>Space</em></h2>
-        <p class="sub">{{ available_count }} room{{ available_count|pluralize }} available now — swipe the photos and tap to explore.</p>
+        <h2>Your <em>Options</em> at a Glance</h2>
+        <p class="sub">Choose the perfect space that fits your needs.</p>
       </div>
       <div class="limited script ul-gold">Limited<br>Availability!</div>
-      <a class="viewall" href="{% url 'listings:list' %}">View all <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      <div class="early"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg><div><b>Book Early</b>Don't Miss Out!</div></div>
+    </div>
+    <div class="types">
+    {% for t in types %}
+      <article class="type{% if t.tone != 'green' %} type--{{ t.tone }}{% endif %}">
+        <div class="type__head">
+          <div class="type__ic">
+            {% if t.key == 'studio' %}<svg viewBox="0 0 24 24"><path d="M3 18V8M3 14h18v4M21 14v-3a3 3 0 00-3-3h-7v6M6.500 11.500a1.500 1.500 0 100-.01"/></svg>
+            {% elif t.key == '1bhk' %}<svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10M10 20v-5h4v5"/></svg>
+            {% else %}<svg viewBox="0 0 24 24"><path d="M4 21V8l6-3v16M10 9l9 3v9M2 21h20M7 10h.01M7 14h.01M14 15h.01M14 18h.01"/></svg>{% endif %}
+          </div>
+          <div><b>{{ t.label }}</b><span>{{ t.tagline }}</span></div>
+        </div>
+        <div class="type__count"><strong>{{ t.count }}</strong><span>Rooms<br>Available</span></div>
+        <div class="type__feat"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#0f2a21"/><path d="M7 12.500l3.500 3.500L17 9" fill="none" stroke="#fff" stroke-width="2.400" stroke-linecap="round" stroke-linejoin="round"/></svg><span>{{ t.feature }}</span></div>
+        {% if t.count %}
+          <a class="type__btn" href="{% url 'listings:list' %}?type={{ t.key }}">View Details <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+        {% else %}
+          <span class="type__btn type__btn--off"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.600 5.600l12.800 12.800"/></svg>No Rooms Available</span>
+        {% endif %}
+      </article>
+    {% endfor %}
+    </div>
+  </section>
+
+  <section class="glance" id="rooms" style="margin-top:20px">
+    <div class="glance__top">
+      <div>
+        <span class="glance-badge"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M12 3l9 8h-2.500v9h-5v-6h-3v6h-5v-9H3z"/></svg>Browse Rooms</span>
+        <h2>Rooms <em>Available Now</em></h2>
+        <p class="sub">{{ available_count }} room{{ available_count|pluralize }} available now — swipe the photos and tap to explore.</p>
+      </div>
+            <a class="viewall" href="{% url 'listings:list' %}">View all <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
     </div>
     <div class="glance__cards">{% include "listings/_cards.html" %}</div>
     {% if items %}<div class="viewall-row"><a class="viewall" href="{% url 'listings:list' %}">View all properties <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>{% endif %}
@@ -94,4 +233,37 @@
 
   <div style="margin-top:20px">{% include "listings/_cta.html" %}</div>
 </div>
+{% include "listings/_tabbar.html" with active="home" %}
+<script>
+(function(){
+  var sels=document.querySelectorAll('.search select');if(!sels.length)return;
+  var backdrop=document.createElement('div');backdrop.className='dd__backdrop';document.body.appendChild(backdrop);
+  var openDd=null;
+  function closeAll(){if(openDd){openDd.classList.remove('open');openDd.querySelector('.dd__btn').setAttribute('aria-expanded','false');openDd=null}backdrop.classList.remove('on')}
+  sels.forEach(function(sel){
+    var label=sel.closest('label'),title=sel.getAttribute('aria-label')||'Select';
+    var dd=document.createElement('div');dd.className='dd';
+    var btn=document.createElement('button');btn.type='button';btn.className='dd__btn';btn.setAttribute('aria-haspopup','listbox');btn.setAttribute('aria-expanded','false');btn.setAttribute('aria-label',title);
+    var txt=document.createElement('span');btn.appendChild(txt);
+    var menu=document.createElement('ul');menu.className='dd__menu';menu.setAttribute('role','listbox');menu.setAttribute('aria-label',title);
+    var head=document.createElement('li');head.className='dd__sheet-title';head.setAttribute('aria-hidden','true');head.textContent=title;menu.appendChild(head);
+    var items=[];
+    [].forEach.call(sel.options,function(o,i){var li=document.createElement('li');li.setAttribute('role','option');li.textContent=o.textContent;li.dataset.i=i;menu.appendChild(li);items.push(li)});
+    function sync(){txt.textContent=sel.options[sel.selectedIndex].textContent;items.forEach(function(li,i){li.setAttribute('aria-selected',i===sel.selectedIndex?'true':'false')})}
+    function open(){closeAll();dd.classList.add('open');btn.setAttribute('aria-expanded','true');openDd=dd;backdrop.classList.toggle('on',window.matchMedia('(max-width:700px)').matches)}
+    btn.addEventListener('click',function(e){e.preventDefault();dd.classList.contains('open')?closeAll():open()});
+    menu.addEventListener('click',function(e){var li=e.target.closest('li[role=option]');if(!li)return;sel.selectedIndex=+li.dataset.i;sel.dispatchEvent(new Event('change',{bubbles:true}));sync();closeAll();btn.focus()});
+    btn.addEventListener('keydown',function(e){
+      if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();var d=e.key==='ArrowDown'?1:-1;sel.selectedIndex=Math.max(0,Math.min(sel.options.length-1,sel.selectedIndex+d));sync()}
+    });
+    dd.appendChild(btn);dd.appendChild(menu);
+    sel.style.display='none';label.insertBefore(dd,sel);
+    label.style.cursor='pointer';label.addEventListener('click',function(e){if(e.target.closest('.dd__menu'))return;if(!e.target.closest('.dd__btn'))btn.click()});
+    sync();
+  });
+  backdrop.addEventListener('click',closeAll);
+  document.addEventListener('click',function(e){if(openDd&&!e.target.closest('.dd, .search label'))closeAll()});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')closeAll()});
+})();
+</script>
 {% endblock %}

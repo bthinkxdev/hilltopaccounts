@@ -95,6 +95,7 @@
 
   <div class="facts">
     {% if p.rent %}<div class="fact fact--price"><small>Rent</small><b>{{ currency }} {{ p.rent|floatformat:"0g" }} <span>/ mo</span></b></div>{% endif %}
+    {% if p.room_type %}<div class="fact"><small>Type</small><b style="font-size:16px">{{ p.get_room_type_display }}</b></div>{% endif %}
     <div class="fact"><small>Status</small><b style="font-size:16px"><span class="dot{% if occupied %} dot--off{% endif %}"></span>{% if occupied %}Rented{% else %}Available{% endif %}</b></div>
   </div>
 

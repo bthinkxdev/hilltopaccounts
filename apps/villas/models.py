@@ -25,9 +25,15 @@ class Partition(models.Model):
     class Status(models.TextChoices):
         ACTIVE = ('active', 'Active')
         ARCHIVED = ('archived', 'Archived')
+
+    class RoomType(models.TextChoices):
+        STUDIO = ('studio', 'Studio')
+        ONE_BHK = ('1bhk', '1 BHK')
+        TWO_BHK = ('2bhk', '2 BHK')
     villa = models.ForeignKey(Villa, on_delete=models.PROTECT, related_name='partitions')
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
+    room_type = models.CharField(max_length=10, choices=RoomType.choices, blank=True, help_text='Studio, 1 BHK or 2 BHK. Shown on the public storefront.')
     rent = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
     created_at = models.DateTimeField(auto_now_add=True)

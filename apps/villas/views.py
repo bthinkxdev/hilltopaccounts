@@ -497,6 +497,7 @@ def partition_edit(request, pk):
                     updated_by=request.user,
                     name=form.cleaned_data['name'],
                     rent=form.cleaned_data.get('rent'),
+                    room_type=form.cleaned_data.get('room_type', ''),
                     description=form.cleaned_data.get('description', ''),
                 )
                 messages.success(request, f'Partition “{partition.name}” updated.')
@@ -508,6 +509,7 @@ def partition_edit(request, pk):
         form = PartitionForm(initial={
             'name': partition.name,
             'rent': partition.rent,
+            'room_type': partition.room_type,
             'description': partition.description,
         }, villa=villa, partition=partition)
         form.fields.pop('villa', None)

@@ -8,7 +8,18 @@
 .pagehead h1{font-size:clamp(28px,7vw,44px);letter-spacing:-.03em;line-height:1.1}
 .pagehead h1 em{font-style:normal;color:var(--green)}
 .pagehead p{color:var(--mute);margin-top:6px}
+.types-row{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:18px 0 4px}
+.types-row::-webkit-scrollbar{display:none}
+.tchip{flex:none;padding:9px 18px;border-radius:99px;background:#fff;border:1px solid var(--line);font-size:13.5px;font-weight:600;color:var(--fg);transition:all .2s}
+.tchip.on{background:var(--green);border-color:var(--green);color:#fff;box-shadow:0 6px 16px rgba(11,91,65,.25)}
 .cta-wrap{margin-top:40px}
+@media(max-width:700px){
+  .pagehead{padding:14px 0 0}
+  .pagehead h1{font-size:22px}.pagehead p{font-size:12px;margin-top:2px}
+  .types-row{padding:10px 0 2px;gap:6px}
+  .tchip{padding:7px 14px;font-size:12px}
+  .cta-wrap{margin-top:22px}
+}
 </style>
 {% endblock %}
 {% block body %}
@@ -18,14 +29,19 @@
     <h1>Find your <em>perfect home</em></h1>
     <p>Al Khor, Qatar · {{ available_count }} room{{ available_count|pluralize }} available now</p>
   </div>
+  <div class="types-row" role="tablist">
+    <a class="tchip{% if not room_type %} on{% endif %}" href="?{% if not available_only %}show=all{% endif %}">All types</a>
+    {% for t in room_types %}<a class="tchip{% if room_type == t.key %} on{% endif %}" href="?type={{ t.key }}{% if not available_only %}&show=all{% endif %}">{{ t.label }}</a>{% endfor %}
+  </div>
+
   <div class="sec-head" id="spaces">
     <div>
       <h2>{% if available_only %}Available now{% else %}All spaces{% endif %}</h2>
       <p>{{ items|length }} space{{ items|length|pluralize }} · swipe photos, tap to explore</p>
     </div>
     <div class="chips" role="tablist">
-      <a class="chip{% if available_only %} on{% endif %}" href="?">Available</a>
-      <a class="chip{% if not available_only %} on{% endif %}" href="?show=all">All</a>
+      <a class="chip{% if available_only %} on{% endif %}" href="?{% if room_type %}type={{ room_type }}{% endif %}">Available</a>
+      <a class="chip{% if not available_only %} on{% endif %}" href="?show=all{% if room_type %}&type={{ room_type }}{% endif %}">All</a>
     </div>
   </div>
 
@@ -33,4 +49,5 @@
 
   <div class="cta-wrap">{% include "listings/_cta.html" %}</div>
 </div>
+{% include "listings/_tabbar.html" with active="properties" %}
 {% endblock %}

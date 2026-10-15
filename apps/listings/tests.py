@@ -36,3 +36,15 @@ class ListingTests(TestCase):
         User.objects.update(whatsapp_number='')
         r = self.client.get(reverse('listings:detail', args=[self.part.pk]))
         self.assertContains(r, 'https://wa.me/97451792792')
+
+    def test_room_type_is_shown(self):
+        Partition.objects.filter(pk=self.part.pk).update(room_type='1bhk')
+        self.assertContains(self.client.get(reverse('listings:home')), '1 BHK')
+        self.assertContains(self.client.get(reverse('listings:detail', args=[self.part.pk])), '1 BHK')
+
+    def test_owner_can_set_room_type_when_adding_partition(self):
+        self.client.force_login(User.objects.get(username='owner'))
+        r = self.client.post(reverse('villas:partition_create', args=[self.villa.pk]), {'name': 'New one', 'room_type': '2bhk'})
+        self.assertEqual(Partition.objects.get(name='New one').room_type, '2bhk')
+        self.client.post(reverse('villas:partition_edit', args=[Partition.objects.get(name='New one').pk]), {'name': 'New one', 'room_type': 'studio'})
+        self.assertEqual(Partition.objects.get(name='New one').room_type, 'studio')

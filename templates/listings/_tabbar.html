@@ -1,0 +1,7 @@
+<nav class="tabbar" aria-label="App">
+  <a href="{% url 'listings:home' %}"{% if active == 'home' %} class="on"{% endif %}><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10M10 20v-5h4v5"/></svg><span>Home</span></a>
+  <a href="{% url 'listings:list' %}"{% if active == 'properties' %} class="on"{% endif %}><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7.500" height="7.500" rx="2"/><rect x="13.500" y="3" width="7.500" height="7.500" rx="2"/><rect x="3" y="13.500" width="7.500" height="7.500" rx="2"/><rect x="13.500" y="13.500" width="7.500" height="7.500" rx="2"/></svg><span>Rooms</span></a>
+  <a class="tabbar__wa" href="https://wa.me/{{ brand_wa }}" target="_blank" rel="noopener" aria-label="WhatsApp"><svg class="ico"><use href="#wa"/></svg></a>
+  <a href="{% url 'listings:home' %}#about"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg><span>About</span></a>
+  <a href="{% url 'listings:home' %}#contact"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4z"/></svg><span>Contact</span></a>
+</nav>

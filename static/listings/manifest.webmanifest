@@ -1,0 +1,24 @@
+{
+  "name": "Hill Top Real Estate",
+  "short_name": "Hill Top",
+  "description": "Studios, 1 BHK and 2 BHK homes in Al Khor, Qatar.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fbfaf5",
+  "theme_color": "#0b5b41",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

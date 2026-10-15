@@ -7,7 +7,7 @@ from apps.shared.exceptions import DomainError
 from .models import Partition, Photo, Villa
 from .photos import validate_photo
 TRACKED_FIELDS = ['name', 'address', 'landlord_name', 'landlord_contact', 'contract_start', 'contract_end']
-PARTITION_TRACKED_FIELDS = ['name', 'description', 'rent', 'status']
+PARTITION_TRACKED_FIELDS = ['name', 'description', 'rent', 'status', 'room_type']
 
 def create_villa(*, business, name, created_by, **fields) -> Villa:
     if business.is_archived:

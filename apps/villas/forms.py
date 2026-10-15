@@ -2,7 +2,7 @@ from decimal import Decimal
 from django import forms
 from apps.businesses.forms import ArchiveReasonForm
 from apps.businesses.models import Business
-from .models import Villa
+from .models import Partition, Villa
 
 # The fixed monthly costs every villa has. Each is optional at creation and can be set later by the Owner.
 FIXED_EXPENSE_DEFAULTS = [('fixed_villa_rent', 'Villa rent', 'owner'), ('fixed_electricity', 'Electricity', 'staff'), ('fixed_wifi', 'Wi-Fi', 'staff'), ('fixed_cleaning', 'Cleaning', 'staff'), ('fixed_maintenance', 'Maintenance', 'staff')]
@@ -63,6 +63,7 @@ class PartitionForm(forms.Form):
         label='Rent (monthly)',
         widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01', 'placeholder': 'Optional rent, e.g. 2500.00'}),
     )
+    room_type = forms.ChoiceField(required=False, choices=[('', 'Not set')] + list(Partition.RoomType.choices), label='Room type', help_text='Studio, 1 BHK or 2 BHK. Shown on the public storefront.')
     description = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2}))
 
     def __init__(self, *args, villa_queryset=None, villa=None, partition=None, **kwargs):

@@ -59,11 +59,30 @@ def contact_for(partition):
 def _photos(partition):
     return list(partition.photos.all()) or list(partition.villa.photos.all())
 
-def _build_items(partitions, *, available_only=False, limit=None):
+ROOM_TYPES = [
+    {'key': 'studio', 'label': 'Studio', 'tagline': 'Comfortable & Private', 'feature': '1 Piece + Kitchen + Toilet', 'tone': 'green'},
+    {'key': '1bhk', 'label': '1 BHK', 'tagline': 'Spacious & Cozy', 'feature': '1 Bedroom + Hall + Kitchen + Toilet', 'tone': 'blue'},
+    {'key': '2bhk', 'label': '2 BHK', 'tagline': 'Perfect for Families', 'feature': '2 Bedrooms + Hall + Kitchen + 2 Toilets', 'tone': 'sand'},
+]
+_GUESS = [('2bhk', re.compile(r'\b2\s*-?\s*bhk\b|two[\s-]*bed', re.I)), ('1bhk', re.compile(r'\b1\s*-?\s*bhk\b|one[\s-]*bed', re.I)), ('studio', re.compile(r'\bstudio\b', re.I))]
+
+def room_type_of(partition) -> str:
+    """The partition's room type; if staff left it unset, guess from the name or description."""
+    if partition.room_type:
+        return partition.room_type
+    text = f'{partition.name} {partition.description}'
+    for key, pattern in _GUESS:
+        if pattern.search(text):
+            return key
+    return ''
+
+def _build_items(partitions, *, available_only=False, room_type='', limit=None):
     items, contacts = [], {}
     for p in partitions:
         occupied = p.is_occupied
         if available_only and occupied:
+            continue
+        if room_type and room_type_of(p) != room_type:
             continue
         if p.villa_id not in contacts:
             contacts[p.villa_id] = contact_for(p)
@@ -74,15 +93,19 @@ def _build_items(partitions, *, available_only=False, limit=None):
 
 def listing_home(request):
     partitions = list(_public_partitions().order_by('-created_at'))
-    available_count = sum(1 for p in partitions if not p.is_occupied)
+    available = [p for p in partitions if not p.is_occupied]
+    types = [{**t, 'count': sum(1 for p in available if room_type_of(p) == t['key'])} for t in ROOM_TYPES]
     items = _build_items(partitions, available_only=True, limit=8)
-    return render(request, 'listings/home.html', _brand({'items': items, 'available_count': available_count, 'total': len(partitions)}))
+    return render(request, 'listings/home.html', _brand({'items': items, 'types': types, 'available_count': len(available), 'total': len(partitions)}))
 
 def listing_list(request):
     partitions = list(_public_partitions().order_by('-created_at'))
     available_only = request.GET.get('show') != 'all'
-    items = _build_items(partitions, available_only=available_only)
-    return render(request, 'listings/list.html', _brand({'items': items, 'available_only': available_only, 'total': len(partitions), 'available_count': sum(1 for p in partitions if not p.is_occupied)}))
+    room_type = request.GET.get('type', '')
+    if room_type not in {t['key'] for t in ROOM_TYPES}:
+        room_type = ''
+    items = _build_items(partitions, available_only=available_only, room_type=room_type)
+    return render(request, 'listings/list.html', _brand({'items': items, 'available_only': available_only, 'room_type': room_type, 'room_types': ROOM_TYPES, 'total': len(partitions), 'available_count': sum(1 for p in partitions if not p.is_occupied)}))
 
 def listing_detail(request, pk):
     p = get_object_or_404(_public_partitions(), pk=pk)
