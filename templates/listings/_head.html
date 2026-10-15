@@ -1,6 +1,6 @@
 {% load static %}
 <header class="site-head"><div class="wrap">
-  <a class="site-logo" href="{% url 'listings:home' %}" aria-label="{{ brand }}"><img src="{% static 'listings/logo-h.png' %}" alt="Hill Top Real Estate — Your comfort, our priority" width="160" height="49"></a>
+  <a class="site-logo" href="{% url 'listings:home' %}" aria-label="{{ brand }}"><img src="{% static 'listings/logo-h.png' %}" alt="Hill Top Real Estate" width="200" height="52"></a>
   <nav class="site-nav" aria-label="Main">
     <a href="{% url 'listings:home' %}"{% if active == 'home' %} class="on"{% endif %}>Home</a>
     <a href="{% url 'listings:list' %}"{% if active == 'properties' %} class="on"{% endif %}>Properties</a>
