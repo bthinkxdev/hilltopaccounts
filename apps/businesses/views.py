@@ -128,7 +128,7 @@ def partner_list(request):
         p.shares = list(p.villa_shares.all())
         p.shares_label = [f"{s.villa.name} ({s.percentage}%)" for s in p.shares]
         p.total_payout = sum(
-            (pnl.get(s.villa_id, {}).get('net', Decimal('0.00')) * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
+            (max(Decimal('0.00'), pnl.get(s.villa_id, {}).get('net', Decimal('0.00'))) * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
             for s in p.shares
         ) or Decimal('0.00')
         p.paid_amount = paid_by_partner.get(p.pk, Decimal('0.00'))
@@ -201,31 +201,38 @@ def partner_detail(request, pk):
         period['period_start'], period['period_end']
     )
     shares = list(partner.villa_shares.select_related('villa').order_by('villa__name'))
-    existing_payouts_for_period = {
-        p.villa_id: p
-        for p in PartnerPayout.objects.filter(partner=partner, period_year=period['year'], period_month=period['month'])
-    }
     villa_ids = [s.villa_id for s in shares]
     all_shares_for_villas = list(
         PartnerVillaShare.objects.filter(
             villa_id__in=villa_ids, partner__is_active=True
         ).select_related('partner')
     )
-    for s in shares:
-        v = pnl.get(s.villa_id, billing_selectors.EMPTY_PROFIT_LOSS)
-        s.villa_income, s.villa_expenses, s.villa_net = v['income'], v['expenses'], v['net']
-        s.cut = (s.villa_net * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
-        s.co_partners = [ps for ps in all_shares_for_villas if ps.villa_id == s.villa_id and ps.partner_id != partner.pk]
-        for cp in s.co_partners:
-            cp.cut = (s.villa_net * (cp.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
-        total_villa_partner_pct = sum((ps.percentage for ps in all_shares_for_villas if ps.villa_id == s.villa_id), Decimal('0.00'))
-        s.owner_percentage = max(Decimal('0.00'), Decimal('100.00') - total_villa_partner_pct)
-        s.owner_cut = (s.villa_net * (s.owner_percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
-        s.payout = existing_payouts_for_period.get(s.villa_id)
-
     payout_history = list(partner.payouts.select_related('villa').order_by('-paid_on', '-created_at'))
     period_payouts = [p for p in payout_history if p.period_year == period['year'] and p.period_month == period['month']]
     period_paid_amount = sum((p.amount for p in period_payouts), Decimal('0.00'))
+    existing_payouts_for_period = {p.villa_id: p for p in period_payouts if p.villa_id}
+    unassigned_payout = next((p for p in period_payouts if not p.villa_id), None)
+
+    for s in shares:
+        v = pnl.get(s.villa_id, billing_selectors.EMPTY_PROFIT_LOSS)
+        s.villa_income, s.villa_expenses, s.villa_net = v['income'], v['expenses'], v['net']
+        distributable_net = max(Decimal('0.00'), s.villa_net)
+        s.cut = (distributable_net * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
+        s.co_partners = [ps for ps in all_shares_for_villas if ps.villa_id == s.villa_id and ps.partner_id != partner.pk]
+        for cp in s.co_partners:
+            cp.cut = (distributable_net * (cp.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
+        total_villa_partner_pct = sum((ps.percentage for ps in all_shares_for_villas if ps.villa_id == s.villa_id), Decimal('0.00'))
+        s.owner_percentage = max(Decimal('0.00'), Decimal('100.00') - total_villa_partner_pct)
+        s.owner_cut = (distributable_net * (s.owner_percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
+        s.villa_payouts = [p for p in period_payouts if p.villa_id == s.villa_id]
+        if not s.villa_payouts and (len(shares) == 1 or unassigned_payout):
+            s.villa_payouts = period_payouts
+        s.paid_amount = sum((p.amount for p in s.villa_payouts), Decimal('0.00'))
+        s.remaining = max(Decimal('0.00'), s.cut - s.paid_amount)
+        s.is_fully_paid = (s.paid_amount >= s.cut and s.cut > 0)
+        s.is_partial = (0 < s.paid_amount < s.cut)
+        s.payout = s.villa_payouts[-1] if s.villa_payouts else None
+
     total_payout = sum((s.cut for s in shares), Decimal('0.00'))
     remaining_payout = max(Decimal('0.00'), total_payout - period_paid_amount)
 
@@ -334,9 +341,17 @@ def partner_payout_create(request, partner_pk):
     partner = get_object_or_404(Partner, pk=partner_pk)
     villa_id = request.GET.get('villa') or request.POST.get('villa')
     villa = get_object_or_404(Villa, pk=villa_id) if villa_id else None
+    if not villa and partner.villa_shares.count() == 1:
+        villa = partner.villa_shares.first().villa
     year = int(request.GET.get('year') or request.POST.get('year') or date.today().year)
     month = int(request.GET.get('month') or request.POST.get('month') or date.today().month)
     initial_amount = request.GET.get('amount')
+    if initial_amount:
+        try:
+            if Decimal(initial_amount) <= 0:
+                initial_amount = None
+        except Exception:
+            initial_amount = None
 
     if request.method == 'POST':
         form = PartnerPayoutForm(request.POST)
@@ -364,7 +379,7 @@ def partner_payout_create(request, partner_pk):
                 reason=f'Paid QAR {payout.amount} to {partner.name} for {payout.period_year}-{payout.period_month:02d} via {payout.get_payment_method_display()}'
             )
             messages.success(request, f'Recorded payout of QAR {payout.amount} to {partner.name}.')
-            if villa:
+            if villa and (request.GET.get('from') == 'villa' or request.POST.get('from') == 'villa'):
                 return redirect(f"{reverse('villas:villa_detail', args=[villa.pk])}?period=month&year={year}&month={month}")
             return redirect(f"{reverse('businesses:partner_detail', args=[partner.pk])}?period=month&year={year}&month={month}")
     else:
@@ -373,7 +388,11 @@ def partner_payout_create(request, partner_pk):
         'form': form,
         'title': f'Record Profit Payout — {partner.name} ({year}-{month:02d})',
         'submit_label': 'Record Payout',
-        'cancel_url': reverse('businesses:partner_detail', args=[partner.pk]),
+        'cancel_url': (
+            f"{reverse('villas:villa_detail', args=[villa.pk])}?period=month&year={year}&month={month}"
+            if (villa and request.GET.get('from') == 'villa')
+            else f"{reverse('businesses:partner_detail', args=[partner.pk])}?period=month&year={year}&month={month}"
+        ),
         'breadcrumbs': [('Partners', reverse('businesses:partner_list')), (partner.name, reverse('businesses:partner_detail', args=[partner.pk])), ('Record Payout', None)],
     })
 
@@ -415,21 +434,33 @@ def villa_partner_payout_batch(request, villa_pk):
     expenses = selectors.expenses_visible_to(request.user).filter(villa=villa)
     pnl = billing_selectors.period_profit_loss(invoices, expenses, start, end)
     net_profit = pnl.get('net', Decimal('0.00'))
+    distributable_profit = max(Decimal('0.00'), net_profit)
 
     shares = list(PartnerVillaShare.objects.filter(villa=villa, partner__is_active=True).select_related('partner'))
-    existing_payouts = {
-        p.partner_id: p
-        for p in PartnerPayout.objects.filter(villa=villa, period_year=year, period_month=month)
-    }
+    payouts_qs = list(PartnerPayout.objects.filter(
+        models.Q(villa=villa) | models.Q(villa__isnull=True),
+        period_year=year, period_month=month
+    ).order_by('paid_on', 'created_at'))
 
     for s in shares:
-        s.cut = (net_profit * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
-        s.existing_payout = existing_payouts.get(s.partner_id)
+        s.cut = (distributable_profit * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
+        partner_payouts = [p for p in payouts_qs if p.partner_id == s.partner_id]
+        s.paid_amount = sum((p.amount for p in partner_payouts), Decimal('0.00'))
+        s.remaining = max(Decimal('0.00'), s.cut - s.paid_amount)
+        s.is_fully_paid = (s.paid_amount >= s.cut and s.cut > 0)
+        s.is_partial = (0 < s.paid_amount < s.cut)
+        s.existing_payout = partner_payouts[-1] if partner_payouts else None
 
-    unpaid_shares = [s for s in shares if not s.existing_payout]
-    total_unpaid = sum((s.cut for s in unpaid_shares), Decimal('0.00'))
+    unpaid_shares = [s for s in shares if s.remaining > 0]
+    total_unpaid = sum((s.remaining for s in unpaid_shares), Decimal('0.00'))
 
     if request.method == 'POST':
+        if distributable_profit <= 0:
+            messages.error(request, 'Cannot record partner payouts when villa net profit is zero or negative.')
+            return redirect(f"{reverse('villas:villa_detail', args=[villa.pk])}?period=month&year={year}&month={month}")
+        if not unpaid_shares:
+            messages.warning(request, 'No pending partner payouts to record.')
+            return redirect(f"{reverse('villas:villa_detail', args=[villa.pk])}?period=month&year={year}&month={month}")
         method = request.POST.get('payment_method', 'bank_transfer')
         paid_on = request.POST.get('paid_on') or today.isoformat()
         reference = request.POST.get('reference', '').strip()
@@ -441,7 +472,7 @@ def villa_partner_payout_batch(request, villa_pk):
                 villa=villa,
                 period_year=year,
                 period_month=month,
-                amount=s.cut,
+                amount=s.remaining,
                 payment_method=method,
                 paid_on=paid_on,
                 reference=reference,
@@ -456,12 +487,12 @@ def villa_partner_payout_batch(request, villa_pk):
                 business=villa.business,
                 new_value={
                     'partner': s.partner.name,
-                    'amount': str(s.cut),
+                    'amount': str(s.remaining),
                     'method': method,
                     'paid_on': str(paid_on),
                     'period': f'{year}-{month:02d}',
                 },
-                reason=f'Batch payout QAR {s.cut} to {s.partner.name} for {villa.name} ({year}-{month:02d}) via {p.get_payment_method_display()}'
+                reason=f'Batch payout QAR {s.remaining} to {s.partner.name} for {villa.name} ({year}-{month:02d}) via {p.get_payment_method_display()}'
             )
             created_count += 1
         messages.success(request, f'Recorded profit payout for {created_count} partner(s) totalling QAR {total_unpaid}.')

@@ -28,10 +28,12 @@
             <div class="list-row__meta">{{ share.percentage }}% of villa profit</div>
           </div>
           <div class="partner-row__actions">
-            {% if share.existing_payout %}
+            {% if share.is_fully_paid %}
               <span class="pill pill--success">Paid ({{ share.existing_payout.get_payment_method_display }})</span>
+            {% elif share.is_partial %}
+              <span class="pill pill--warning" title="Paid QAR {{ share.paid_amount|floatformat:'2g' }}">Paid {{ share.paid_amount|floatformat:"2g" }} · Due {{ share.remaining|floatformat:"2g" }}</span>
             {% else %}
-              <span class="pill pill--warning">Pending</span>
+              <span class="pill pill--warning">Due {{ share.remaining|floatformat:"2g" }}</span>
             {% endif %}
           </div>
         </div>
@@ -39,12 +41,18 @@
     {% endfor %}
   </div>
 
-  {% if unpaid_shares %}
+  {% if net_profit <= 0 %}
+    <div class="empty-state">
+      <div class="empty-state__title">No profit to distribute for {{ month_label }}.</div>
+      <p>Villa net is <b>QAR {{ net_profit|floatformat:"2g" }}</b>. Profit payouts are only distributed when the villa generates a positive net profit.</p>
+      <a class="btn btn--primary btn--sm" href="{% url 'villas:villa_detail' villa.pk %}?period=month&year={{ year }}&month={{ month }}">Return to Villa</a>
+    </div>
+  {% elif unpaid_shares %}
     <form method="post" class="card">
       {% csrf_token %}
-      <div class="card__title">Payment Details for Unpaid Partners</div>
+      <div class="card__title">Payment Details for Pending Partner Payouts</div>
       <p style="color: var(--text-secondary); margin-bottom: var(--space-4); font-size: 14px;">
-        Recording payouts will mark all {{ unpaid_shares|length }} unpaid partner(s) as paid with their exact calculated share amounts, totalling <b>QAR {{ total_unpaid|floatformat:"2g" }}</b>.
+        Recording payouts will settle the remaining balance for {{ unpaid_shares|length }} partner(s), totalling <b>QAR {{ total_unpaid|floatformat:"2g" }}</b>.
       </p>
 
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-3);">

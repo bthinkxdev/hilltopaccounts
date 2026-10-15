@@ -250,19 +250,28 @@ def villa_detail(request, pk):
             shares = list(PartnerVillaShare.objects.filter(villa=villa, partner__is_active=True).select_related('partner'))
             if shares:
                 net_profit = context['pnl'].get('net', Decimal('0.00'))
+                distributable_profit = max(Decimal('0.00'), net_profit)
                 total_partner_pct = sum((s.percentage for s in shares), Decimal('0.00'))
-                existing_payouts = {
-                    p.partner_id: p
-                    for p in PartnerPayout.objects.filter(villa=villa, period_year=period['year'], period_month=period['month'])
-                }
+                from django.db.models import Q
+                payouts_qs = list(PartnerPayout.objects.filter(
+                    Q(villa=villa) | Q(villa__isnull=True),
+                    period_year=period['year'], period_month=period['month']
+                ).order_by('paid_on', 'created_at'))
+
                 for s in shares:
-                    s.cut = (net_profit * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
-                    s.payout = existing_payouts.get(s.partner_id)
+                    s.cut = (distributable_profit * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
+                    partner_payouts = [p for p in payouts_qs if p.partner_id == s.partner_id]
+                    s.paid_amount = sum((p.amount for p in partner_payouts), Decimal('0.00'))
+                    s.payout = partner_payouts[-1] if partner_payouts else None
+                    s.remaining = max(Decimal('0.00'), s.cut - s.paid_amount)
+                    s.is_fully_paid = (s.paid_amount >= s.cut and s.cut > 0)
+                    s.is_partial = (0 < s.paid_amount < s.cut)
+
                 owner_pct = max(Decimal('0.00'), Decimal('100.00') - total_partner_pct)
-                owner_cut = (net_profit * (owner_pct / Decimal('100.00'))).quantize(Decimal('0.01'))
+                owner_cut = (distributable_profit * (owner_pct / Decimal('100.00'))).quantize(Decimal('0.01'))
                 context['villa_partner_shares'] = shares
                 context['villa_owner_share'] = {'percentage': owner_pct, 'cut': owner_cut}
-                context['has_unpaid_partners'] = any(not s.payout for s in shares)
+                context['has_unpaid_partners'] = (distributable_profit > 0) and any(not s.is_fully_paid for s in shares)
     return render(request, 'villas/villa_detail.html', context)
 
 @login_required

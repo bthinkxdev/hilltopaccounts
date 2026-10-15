@@ -19,32 +19,36 @@
 
   <div class="period-bar">
     {% include "components/period_picker.html" %}
-    <form class="filter-bar" method="get">
+    <form class="filter-bar villa-filters" method="get">
       <input type="hidden" name="period" value="{{ period }}"><input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}">
-      <input type="search" name="q" placeholder="Search villas…" value="{{ q }}">
-      <button class="btn btn--ghost" type="submit">Search</button>
-      {% if not nav_is_field_staff %}
-      <select name="business" onchange="this.form.submit()" aria-label="Business">
-        <option value="">All businesses</option>
-        {% for business in businesses %}
-          <option value="{{ business.pk }}" {% if selected_business == business.pk|stringformat:"s" %}selected{% endif %}>{{ business.name }}</option>
-        {% endfor %}
-      </select>
-      {% endif %}
-      {% if staff_choices %}
-        <select name="staff" onchange="this.form.submit()" aria-label="Staff">
-          <option value="">All staff</option>
-          {% for person in staff_choices %}<option value="{{ person.pk }}" {% if selected_staff == person.pk|stringformat:"s" %}selected{% endif %}>{{ person.get_full_name|default:person.username }}</option>{% endfor %}
+      <div class="filter-search-group">
+        <input type="search" name="q" placeholder="Search villas…" value="{{ q }}">
+        <button class="btn btn--ghost" type="submit">Search</button>
+      </div>
+      <div class="filter-selects-grid">
+        {% if not nav_is_field_staff %}
+        <select name="business" onchange="this.form.submit()" aria-label="Business">
+          <option value="">All businesses</option>
+          {% for business in businesses %}
+            <option value="{{ business.pk }}" {% if selected_business == business.pk|stringformat:"s" %}selected{% endif %}>{{ business.name }}</option>
+          {% endfor %}
         </select>
-      {% endif %}
-      {% if not nav_is_field_staff %}
-        <select name="status" onchange="this.form.submit()" aria-label="Status">
-          <option value="active" {% if selected_status == "active" %}selected{% endif %}>Active</option>
-          <option value="archived" {% if selected_status == "archived" %}selected{% endif %}>Archived</option>
-          <option value="all" {% if selected_status == "all" %}selected{% endif %}>All</option>
-        </select>
-      {% endif %}
-      {% if q or selected_business or selected_staff or selected_status != "active" %}<a class="btn btn--ghost" href="?period={{ period }}&year={{ year }}&month={{ month }}">Clear</a>{% endif %}
+        {% endif %}
+        {% if staff_choices %}
+          <select name="staff" onchange="this.form.submit()" aria-label="Staff">
+            <option value="">All staff</option>
+            {% for person in staff_choices %}<option value="{{ person.pk }}" {% if selected_staff == person.pk|stringformat:"s" %}selected{% endif %}>{{ person.get_full_name|default:person.username }}</option>{% endfor %}
+          </select>
+        {% endif %}
+        {% if not nav_is_field_staff %}
+          <select name="status" onchange="this.form.submit()" aria-label="Status">
+            <option value="active" {% if selected_status == "active" %}selected{% endif %}>Active</option>
+            <option value="archived" {% if selected_status == "archived" %}selected{% endif %}>Archived</option>
+            <option value="all" {% if selected_status == "all" %}selected{% endif %}>All</option>
+          </select>
+        {% endif %}
+        {% if q or selected_business or selected_staff or selected_status != "active" %}<a class="btn btn--ghost filter-clear-btn" href="?period={{ period }}&year={{ year }}&month={{ month }}">Clear</a>{% endif %}
+      </div>
     </form>
   </div>
 

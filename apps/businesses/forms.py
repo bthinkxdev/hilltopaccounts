@@ -26,9 +26,26 @@ class PartnerShareForm(forms.ModelForm):
     class Meta:
         model = PartnerVillaShare
         fields = ['villa', 'percentage']
+        widgets = {
+            'percentage': forms.NumberInput(attrs={
+                'min': '0.01',
+                'max': '100',
+                'step': '0.01',
+                'placeholder': 'e.g. 20.00',
+            }),
+        }
         help_texts = {
             'percentage': 'Partner share percentage (e.g. 20.00%). The remaining share automatically belongs to you (e.g. 80.00%).'
         }
+
+    def clean_percentage(self):
+        percentage = self.cleaned_data.get('percentage')
+        if percentage is not None:
+            if percentage <= 0:
+                raise forms.ValidationError('Percentage share must be greater than 0%.')
+            if percentage > 100:
+                raise forms.ValidationError('Percentage share cannot exceed 100%.')
+        return percentage
 
     def __init__(self, *args, partner=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -48,6 +65,12 @@ class PartnerPayoutForm(forms.ModelForm):
             'paid_on': forms.DateInput(attrs={'type': 'date'}),
             'notes': forms.Textarea(attrs={'rows': 2}),
         }
+
+    def clean_amount(self):
+        amount = self.cleaned_data.get('amount')
+        if amount is not None and amount <= 0:
+            raise forms.ValidationError('Payout amount must be greater than zero.')
+        return amount
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

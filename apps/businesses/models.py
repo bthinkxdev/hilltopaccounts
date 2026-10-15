@@ -41,19 +41,29 @@ class PartnerVillaShare(models.Model):
         ordering = ['villa__name', 'partner__name']
         constraints = [
             models.UniqueConstraint(fields=['partner', 'villa'], name='unique_partner_villa_share'),
-            models.CheckConstraint(check=models.Q(percentage__gt=0, percentage__lte=100), name='partner_share_percentage_range'),
+            models.CheckConstraint(
+                check=models.Q(percentage__gt=0, percentage__lte=100),
+                name='partner_share_percentage_range',
+                violation_error_message='Percentage share must be greater than 0% and at most 100%.'
+            ),
         ]
 
     def clean(self):
         super().clean()
-        if self.percentage is not None and self.villa_id:
+        if self.percentage is not None:
             from decimal import Decimal
-            qs = PartnerVillaShare.objects.filter(villa=self.villa)
-            if self.pk:
-                qs = qs.exclude(pk=self.pk)
-            total = qs.aggregate(t=models.Sum('percentage'))['t'] or Decimal('0.00')
-            if total + self.percentage > Decimal('100.00'):
-                raise ValidationError({'percentage': f'Total partner shares for {self.villa.name} cannot exceed 100% (currently {total}%, remaining share for you is {Decimal("100.00") - total}%).'})
+            if self.percentage <= Decimal('0.00'):
+                raise ValidationError({'percentage': 'Percentage share must be greater than 0%.'})
+            if self.percentage > Decimal('100.00'):
+                raise ValidationError({'percentage': 'Percentage share cannot exceed 100%.'})
+            if self.villa_id:
+                qs = PartnerVillaShare.objects.filter(villa=self.villa)
+                if self.pk:
+                    qs = qs.exclude(pk=self.pk)
+                total = qs.aggregate(t=models.Sum('percentage'))['t'] or Decimal('0.00')
+                if total + self.percentage > Decimal('100.00'):
+                    remaining = Decimal('100.00') - total
+                    raise ValidationError({'percentage': f'Total partner shares for {self.villa.name} cannot exceed 100% (currently {total}%, remaining share for you is {remaining}%).'})
 
     def __str__(self):
         return f'{self.partner.name} — {self.villa.name} ({self.percentage}%)'

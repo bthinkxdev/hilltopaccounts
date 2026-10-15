@@ -16,7 +16,7 @@
       <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_edit' partner.pk %}">Edit Partner</a>
       <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_share_create' partner.pk %}">+ Assign Villa</a>
       {% if total_payout > 0 and not is_fully_paid %}
-        <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?year={{ year }}&month={{ month }}&amount={{ remaining_payout }}">Record Payout</a>
+        <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?{% if shares|length == 1 %}villa={{ shares.0.villa.pk }}&{% endif %}year={{ year }}&month={{ month }}&amount={{ remaining_payout }}">Record Payout</a>
       {% endif %}
     </div>
   </div>
@@ -69,16 +69,21 @@
             </div>
             <div class="partner-row__side">
               <div class="partner-row__amount">
-                <div style="font-weight: 700; font-size: 15px; color: {% if share.cut >= 0 %}var(--success, #22c55e){% else %}var(--danger, #ef4444){% endif %};">
+                <div style="font-weight: 700; font-size: 15px; color: {% if share.cut > 0 %}var(--success, #22c55e){% else %}var(--text-secondary){% endif %};">
                   QAR {{ share.cut|floatformat:"2g" }}
                 </div>
                 <div class="list-row__meta" style="font-size: 12px;">Partner cut · You: QAR {{ share.owner_cut|floatformat:"2g" }}</div>
               </div>
               <div class="partner-row__actions">
-                {% if share.payout %}
+                {% if share.is_fully_paid %}
                   <span class="pill pill--success">Paid</span>
-                {% else %}
+                {% elif share.is_partial %}
+                  <span class="pill pill--warning" title="Paid QAR {{ share.paid_amount|floatformat:'2g' }}">Paid {{ share.paid_amount|floatformat:"2g" }} · Due {{ share.remaining|floatformat:"2g" }}</span>
+                  <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?villa={{ share.villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.remaining }}">Pay QAR {{ share.remaining|floatformat:"2g" }}</a>
+                {% elif share.villa_net > 0 and share.cut > 0 %}
                   <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?villa={{ share.villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.cut }}">Pay</a>
+                {% else %}
+                  <span class="pill pill--neutral" style="font-size: 11px;">No Profit</span>
                 {% endif %}
                 <button type="button" class="btn btn--ghost btn--sm" onclick="openEditShareModal('{% url 'businesses:partner_share_edit' share.pk %}', '{{ share.villa.name|escapejs }}', '{{ share.percentage }}', '{{ share.owner_percentage }}')" title="Edit percentage">Edit</button>
                 <button type="button" class="btn btn--ghost btn--sm" style="color: var(--danger, #ef4444); padding: 0 8px;" onclick="openDeleteShareModal('{% url 'businesses:partner_share_delete' share.pk %}', '{{ partner.name|escapejs }}', '{{ share.villa.name|escapejs }}')" title="Remove villa share">✕</button>

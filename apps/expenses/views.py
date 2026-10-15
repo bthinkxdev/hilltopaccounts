@@ -261,6 +261,28 @@ def _back_to(request, default):
 
 @login_required
 @require_POST
+def expense_batch(request, action='paid'):
+    """Bulk mark paid or bulk verify selected expenses in one tap."""
+    ids = request.POST.getlist('expense_ids')
+    qs = selectors.expenses_visible_to(request.user).filter(pk__in=ids, status=Expense.Status.ACTIVE).select_related('villa', 'business')
+    count = 0
+    for exp in qs:
+        try:
+            if action == 'paid' and not exp.paid_on and can_pay_expense(request.user, exp):
+                admin = request.user.is_owner or selectors.is_business_manager_of(request.user, exp.business)
+                mark_expense_paid(expense=exp, paid_on=date.today(), payment_method=Expense.Method.BANK_TRANSFER if admin else Expense.Method.CASH, marked_by=request.user)
+                count += 1
+            elif action == 'verify' and exp.paid_on and not exp.verified_at:
+                verify_expense(expense=exp, verified_by=request.user)
+                count += 1
+        except (DomainError, PermissionDenied):
+            pass
+    if count:
+        messages.success(request, f'{count} expense(s) {"verified" if action == "verify" else "marked as paid"}.')
+    return redirect(_back_to(request, reverse('expenses:list')))
+
+@login_required
+@require_POST
 def expense_quick_paid(request, pk):
     """One tap: 'Paid'. Staff-paid money awaits the owner's verification; the owner's own payment is final."""
     expense = get_object_or_404(selectors.expenses_visible_to(request.user).select_related('villa', 'business', 'category'), pk=pk)

@@ -57,7 +57,9 @@
           <span>Profit Sharing Breakdown (100%) — {{ period_label }}</span>
           <div style="display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;">
             <span class="pill pill--neutral">Villa Net: QAR {{ pnl.net|floatformat:"2g" }}</span>
-            {% if has_unpaid_partners %}
+            {% if pnl.net <= 0 %}
+              <span class="pill pill--neutral" style="font-size: 11px;">No Profit to Distribute</span>
+            {% elif has_unpaid_partners %}
               <a class="btn btn--primary btn--sm" href="{% url 'businesses:villa_partner_payout_batch' villa.pk %}?year={{ year }}&month={{ month }}">Pay All Partners</a>
             {% endif %}
           </div>
@@ -70,7 +72,7 @@
             </div>
             <div class="partner-row__side">
               <div class="partner-row__amount">
-                <div style="font-weight: 700; font-size: 15px; color: {% if villa_owner_share.cut >= 0 %}var(--success, #22c55e){% else %}var(--danger, #ef4444){% endif %};">
+                <div style="font-weight: 700; font-size: 15px; color: {% if villa_owner_share.cut > 0 %}var(--success, #22c55e){% else %}var(--text-secondary){% endif %};">
                   QAR {{ villa_owner_share.cut|floatformat:"2g" }}
                 </div>
                 <div class="list-row__meta">{{ villa_owner_share.percentage }}% of profit</div>
@@ -89,16 +91,21 @@
             </div>
             <div class="partner-row__side">
               <div class="partner-row__amount">
-                <div style="font-weight: 600; font-size: 15px; color: {% if share.cut >= 0 %}var(--success, #22c55e){% else %}var(--danger, #ef4444){% endif %};">
+                <div style="font-weight: 600; font-size: 15px; color: {% if share.cut > 0 %}var(--success, #22c55e){% else %}var(--text-secondary){% endif %};">
                   QAR {{ share.cut|floatformat:"2g" }}
                 </div>
                 <div class="list-row__meta">{{ share.percentage }}% of profit</div>
               </div>
               <div class="partner-row__actions">
-                {% if share.payout %}
+                {% if share.is_fully_paid %}
                   <span class="pill pill--success">Paid ({{ share.payout.get_payment_method_display }})</span>
+                {% elif share.is_partial %}
+                  <span class="pill pill--warning" title="Paid QAR {{ share.paid_amount|floatformat:'2g' }}">Paid {{ share.paid_amount|floatformat:"2g" }} · Due {{ share.remaining|floatformat:"2g" }}</span>
+                  <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' share.partner.pk %}?villa={{ villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.remaining }}&from=villa">Pay QAR {{ share.remaining|floatformat:"2g" }}</a>
+                {% elif pnl.net > 0 and share.cut > 0 %}
+                  <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' share.partner.pk %}?villa={{ villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.cut }}&from=villa">Pay</a>
                 {% else %}
-                  <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' share.partner.pk %}?villa={{ villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.cut }}">Pay</a>
+                  <span class="pill pill--neutral" style="font-size: 11px;">No Profit</span>
                 {% endif %}
               </div>
             </div>
@@ -264,9 +271,16 @@
       {# 1.owner fixed expenses card #}
       {% if owner_fixed_rows %}
         <div class="card card--tight">
-          <div class="card__title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+          <div class="card__title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2); flex-wrap: wrap; gap: var(--space-2);">
             <span>Owner Expenses (e.g. Villa Rent)</span>
-            <span class="pill pill--neutral">Paid by Owner</span>
+            <div style="display: flex; align-items: center; gap: var(--space-2);">
+              <span class="pill pill--neutral">Paid by Owner</span>
+              <div class="batch-bar" style="display: none; align-items: center; gap: var(--space-2);">
+                <button type="submit" form="batch-form" formaction="{% url 'expenses:batch_paid' %}" class="btn btn--primary btn--sm batch-pay-btn" style="display: none;">Mark Paid</button>
+                <span class="batch-sep" style="display: none; font-size: 13px; color: var(--text-secondary); margin: 0 2px;">or</span>
+                <button type="submit" form="batch-form" formaction="{% url 'expenses:batch_verify' %}" class="btn btn--primary btn--sm batch-verify-btn" style="display: none;">Verify expenses</button>
+              </div>
+            </div>
           </div>
           <div class="grid--kpi grid--kpi-compact" style="margin-bottom: var(--space-2);">
             <div class="kpi"><div class="kpi__label">Total</div><div class="kpi__value">{{ owner_fixed_totals.total|floatformat:"2g" }}</div></div>
@@ -275,6 +289,11 @@
           </div>
           {% for row in owner_fixed_rows %}
             <div class="list-row list-row--compact">
+              {% if row.expense and row.expense.can_verify and row.expense.awaiting_verification %}
+                <input type="checkbox" name="expense_ids" value="{{ row.expense.pk }}" form="batch-form" class="bulk-cb" data-type="verify" onchange="updateBatch()" style="margin-right: var(--space-2); cursor: pointer;" title="Select to verify">
+              {% elif row.expense and row.expense.can_pay and not row.expense.paid_on %}
+                <input type="checkbox" name="expense_ids" value="{{ row.expense.pk }}" form="batch-form" class="bulk-cb" data-type="pay" onchange="updateBatch()" style="margin-right: var(--space-2); cursor: pointer;" title="Select to pay">
+              {% endif %}
               <div class="list-row__main">
                 <span class="list-row__title">{{ row.template.category }}</span>
                 <div class="list-row__meta">{{ row.amount|floatformat:"2g" }} · due {{ row.due_date|date:"d M" }} · {{ row.template.get_paid_by_display }}{% if row.template.auto_debit %} · auto-debit{% endif %}{% if row.expense.paid_on %} · paid {{ row.expense.paid_on|date:"d M" }}{% if row.expense.paid_by_user %} by {% if row.expense.paid_by_user == request.user %}you{% else %}{{ row.expense.paid_by_user.get_full_name|default:row.expense.paid_by_user.username }}{% endif %}{% endif %}{% endif %}</div>
@@ -297,9 +316,16 @@
       {# 2.staff fixed expenses card #}
       {% if staff_fixed_rows %}
         <div class="card card--tight" style="margin-top: var(--space-3);">
-          <div class="card__title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+          <div class="card__title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2); flex-wrap: wrap; gap: var(--space-2);">
             <span>Staff Expenses (Utilities &amp; Maintenance)</span>
-            <span class="pill pill--neutral">Paid from collected cash</span>
+            <div style="display: flex; align-items: center; gap: var(--space-2);">
+              <span class="pill pill--neutral">Paid from collected cash</span>
+              <div class="batch-bar" style="display: none; align-items: center; gap: var(--space-2);">
+                <button type="submit" form="batch-form" formaction="{% url 'expenses:batch_paid' %}" class="btn btn--primary btn--sm batch-pay-btn" style="display: none;">Mark Paid</button>
+                <span class="batch-sep" style="display: none; font-size: 13px; color: var(--text-secondary); margin: 0 2px;">or</span>
+                <button type="submit" form="batch-form" formaction="{% url 'expenses:batch_verify' %}" class="btn btn--primary btn--sm batch-verify-btn" style="display: none;">Verify expenses</button>
+              </div>
+            </div>
           </div>
           <div class="grid--kpi grid--kpi-compact" style="margin-bottom: var(--space-2);">
             <div class="kpi"><div class="kpi__label">Total</div><div class="kpi__value">{{ staff_fixed_totals.total|floatformat:"2g" }}</div></div>
@@ -308,6 +334,11 @@
           </div>
           {% for row in staff_fixed_rows %}
             <div class="list-row list-row--compact">
+              {% if row.expense and row.expense.can_verify and row.expense.awaiting_verification %}
+                <input type="checkbox" name="expense_ids" value="{{ row.expense.pk }}" form="batch-form" class="bulk-cb" data-type="verify" onchange="updateBatch()" style="margin-right: var(--space-2); cursor: pointer;" title="Select to verify">
+              {% elif row.expense and row.expense.can_pay and not row.expense.paid_on %}
+                <input type="checkbox" name="expense_ids" value="{{ row.expense.pk }}" form="batch-form" class="bulk-cb" data-type="pay" onchange="updateBatch()" style="margin-right: var(--space-2); cursor: pointer;" title="Select to pay">
+              {% endif %}
               <div class="list-row__main">
                 <span class="list-row__title">{{ row.template.category }}</span>
                 <div class="list-row__meta">{{ row.amount|floatformat:"2g" }} · due {{ row.due_date|date:"d M" }} · {{ row.template.get_paid_by_display }}{% if row.template.auto_debit %} · auto-debit{% endif %}{% if row.expense.paid_on %} · paid {{ row.expense.paid_on|date:"d M" }}{% if row.expense.paid_by_user %} by {% if row.expense.paid_by_user == request.user %}you{% else %}{{ row.expense.paid_by_user.get_full_name|default:row.expense.paid_by_user.username }}{% endif %}{% endif %}{% endif %}</div>
@@ -345,10 +376,26 @@
     {% endif %}
     {% if can_admin_fixed %}<div class="quick-actions" style="margin-top: var(--space-2);"><a class="btn btn--ghost btn--sm" href="{% url 'expenses:recurring_create' villa.pk %}">+ Add villa expense</a></div>{% endif %}
 
-    <div class="detail-section__title" style="margin-top: var(--space-3);">Partition expenses — {{ period_label }}</div>
+    <form method="post" id="batch-form" style="display: none;">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}#partition-expenses">
+    </form>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: var(--space-3); margin-bottom: var(--space-2); flex-wrap: wrap; gap: var(--space-2);">
+      <div class="detail-section__title" id="partition-expenses" style="margin: 0;">Partition expenses — {{ period_label }}</div>
+      <div class="batch-bar" style="display: none; align-items: center; gap: var(--space-2);">
+        <button type="submit" form="batch-form" formaction="{% url 'expenses:batch_paid' %}" class="btn btn--primary btn--sm batch-pay-btn" style="display: none;">Mark Paid</button>
+        <span class="batch-sep" style="display: none; font-size: 13px; color: var(--text-secondary); margin: 0 2px;">or</span>
+        <button type="submit" form="batch-form" formaction="{% url 'expenses:batch_verify' %}" class="btn btn--primary btn--sm batch-verify-btn" style="display: none;">Verify expenses</button>
+      </div>
+    </div>
     <div class="card card--tight">
       {% for expense in one_off_expenses %}
         <div class="list-row list-row--compact">
+          {% if expense.can_verify and expense.awaiting_verification %}
+            <input type="checkbox" name="expense_ids" value="{{ expense.pk }}" form="batch-form" class="bulk-cb" data-type="verify" onchange="updateBatch()" style="margin-right: var(--space-2); cursor: pointer;" title="Select to verify">
+          {% elif expense.can_pay and not expense.paid_on %}
+            <input type="checkbox" name="expense_ids" value="{{ expense.pk }}" form="batch-form" class="bulk-cb" data-type="pay" onchange="updateBatch()" style="margin-right: var(--space-2); cursor: pointer;" title="Select to pay">
+          {% endif %}
           <div class="list-row__main">
             <span class="list-row__title">{{ expense.category }} — {{ expense.amount|floatformat:"2g" }}</span>
             <div class="list-row__meta">{% if expense.partition %}{{ expense.partition.name }} · {% endif %}{{ expense.date|date:"d M" }}{% if expense.due_date %} · due {{ expense.due_date|date:"d M" }}{% endif %} · {% if expense.paid_on and expense.paid_by_user %}Paid by {% if expense.paid_by_user == request.user %}you{% else %}{{ expense.paid_by_user.get_full_name|default:expense.paid_by_user.username }}{% endif %}{% else %}{{ expense.get_paid_by_display }}{% endif %}{% if expense.created_by %} · created by {{ expense.created_by.get_full_name|default:expense.created_by.username }}{% endif %}</div>
@@ -473,7 +520,10 @@
         </div>
 
         <div class="field" style="margin-bottom:var(--space-3);">
-          <label for="modal-received-amount" style="font-size:13px; font-weight:600;">Amount Received Now (QAR)</label>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--space-1);">
+            <label for="modal-received-amount" style="font-size:13px; font-weight:600; margin-bottom:0;">Amount Received Now (QAR)</label>
+            <button type="button" id="modal-fill-balance-btn" class="btn btn--ghost btn--sm" style="font-size:11px; padding:2px 8px; height:auto; display:none;" onclick="fillRemainingBalance()">Set to balance</button>
+          </div>
           <input type="number" step="0.01" min="0.01" id="modal-received-amount" name="amount" required>
           <div id="modal-calc-hint" style="font-size:12px; margin-top:var(--space-1); font-weight:500;"></div>
         </div>
@@ -488,7 +538,7 @@
 
         <div style="display:flex; justify-content:flex-end; gap:var(--space-2);">
           <button type="button" class="btn btn--ghost" onclick="closeRentCollectModal()">Cancel</button>
-          <button type="submit" class="btn btn--primary">Record Payment</button>
+          <button type="submit" id="modal-submit-btn" class="btn btn--primary">Record Payment</button>
         </div>
       </form>
     </dialog>
@@ -561,27 +611,56 @@ function openRentCollectModal(btn) {
   setTimeout(() => rentInput.blur(), 20);
 }
 
+function fillRemainingBalance() {
+  const rent = parseFloat(document.getElementById('modal-rent-amount').value) || 0;
+  const other = rentModalState.charges.reduce((s, c) => c.name !== 'Rent' ? s + (+c.amount || 0) : s, 0);
+  document.getElementById('modal-received-amount').value = Math.max(0, rent + other - rentModalState.paid).toFixed(2);
+  updateRentBalanceCalc();
+}
+
 function updateRentBalanceCalc() {
-  const rentVal = parseFloat(document.getElementById('modal-rent-amount').value) || 0;
-  const otherSum = rentModalState.charges.reduce((s, c) => c.name !== 'Rent' ? s + (parseFloat(c.amount) || 0) : s, 0);
-  const total = rentVal + otherSum;
+  const rent = parseFloat(document.getElementById('modal-rent-amount').value) || 0;
+  const total = rent + rentModalState.charges.reduce((s, c) => c.name !== 'Rent' ? s + (+c.amount || 0) : s, 0);
+  const balance = Math.max(0, total - rentModalState.paid);
+  const received = parseFloat(document.getElementById('modal-received-amount').value) || 0;
+  const rem = total - rentModalState.paid - received;
+  const isOver = rem < -0.009;
+
   document.getElementById('modal-charges-total').textContent = `QAR ${total.toFixed(2)}`;
   const rentRow = document.getElementById('modal-charge-rent-val');
-  if (rentRow) rentRow.textContent = `QAR ${rentVal.toFixed(2)}`;
+  if (rentRow) rentRow.textContent = `QAR ${rent.toFixed(2)}`;
 
-  const received = parseFloat(document.getElementById('modal-received-amount').value) || 0;
   const hint = document.getElementById('modal-calc-hint');
-  const rem = total - rentModalState.paid - received;
-  if (rem > 0.009) {
+  document.getElementById('modal-submit-btn').disabled = received <= 0 || isOver;
+
+  if (isOver) {
+    hint.textContent = `Cannot record: Exceeds balance (Max: QAR ${balance.toFixed(2)}).`;
+    hint.style.color = 'var(--danger, #ef4444)';
+  } else if (rem > 0.009) {
     hint.textContent = `Partial payment: QAR ${rem.toFixed(2)} will remain unpaid.`;
     hint.style.color = 'var(--warning, #f59e0b)';
-  } else if (rem < -0.009) {
-    hint.textContent = `Note: Received amount exceeds remaining balance.`;
-    hint.style.color = 'var(--danger, #ef4444)';
   } else {
-    hint.textContent = `Full payment: No remaining balance.`;
-    hint.style.color = 'var(--success, #10b981)';
+    hint.textContent = received > 0 ? `Full payment: Clears balance.` : `Enter an amount to collect.`;
+    hint.style.color = received > 0 ? 'var(--success, #10b981)' : 'var(--text-secondary)';
   }
+}
+
+function updateBatch() {
+  const p = document.querySelectorAll('.bulk-cb[data-type="pay"]:checked').length;
+  const v = document.querySelectorAll('.bulk-cb[data-type="verify"]:checked').length;
+  const show = (p + v) > 0;
+  document.querySelectorAll('.batch-bar').forEach(b => b.style.display = show ? 'inline-flex' : 'none');
+  document.querySelectorAll('.batch-pay-btn').forEach(btn => {
+    btn.style.display = p ? 'inline-flex' : 'none';
+    btn.textContent = `Mark ${p} Paid`;
+  });
+  document.querySelectorAll('.batch-sep').forEach(s => {
+    s.style.display = (p && v) ? 'inline' : 'none';
+  });
+  document.querySelectorAll('.batch-verify-btn').forEach(btn => {
+    btn.style.display = v ? 'inline-flex' : 'none';
+    btn.textContent = `Verify expenses (${v})`;
+  });
 }
 
 function closeRentCollectModal() {
@@ -589,25 +668,8 @@ function closeRentCollectModal() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  const rentInput = document.getElementById('modal-rent-amount');
-  const receivedInput = document.getElementById('modal-received-amount');
-
-  if (rentInput) {
-    rentInput.addEventListener('input', () => {
-      const rentVal = parseFloat(rentInput.value) || 0;
-      const otherSum = rentModalState.charges.reduce((s, c) => c.name !== 'Rent' ? s + (parseFloat(c.amount) || 0) : s, 0);
-      const newTotal = rentVal + otherSum;
-      const newBalance = Math.max(0, newTotal - rentModalState.paid);
-      if (receivedInput) {
-        receivedInput.value = newBalance.toFixed(2);
-      }
-      updateRentBalanceCalc();
-    });
-  }
-
-  if (receivedInput) {
-    receivedInput.addEventListener('input', updateRentBalanceCalc);
-  }
+  document.getElementById('modal-rent-amount')?.addEventListener('input', fillRemainingBalance);
+  document.getElementById('modal-received-amount')?.addEventListener('input', updateRentBalanceCalc);
 });
 </script>
 {% endblock %}

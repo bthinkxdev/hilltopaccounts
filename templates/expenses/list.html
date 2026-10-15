@@ -41,7 +41,7 @@
     </a>
   </div>
 
-  <form class="filter-bar" method="get">
+  <form class="filter-bar expense-filters" method="get">
     <select name="villa" onchange="this.form.submit()">
       <option value="">All villas</option>
       {% for villa in villas %}
@@ -60,24 +60,47 @@
       <option value="reversed" {% if status == "reversed" %}selected{% endif %}>Reversed</option>
       <option value="" {% if not status %}selected{% endif %}>All</option>
     </select>
-    {% if has_filters %}<a class="btn btn--ghost" href="{{ request.path }}">Clear Filter</a>{% endif %}
+    {% if has_filters %}<a class="btn btn--ghost filter-clear-btn" href="{{ request.path }}">Clear Filter</a>{% endif %}
   </form>
 
   {% if page_obj %}
+    <form method="post" id="batch-form" style="display: none;">
+      {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+    </form>
+
+    <div id="bulk-expense-bar" style="display: none; align-items: center; justify-content: space-between; background: var(--surface-sunken); border: 1px solid var(--border-subtle); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); margin-bottom: var(--space-3);">
+      <label style="display: flex; align-items: center; gap: var(--space-2); cursor: pointer; font-size: 13px; font-weight: 600; margin: 0;">
+        <input type="checkbox" id="bulk-select-all" onchange="toggleSelectAll(this)">
+        <span id="bulk-selected-count">Select all</span>
+      </label>
+      <div style="display: flex; align-items: center; gap: var(--space-2);">
+        <button type="submit" form="batch-form" formaction="{% url 'expenses:batch_verify' %}" class="btn btn--primary btn--sm" id="bulk-verify-btn" style="display: none;">Verify expenses</button>
+        <span id="bulk-btn-sep" style="display: none; font-size: 13px; color: var(--text-secondary); margin: 0 2px;">or</span>
+        <button type="submit" form="batch-form" formaction="{% url 'expenses:batch_paid' %}" class="btn btn--primary btn--sm" id="bulk-pay-btn" style="display: none;">Mark Paid</button>
+      </div>
+    </div>
+
     <div class="expense-list">
       {% for expense in page_obj %}
         <div class="expense-row">
-          <div class="expense-row__main">
-            <div class="expense-row__top">
-              <span class="expense-row__category">{{ expense.category }}</span>
-              <span class="expense-row__amount">QAR {{ expense.amount|floatformat:"2" }}</span>
-            </div>
-            <div class="expense-row__meta">
-              <span>{% if expense.villa %}{{ expense.villa.name }}{% if expense.partition %} / {{ expense.partition.name }}{% endif %}{% else %}{{ expense.business.name }}{% endif %}</span>
-              <span class="sep">•</span>
-              <span>{{ expense.date|date:"d M Y" }}{% if expense.due_date %} · due {{ expense.due_date|date:"d M" }}{% endif %}</span>
-              <span class="sep">•</span>
-              <span class="expense-row__payer">{% if expense.paid_on and expense.paid_by_user %}Paid by {% if expense.paid_by_user == request.user %}you{% else %}{{ expense.paid_by_user.get_full_name|default:expense.paid_by_user.username }}{% endif %}{% else %}{{ expense.get_paid_by_display }}{% endif %}</span>
+          <div class="expense-row__head">
+            {% if expense.can_verify and expense.awaiting_verification %}
+              <input type="checkbox" name="expense_ids" value="{{ expense.pk }}" form="batch-form" class="bulk-cb" data-type="verify" onchange="updateBulkBar()" style="cursor: pointer;" title="Select to verify">
+            {% elif expense.can_pay and not expense.paid_on %}
+              <input type="checkbox" name="expense_ids" value="{{ expense.pk }}" form="batch-form" class="bulk-cb" data-type="pay" onchange="updateBulkBar()" style="cursor: pointer;" title="Select to pay">
+            {% endif %}
+            <div class="expense-row__main">
+              <div class="expense-row__top">
+                <span class="expense-row__category">{{ expense.category }}</span>
+                <span class="expense-row__amount">QAR {{ expense.amount|floatformat:"2" }}</span>
+              </div>
+              <div class="expense-row__meta">
+                <span>{% if expense.villa %}{{ expense.villa.name }}{% if expense.partition %} / {{ expense.partition.name }}{% endif %}{% else %}{{ expense.business.name }}{% endif %}</span>
+                <span class="sep">•</span>
+                <span>{{ expense.date|date:"d M Y" }}{% if expense.due_date %} · due {{ expense.due_date|date:"d M" }}{% endif %}</span>
+                <span class="sep">•</span>
+                <span class="expense-row__payer">{% if expense.paid_on and expense.paid_by_user %}Paid by {% if expense.paid_by_user == request.user %}you{% else %}{{ expense.paid_by_user.get_full_name|default:expense.paid_by_user.username }}{% endif %}{% else %}{{ expense.get_paid_by_display }}{% endif %}</span>
+              </div>
             </div>
           </div>
           <div class="expense-row__side">
@@ -112,4 +135,31 @@
   {% endif %}
 
   {% include "components/pagination.html" %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function updateBulkBar() {
+  const all = document.querySelectorAll('.bulk-cb');
+  const v = document.querySelectorAll('.bulk-cb[data-type="verify"]:checked').length;
+  const p = document.querySelectorAll('.bulk-cb[data-type="pay"]:checked').length;
+  const bar = document.getElementById('bulk-expense-bar');
+  if (bar) bar.style.display = all.length ? 'flex' : 'none';
+  const vb = document.getElementById('bulk-verify-btn');
+  if (vb) { vb.style.display = v ? 'inline-flex' : 'none'; vb.textContent = `Verify expenses (${v})`; }
+  const pb = document.getElementById('bulk-pay-btn');
+  if (pb) { pb.style.display = p ? 'inline-flex' : 'none'; pb.textContent = `Mark Paid (${p})`; }
+  const sep = document.getElementById('bulk-btn-sep');
+  if (sep) sep.style.display = (v && p) ? 'inline' : 'none';
+  const m = document.getElementById('bulk-select-all');
+  if (m) { m.checked = all.length > 0 && (v + p) === all.length; m.indeterminate = (v + p) > 0 && (v + p) < all.length; }
+  const cnt = document.getElementById('bulk-selected-count');
+  if (cnt) cnt.textContent = (v + p) ? `${v + p} selected` : `Select all (${all.length})`;
+}
+function toggleSelectAll(m) {
+  document.querySelectorAll('.bulk-cb').forEach(cb => cb.checked = m.checked);
+  updateBulkBar();
+}
+document.addEventListener('DOMContentLoaded', updateBulkBar);
+</script>
 {% endblock %}

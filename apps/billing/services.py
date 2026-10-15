@@ -197,7 +197,7 @@ def collect_rent(*, partition, year, month, method, collected_by, amount=None, r
             if pay_amount <= Decimal('0.00'):
                 raise DomainError('Received amount must be greater than zero.')
             if pay_amount > outstanding:
-                raise PaymentExceedsOutstanding(f'Payment {pay_amount} exceeds outstanding balance {outstanding}.')
+                raise PaymentExceedsOutstanding(f'Cannot record payment: Amount (QAR {pay_amount}) exceeds remaining balance (QAR {outstanding}).')
         else:
             pay_amount = outstanding
 
