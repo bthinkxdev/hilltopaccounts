@@ -1,0 +1,97 @@
+{% extends "listings/base.html" %}
+{% load static %}
+{% block title %}{{ brand }} — Find your perfect home in Al Khor, Qatar{% endblock %}
+{% block style %}
+<style>
+.hero{position:relative;overflow:hidden;background:var(--bg)}
+.hero__bg{position:absolute;inset:0;background:url("{% static 'listings/hero.jpg' %}") right center/cover no-repeat}
+.hero__bg::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(251,250,245,.97) 0%,rgba(251,250,245,.9) 48%,rgba(251,250,245,.25) 100%)}
+@media(min-width:860px){.hero__bg{left:32%;background-position:left center}.hero__bg::after{background:linear-gradient(90deg,#fbfaf5 0%,rgba(251,250,245,.7) 18%,rgba(251,250,245,0) 55%)}}
+.hero .wrap{position:relative;z-index:2;padding-top:30px;padding-bottom:36px}
+@media(min-width:860px){.hero .wrap{padding-top:54px;padding-bottom:64px}}
+.hero__loc{display:flex;align-items:center;gap:8px;color:var(--fg);font-size:15px;font-weight:500}
+.hero__loc svg{width:20px;height:20px;fill:var(--green)}
+.hero h1{margin-top:14px;font-size:clamp(34px,8.6vw,64px);line-height:1.08;letter-spacing:-.03em;font-weight:700;color:#10261d;max-width:620px}
+.hero h1 b{display:block;color:var(--green);font-weight:800;font-size:1.22em;line-height:1.04}
+.hero p{margin-top:16px;max-width:430px;font-size:clamp(15px,3.8vw,19px);color:#26382f;line-height:1.5}
+.hero__script{position:absolute;z-index:3;right:6%;top:46px;transform:rotate(-8deg);font-size:clamp(26px,4vw,38px);line-height:1;color:#18372b;text-align:left}
+@media(max-width:859px){.hero__script{position:relative;display:block;transform:rotate(-3deg);margin:16px 0 0 18px;font-size:28px}}
+.glance{margin-top:20px;background:var(--mint);border-radius:30px;padding:22px 16px 20px}
+@media(min-width:700px){.glance{padding:28px 32px}}
+.cta-hero{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}
+.cta-hero a{display:inline-flex;align-items:center;height:50px;padding:0 26px;border-radius:99px;font-weight:600;font-size:15px}
+.cta-hero .primary{background:var(--green);color:#fff;box-shadow:0 10px 24px rgba(11,91,65,.28)}
+.cta-hero .ghost{background:#fff;color:var(--green);border:1.5px solid var(--green)}
+.viewall{display:inline-flex;align-items:center;gap:8px;height:46px;padding:0 22px;border-radius:99px;background:var(--green);color:#fff;font-weight:600;font-size:14.5px;box-shadow:0 8px 20px rgba(11,91,65,.25);transition:transform .15s}
+.viewall:active{transform:scale(.97)}
+.viewall svg{width:18px;height:18px;fill:none;stroke:#fff;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.glance__top .viewall{display:none}
+@media(min-width:700px){.glance__top .viewall{display:inline-flex}}
+.glance__cards{margin-top:20px}
+.viewall-row{display:flex;justify-content:center;margin-top:22px}
+.glance__top{display:flex;flex-wrap:wrap;align-items:center;gap:14px 24px}
+.glance__top>div:first-child{flex:1 1 320px}
+.glance h2{font-size:clamp(25px,6vw,38px);letter-spacing:-.03em;line-height:1.1;margin-top:12px}
+.glance h2 em{font-style:normal;color:var(--green)}
+.glance .sub{color:#33463d;margin-top:6px;font-size:14.5px}
+.limited{font-size:30px;line-height:1;color:#10261d;transform:rotate(-6deg)}
+.early{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #cfe6d8;border-radius:18px;padding:10px 20px 10px 12px;font-size:13px;line-height:1.3}
+.early b{display:block;font-size:14.5px}
+.early svg{width:40px;height:40px;stroke:var(--green);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.incl{display:grid;gap:18px;margin-top:20px;background:var(--mint);border-radius:26px;padding:24px 20px;align-items:center}
+.incl h2{font-size:clamp(24px,5.5vw,32px);letter-spacing:-.03em;line-height:1.12}
+.incl h2 em{font-style:normal;color:var(--green)}
+.incl p{margin-top:8px;color:#33463d;font-size:14.5px}
+.incl__grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px 8px;text-align:center}
+.incl__item{font-size:13.5px;line-height:1.3;color:#26382f;display:flex;flex-direction:column;align-items:center;gap:8px}
+.incl__item i{width:54px;height:54px;border-radius:50%;background:var(--green);display:grid;place-items:center;box-shadow:0 8px 16px rgba(11,91,65,.25)}
+.incl__item svg{width:28px;height:28px;stroke:#fff;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+@media(min-width:900px){.incl{grid-template-columns:.9fr 1.6fr;padding:28px 36px}.incl__grid{grid-template-columns:repeat(4,1fr);gap:0}.incl__item{padding:0 14px}.incl__item+.incl__item{border-left:1px solid #c9ddcf}}
+.cta-band{margin-top:20px}
+</style>
+{% endblock %}
+{% block body %}
+{% include "listings/_head.html" with active="home" %}
+
+<section class="hero">
+  <div class="hero__bg" role="img" aria-label="Bright, comfortable bedroom with a city view"></div>
+  <div class="hero__script script">Better Homes<br><span class="ul-gold">Brighter Days</span></div>
+  <div class="wrap">
+    <div class="hero__loc"><svg viewBox="0 0 24 24"><path d="M12 22s7-6.200 7-12a7 7 0 10-14 0c0 5.800 7 12 7 12zm0-9a3 3 0 110-6 3 3 0 010 6z"/></svg>Al Khor, Qatar</div>
+    <h1>Find Your <b>Perfect Home</b> in Al Khor, Qatar</h1>
+    <p>Comfortable rooms, modern studios and spacious apartments — all in one place.</p>
+    <div class="cta-hero"><a class="primary" href="#rooms">Browse available rooms</a><a class="ghost" href="{% url 'listings:list' %}?show=all">View all properties</a></div>
+  </div>
+</section>
+
+<div class="wrap">
+  <section class="glance" id="rooms">
+    <div class="glance__top">
+      <div>
+        <span class="glance-badge"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M12 3l9 8h-2.500v9h-5v-6h-3v6h-5v-9H3z"/></svg>Available Rooms</span>
+        <h2>Find Your <em>Space</em></h2>
+        <p class="sub">{{ available_count }} room{{ available_count|pluralize }} available now — swipe the photos and tap to explore.</p>
+      </div>
+      <div class="limited script ul-gold">Limited<br>Availability!</div>
+      <a class="viewall" href="{% url 'listings:list' %}">View all <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+    </div>
+    <div class="glance__cards">{% include "listings/_cards.html" %}</div>
+    {% if items %}<div class="viewall-row"><a class="viewall" href="{% url 'listings:list' %}">View all properties <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>{% endif %}
+  </section>
+
+  <section class="incl" id="about">
+    <div>
+      <h2>Everything You Need, <em>Included!</em></h2>
+      <p>No extra bills. Just move in and enjoy.</p>
+    </div>
+    <div class="incl__grid">
+      <div class="incl__item"><i><svg viewBox="0 0 24 24"><path d="M5 12.500a10 10 0 0114 0M8.500 16a5.500 5.500 0 017 0"/><circle cx="12" cy="19.500" r=".8" fill="#fff"/></svg></i>Wi-Fi<br>Included</div>
+      <div class="incl__item"><i><svg viewBox="0 0 24 24"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg></i>Electricity &amp; Water<br>Included</div>
+      <div class="incl__item"><i><svg viewBox="0 0 24 24"><path d="M14.500 6.500l3 3M4 20l9-9M13 5l6 6-2 2-6-6z"/></svg></i>Maintenance<br>Included</div>
+      <div class="incl__item"><i><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.500-3.300 8-8 9-4.700-1-8-4.500-8-9V6z"/><path d="M8.500 12l2.500 2.500 4.500-5"/></svg></i>Clean &amp; Neat<br>Rooms</div>
+    </div>
+  </section>
+
+  <div style="margin-top:20px">{% include "listings/_cta.html" %}</div>
+</div>
+{% endblock %}

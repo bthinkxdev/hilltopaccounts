@@ -59,21 +59,30 @@ def contact_for(partition):
 def _photos(partition):
     return list(partition.photos.all()) or list(partition.villa.photos.all())
 
-def listing_list(request):
-    partitions = list(_public_partitions().order_by('-created_at'))
-    available_only = request.GET.get('show') != 'all'
-    items = []
-    contacts = {}
+def _build_items(partitions, *, available_only=False, limit=None):
+    items, contacts = [], {}
     for p in partitions:
-        photos = _photos(p)
         occupied = p.is_occupied
         if available_only and occupied:
             continue
         if p.villa_id not in contacts:
             contacts[p.villa_id] = contact_for(p)
-        items.append({'p': p, 'photos': photos, 'occupied': occupied, 'wa_url': _whatsapp_url(p, contacts[p.villa_id])})
+        items.append({'p': p, 'photos': _photos(p), 'occupied': occupied, 'wa_url': _whatsapp_url(p, contacts[p.villa_id])})
+        if limit and len(items) >= limit:
+            break
+    return items
+
+def listing_home(request):
+    partitions = list(_public_partitions().order_by('-created_at'))
     available_count = sum(1 for p in partitions if not p.is_occupied)
-    return render(request, 'listings/list.html', _brand({'items': items, 'available_only': available_only, 'total': len(partitions), 'available_count': available_count, 'villa_count': len({p.villa_id for p in partitions})}))
+    items = _build_items(partitions, available_only=True, limit=8)
+    return render(request, 'listings/home.html', _brand({'items': items, 'available_count': available_count, 'total': len(partitions)}))
+
+def listing_list(request):
+    partitions = list(_public_partitions().order_by('-created_at'))
+    available_only = request.GET.get('show') != 'all'
+    items = _build_items(partitions, available_only=available_only)
+    return render(request, 'listings/list.html', _brand({'items': items, 'available_only': available_only, 'total': len(partitions), 'available_count': sum(1 for p in partitions if not p.is_occupied)}))
 
 def listing_detail(request, pk):
     p = get_object_or_404(_public_partitions(), pk=pk)

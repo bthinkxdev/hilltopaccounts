@@ -15,6 +15,8 @@ class ListingTests(TestCase):
         Assignment.objects.create(user=staff, role='villa_staff', villa=cls.villa, created_by=owner)
 
     def test_public_pages_and_whatsapp(self):
+        r = self.client.get(reverse('listings:home'))
+        self.assertContains(r, 'P1')
         r = self.client.get(reverse('listings:list'))
         self.assertContains(r, 'P1')
         r = self.client.get(reverse('listings:detail', args=[self.part.pk]))

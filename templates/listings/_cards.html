@@ -1,0 +1,31 @@
+<div class="feed">
+  {% for it in items %}
+    <article class="card">
+      <div class="car" data-car>
+        <div class="card__badges"><span class="badge{% if it.occupied %} badge--rented{% endif %}">{% if it.occupied %}Rented{% else %}Available{% endif %}</span></div>
+        <div class="car__track">
+          {% for ph in it.photos %}
+            <a class="car__slide" href="{% url 'listings:detail' it.p.pk %}" tabindex="-1"><img src="{% url 'listings:photo' ph.pk %}" alt="{{ it.p.name }} — {{ it.p.villa.name }}" decoding="async"{% if forloop.counter0 > 0 or forloop.parentloop.counter0 > 3 %} loading="lazy"{% endif %}></a>
+          {% empty %}
+            <a class="car__slide" href="{% url 'listings:detail' it.p.pk %}" tabindex="-1"><div class="car__empty">Photos coming soon</div></a>
+          {% endfor %}
+        </div>
+        {% if it.photos|length > 1 %}<div class="car__dots">{% for _ in it.photos|slice:":6" %}<span class="car__dot"></span>{% endfor %}</div>{% endif %}
+      </div>
+      <a class="card__body" href="{% url 'listings:detail' it.p.pk %}">
+        <div class="card__name">{{ it.p.name }}</div>
+        <div class="card__loc"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.200 7-12a7 7 0 10-14 0c0 5.800 7 12 7 12z"/><circle cx="12" cy="10" r="2.500"/></svg><span>{{ it.p.villa.name }}{% if it.p.villa.address %} · {{ it.p.villa.address }}{% endif %}</span></div>
+        {% if it.p.rent %}<div class="card__price">{{ currency }} {{ it.p.rent|floatformat:"0g" }}<small>/ month</small></div>{% endif %}
+      </a>
+      <div class="card__act">
+        {% if it.wa_url %}
+          <a class="wa" href="{{ it.wa_url }}" target="_blank" rel="noopener"><svg class="ico"><use href="#wa"/></svg>WhatsApp</a>
+        {% else %}
+          <span class="wa wa--off">Unavailable</span>
+        {% endif %}
+      </div>
+    </article>
+  {% empty %}
+    <div class="empty">Nothing available right now.<br>New homes are on the way — <a href="{% url 'listings:list' %}?show=all" style="text-decoration:underline">see all spaces</a>.</div>
+  {% endfor %}
+</div>

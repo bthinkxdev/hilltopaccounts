@@ -1,190 +1,36 @@
 {% extends "listings/base.html" %}
 {% load static %}
+{% block title %}Properties — {{ brand }} · Al Khor, Qatar{% endblock %}
 {% block style %}
 <style>
-.script{font-family:"Segoe Script","Snell Roundhand","Brush Script MT","Lucida Handwriting",cursive;font-weight:600;letter-spacing:0}
-.nav{position:absolute;top:0;left:0;right:0;z-index:5;padding:calc(env(safe-area-inset-top) + 14px) 0 0}
-.nav .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.logo img{height:46px;width:auto;display:block}
-.nav-cta{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:99px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.28);color:#fff;font-size:13px;font-weight:600;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
-.nav-cta .ico{font-size:16px;color:var(--gold)}
-.hero{position:relative;background:linear-gradient(160deg,#0f5340 0%,#0b3d2e 55%,#082a20 100%);color:#fff;padding:calc(env(safe-area-inset-top) + 96px) 0 64px;border-radius:0 0 34px 34px;overflow:hidden}
-.hero::before{content:"";position:absolute;inset:0;background:radial-gradient(700px 360px at 90% -5%,rgba(242,194,48,.22),transparent 60%),radial-gradient(500px 300px at -10% 105%,rgba(255,255,255,.08),transparent 60%)}
-.hero::after{content:"";position:absolute;left:-10%;right:-10%;bottom:-2px;height:10px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.9;filter:blur(.3px)}
-.hero .wrap{position:relative;z-index:1}
-.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
-.eyebrow::before{content:"";width:22px;height:2px;background:var(--gold);border-radius:2px}
-.hero h1{font-size:clamp(34px,9vw,68px);line-height:1.03;letter-spacing:-.035em;margin-top:14px;max-width:780px;font-weight:800}
-.hero h1 em{font-style:normal;color:var(--gold)}
-.hero p{margin-top:14px;max-width:560px;color:rgba(255,255,255,.78);font-size:clamp(14.5px,3.8vw,17px)}
-.cta{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
-.cta a{display:inline-flex;align-items:center;gap:8px;height:50px;padding:0 24px;border-radius:99px;font-weight:700;font-size:15px}
-.cta .primary{background:var(--gold);color:#0b2a20;box-shadow:0 10px 26px rgba(242,194,48,.35)}
-.cta .ghost{border:1px solid rgba(255,255,255,.32);color:#fff}
-.tagline{display:block;margin-top:30px;color:rgba(255,255,255,.7);font-size:clamp(15px,4vw,18px)}
-.stats{display:flex;gap:30px;margin-top:22px;padding-top:20px;border-top:1px solid rgba(255,255,255,.16)}
-.stats b{display:block;font-size:24px;letter-spacing:-.02em;color:var(--gold2)}
-.stats span{font-size:12px;color:rgba(255,255,255,.65)}
-.perks{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:-28px;position:relative;z-index:2}
-@media(min-width:900px){.perks{grid-template-columns:repeat(4,1fr);gap:16px}}
-.perk{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:18px;padding:14px;box-shadow:0 12px 32px rgba(11,61,46,.12)}
-.perk i{flex:none;width:40px;height:40px;border-radius:50%;background:var(--green);display:grid;place-items:center;box-shadow:inset 0 0 0 2px rgba(242,194,48,.7)}
-.perk i svg{width:20px;height:20px;stroke:#fff}
-.perk b{display:block;font-size:13px;line-height:1.25;letter-spacing:-.01em}
-.perk span{display:block;font-size:11.5px;color:var(--mute);line-height:1.3}
-.sec-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding:38px 0 14px}
-.sec-head h2{font-size:clamp(23px,5.5vw,34px);letter-spacing:-.03em;line-height:1.1;color:var(--green)}
-.sec-head p{color:var(--mute);font-size:13.5px;margin-top:4px}
-.chips{display:flex;gap:4px;background:var(--soft);padding:4px;border-radius:99px;flex:none}
-.chip{padding:8px 16px;border-radius:99px;font-size:13px;font-weight:700;color:var(--mute);transition:all .2s}
-.chip.on{background:var(--green);color:#fff;box-shadow:0 2px 10px rgba(11,61,46,.3)}
-.feed{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding-bottom:8px}
-@media(min-width:720px){.feed{grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}}
-@media(min-width:1100px){.feed{grid-template-columns:repeat(4,minmax(0,1fr));gap:24px}}
-.card{display:flex;flex-direction:column;background:#fff;border-radius:20px;border:1px solid var(--line);overflow:hidden;box-shadow:0 1px 2px rgba(11,61,46,.05),0 10px 26px rgba(11,61,46,.08);transition:transform .3s var(--ease),box-shadow .3s;animation:rise .5s var(--ease) both}
-@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
-@media(hover:hover){.card:hover{transform:translateY(-4px);box-shadow:0 2px 4px rgba(11,61,46,.06),0 24px 48px rgba(11,61,46,.16)}}
-.card .car{aspect-ratio:4/5}
-@media(min-width:720px){.card .car{aspect-ratio:4/3.4}}
-.card__badges{position:absolute;top:10px;left:10px;z-index:2}
-.card__body{display:block;padding:12px 12px 6px}
-.card__name{font-size:14.5px;font-weight:800;letter-spacing:-.02em;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--green)}
-.card__loc{display:flex;align-items:center;gap:4px;color:var(--mute);font-size:12px;margin-top:3px;overflow:hidden;white-space:nowrap}
-.card__loc span{overflow:hidden;text-overflow:ellipsis}
-.card__loc svg{flex:none}
-.card__price{margin-top:8px;font-size:15px;font-weight:800;letter-spacing:-.02em}
-.card__price small{font-size:11px;color:var(--mute);font-weight:500;margin-left:2px}
-.card__act{padding:8px 12px 12px;margin-top:auto}
-.wa{display:flex;align-items:center;justify-content:center;gap:7px;height:40px;border-radius:12px;background:var(--green);color:#fff;font-weight:700;font-size:13px;transition:transform .15s,background .2s;width:100%;box-shadow:inset 0 0 0 1px rgba(242,194,48,.5)}
-.wa:active{transform:scale(.97)}
-.wa .ico{font-size:17px;color:var(--gold)}
-.wa--off{background:var(--soft);color:var(--mute);pointer-events:none;box-shadow:none}
-@media(min-width:720px){.card__body{padding:16px 16px 6px}.card__name{font-size:17px}.card__loc{font-size:13px}.card__price{font-size:18px}.card__act{padding:10px 16px 16px}.wa{height:44px;font-size:14px}}
-.empty{grid-column:1/-1;text-align:center;color:var(--mute);padding:70px 20px}
-.soon{display:grid;gap:0;margin-top:48px;background:var(--green);color:#fff;border-radius:28px;overflow:hidden;box-shadow:0 20px 50px rgba(11,61,46,.25)}
-.soon img{width:100%;height:100%;object-fit:cover;display:block;aspect-ratio:1/1}
-.soon__txt{padding:26px 22px 28px}
-.soon__tag{display:inline-block;background:var(--gold);color:#0b2a20;font-weight:800;font-size:12px;letter-spacing:.08em;text-transform:uppercase;padding:6px 12px;border-radius:99px}
-.soon h3{font-size:clamp(24px,6vw,36px);letter-spacing:-.03em;line-height:1.1;margin-top:14px}
-.soon h3 em{font-style:normal;color:var(--gold)}
-.soon p{margin-top:10px;color:rgba(255,255,255,.78);font-size:14.5px}
-.soon ul{list-style:none;padding:0;margin:16px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;font-size:13.5px;font-weight:600}
-.soon li::before{content:"✓";color:var(--gold);margin-right:7px;font-weight:800}
-.soon .cta{margin-top:22px}
-@media(min-width:800px){.soon{grid-template-columns:1fr 1fr}.soon__txt{padding:44px 40px;align-self:center}.soon img{aspect-ratio:auto;min-height:100%}}
-.foot{margin-top:56px;background:var(--green);color:#fff;border-radius:34px 34px 0 0;padding:44px 0 calc(env(safe-area-inset-bottom) + 28px);position:relative;overflow:hidden}
-.foot::before{content:"";position:absolute;left:0;right:0;top:0;height:6px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
-.foot__grid{display:grid;gap:28px}
-@media(min-width:800px){.foot__grid{grid-template-columns:1.2fr 1fr;align-items:center}}
-.foot img{height:92px;width:auto;display:block}
-.foot h3{font-size:clamp(20px,5vw,26px);letter-spacing:-.02em;line-height:1.2}
-.foot .contact{display:grid;gap:10px;margin-top:16px}
-.foot .contact a{display:flex;align-items:center;gap:12px;font-weight:700;font-size:15px}
-.foot .contact .ico{font-size:22px;color:var(--gold)}
-.foot small{display:block;margin-top:30px;color:rgba(255,255,255,.5);font-size:12px}
+.chips{flex-wrap:wrap}
+.pagehead{padding:26px 0 0}
+.pagehead h1{font-size:clamp(28px,7vw,44px);letter-spacing:-.03em;line-height:1.1}
+.pagehead h1 em{font-style:normal;color:var(--green)}
+.pagehead p{color:var(--mute);margin-top:6px}
+.cta-wrap{margin-top:40px}
 </style>
 {% endblock %}
 {% block body %}
-<header class="hero">
-  <div class="nav"><div class="wrap">
-    <a class="logo" href="{% url 'listings:list' %}" aria-label="{{ brand }}"><img src="{% static 'listings/logo-white.png' %}" alt="{{ brand }}" width="70" height="46"></a>
-    <a class="nav-cta" href="https://wa.me/{{ brand_wa }}" target="_blank" rel="noopener"><svg class="ico"><use href="#wa"/></svg>{{ brand_phone }}</a>
-  </div></div>
-  <div class="wrap">
-    <span class="eyebrow">Al Khor · Qatar</span>
-    <h1>Better Homes, <em>Bigger Tomorrows.</em></h1>
-    <p>Comfortable studios, 1 BHK homes and rooms in Al Khor, just a walk from Lulu Al Khor Mall. Simple monthly pricing, and a real person on WhatsApp to help you move in.</p>
-    <div class="cta">
-      <a class="primary" href="#spaces">Browse available spaces</a>
-      <a class="ghost" href="#soon">Coming soon</a>
-    </div>
-    <span class="tagline script">Your comfort &bull; Our priority</span>
-    <div class="stats">
-      <div><b>{{ available_count }}</b><span>Available now</span></div>
-      <div><b>{{ villa_count }}</b><span>Villa{{ villa_count|pluralize }}</span></div>
-      <div><b>Al Khor</b><span>Next to Lulu Mall</span></div>
-    </div>
-  </div>
-</header>
-
+{% include "listings/_head.html" with active="properties" %}
 <div class="wrap">
-  <div class="perks" id="why">
-    <div class="perk"><i><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5a10 10 0 0114 0M8.500 16a5.500 5.500 0 017 0"/><circle cx="12" cy="19.500" r=".6"/></svg></i><div><b>Wi-Fi included</b><span>Stay connected</span></div></div>
-    <div class="perk"><i><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.500 6.500l3 3M4 20l9-9M13 5l6 6-2 2-6-6z"/></svg></i><div><b>Maintenance included</b><span>We take care of it</span></div></div>
-    <div class="perk"><i><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg></i><div><b>Electricity &amp; water</b><span>Included in rent</span></div></div>
-    <div class="perk"><i><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.800 5.200L19 10l-5.200 1.800L12 17l-1.800-5.200L5 10l5.200-1.800zM19 17l.8 2.200L22 20l-2.200.8L19 23l-.8-2.200L16 20l2.200-.8z"/></svg></i><div><b>Clean &amp; neat</b><span>Well-kept rooms</span></div></div>
+  <div class="pagehead">
+    <h1>Find your <em>perfect home</em></h1>
+    <p>Al Khor, Qatar · {{ available_count }} room{{ available_count|pluralize }} available now</p>
   </div>
-
   <div class="sec-head" id="spaces">
     <div>
       <h2>{% if available_only %}Available now{% else %}All spaces{% endif %}</h2>
       <p>{{ items|length }} space{{ items|length|pluralize }} · swipe photos, tap to explore</p>
     </div>
     <div class="chips" role="tablist">
-      <a class="chip{% if available_only %} on{% endif %}" href="{% url 'listings:list' %}#spaces">Available</a>
-      <a class="chip{% if not available_only %} on{% endif %}" href="{% url 'listings:list' %}?show=all#spaces">All</a>
+      <a class="chip{% if available_only %} on{% endif %}" href="?">Available</a>
+      <a class="chip{% if not available_only %} on{% endif %}" href="?show=all">All</a>
     </div>
   </div>
 
-  <main class="feed">
-  {% for it in items %}
-    <article class="card">
-      <div class="car" data-car>
-        <div class="card__badges"><span class="badge{% if it.occupied %} badge--rented{% endif %}">{% if it.occupied %}Rented{% else %}Available{% endif %}</span></div>
-        <div class="car__track">
-          {% for ph in it.photos %}
-            <a class="car__slide" href="{% url 'listings:detail' it.p.pk %}" tabindex="-1"><img src="{% url 'listings:photo' ph.pk %}" alt="{{ it.p.name }} — {{ it.p.villa.name }}" decoding="async"{% if forloop.counter0 > 0 or forloop.parentloop.counter0 > 3 %} loading="lazy"{% endif %}></a>
-          {% empty %}
-            <a class="car__slide" href="{% url 'listings:detail' it.p.pk %}" tabindex="-1"><div class="car__empty">Photos coming soon</div></a>
-          {% endfor %}
-        </div>
-        {% if it.photos|length > 1 %}<div class="car__dots">{% for _ in it.photos|slice:":6" %}<span class="car__dot"></span>{% endfor %}</div>{% endif %}
-      </div>
-      <a class="card__body" href="{% url 'listings:detail' it.p.pk %}">
-        <div class="card__name">{{ it.p.name }}</div>
-        <div class="card__loc"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.200 7-12a7 7 0 10-14 0c0 5.800 7 12 7 12z"/><circle cx="12" cy="10" r="2.500"/></svg><span>{{ it.p.villa.name }}{% if it.p.villa.address %} · {{ it.p.villa.address }}{% endif %}</span></div>
-        {% if it.p.rent %}<div class="card__price">{{ currency }} {{ it.p.rent|floatformat:"0g" }}<small>/ month</small></div>{% endif %}
-      </a>
-      <div class="card__act">
-        {% if it.wa_url %}
-          <a class="wa" href="{{ it.wa_url }}" target="_blank" rel="noopener"><svg class="ico"><use href="#wa"/></svg>WhatsApp</a>
-        {% else %}
-          <span class="wa wa--off">Unavailable</span>
-        {% endif %}
-      </div>
-    </article>
-  {% empty %}
-    <div class="empty">Nothing available right now.<br>New homes are on the way — <a href="#soon" style="text-decoration:underline">see what's coming soon</a>.</div>
-  {% endfor %}
-  </main>
+  {% include "listings/_cards.html" %}
 
-  <section class="soon" id="soon">
-    <img src="{% static 'listings/banner-coming-soon.jpg' %}" alt="Brand new Studio and 1 BHK coming soon in Al Khor" loading="lazy" decoding="async">
-    <div class="soon__txt">
-      <span class="soon__tag">Pre-booking open</span>
-      <h3>Brand new <em>Studio &amp; 1 BHK</em> coming soon in December 2026</h3>
-      <p>Just a walking distance from Lulu Al Khor Mall. Be the first to know — message us to pre-book.</p>
-      <ul><li>Wi-Fi included</li><li>Maintenance included</li><li>Electricity &amp; water</li><li>Clean &amp; neat rooms</li></ul>
-      <div class="cta"><a class="primary" href="https://wa.me/{{ brand_wa }}?text=Hi%20{{ brand|urlencode }}%2C%20I%27d%20like%20to%20pre-book%20a%20Studio%20%2F%201%20BHK." target="_blank" rel="noopener"><svg class="ico" style="font-size:18px"><use href="#wa"/></svg>Pre-book on WhatsApp</a></div>
-    </div>
-  </section>
+  <div class="cta-wrap">{% include "listings/_cta.html" %}</div>
 </div>
-
-<footer class="foot"><div class="wrap">
-  <div class="foot__grid">
-    <div>
-      <img src="{% static 'listings/logo-white.png' %}" alt="{{ brand }}" width="139" height="92" loading="lazy">
-      <small style="margin-top:14px">Better Homes, Bigger Tomorrows · Al Khor, Qatar</small>
-    </div>
-    <div>
-      <h3>Looking for a place to stay in Al Khor?</h3>
-      <div class="contact">
-        <a href="https://wa.me/{{ brand_wa }}" target="_blank" rel="noopener"><svg class="ico"><use href="#wa"/></svg>{{ brand_phone }}</a>
-        <a href="https://instagram.com/{{ instagram }}" target="_blank" rel="noopener"><svg class="ico" viewBox="0 0 24 24" style="fill:none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.500" cy="6.500" r="1" fill="currentColor"/></svg>@{{ instagram }}</a>
-        {% if facebook_name %}<{% if facebook_url %}a href="{{ facebook_url }}" target="_blank" rel="noopener"{% else %}div style="display:flex;align-items:center;gap:12px;font-weight:700;font-size:15px"{% endif %}><svg class="ico" viewBox="0 0 24 24" fill="currentColor"><path d="M13.500 21v-7.500h2.600l.4-3h-3V8.600c0-.9.3-1.500 1.600-1.500h1.500V4.400c-.3 0-1.200-.1-2.200-.1-2.300 0-3.900 1.400-3.900 4v2.200H8v3h2.500V21z"/></svg>{{ facebook_name }}</{% if facebook_url %}a{% else %}div{% endif %}>{% endif %}
-      </div>
-    </div>
-  </div>
-  <small>© {% now "Y" %} {{ brand }}. Your comfort • Our priority.</small>
-</div></footer>
 {% endblock %}
