@@ -42,12 +42,17 @@ class ExpenseForm(forms.Form):
                 villas = villas.filter(is_archived=False)
             self.fields['villa'].queryset = villas.select_related('business')
             self.fields['partition'].queryset = Partition.objects.filter(villa__in=villas).select_related('villa') if user.is_owner else Partition.objects.filter(villa__in=villas, status=Partition.Status.ACTIVE).select_related('villa')
+            if not user.is_owner:
+                self.fields['paid_by'].choices = [(PaidBy.STAFF, 'Staff — from collected cash')]
+                self.fields['paid_by'].initial = PaidBy.STAFF
+                self.fields['paid_by'].help_text = 'Staff-paid expenses come out of collected cash.'
 
     def clean_name(self):
         return ' '.join(self.cleaned_data['name'].split())
 
     def clean_paid_by(self):
-        # Left blank (e.g. a quick mobile entry): the Owner pays from their account, staff from collected cash.
+        if self.user is not None and not self.user.is_owner:
+            return PaidBy.STAFF
         chosen = self.cleaned_data.get('paid_by')
         if chosen:
             return chosen

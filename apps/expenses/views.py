@@ -11,6 +11,7 @@ from apps.shared.exceptions import DomainError
 from apps.villas.models import Partition, Villa
 from apps.shared.forms import ReasonForm
 from apps.shared.pagination import paginate_queryset
+from apps.shared.periods import period_context
 from . import selectors as expense_selectors
 from .forms import ExpenseForm, MarkPaidForm, RecurringExpenseForm, ReviseExpenseForm
 from .models import Expense, PaidBy, RecurringExpense
@@ -26,8 +27,23 @@ def _can_manage_expense(user, expense):
 @login_required
 def expense_list(request):
     today = date.today()
+    raw_month = request.GET.get('month', '')
+    if '-' in str(raw_month):
+        try:
+            y, m = str(raw_month).split('-')
+            get_params = request.GET.copy()
+            get_params['year'] = y
+            get_params['month'] = str(int(m))
+            get_params['period'] = 'month'
+            request.GET = get_params
+        except Exception:
+            pass
+
+    period = period_context(request, today, allow_future=True)
+    start, end = period['period_start'], period['period_end']
+
     visible = selectors.expenses_visible_to(request.user)
-    qs = visible.select_related('business', 'villa', 'partition', 'category', 'paid_by_user')
+    qs = visible.select_related('business', 'villa', 'partition', 'category', 'paid_by_user').filter(date__gte=start, date__lte=end)
     villa_id = request.GET.get('villa', '')
     if villa_id.isdigit():
         qs = qs.filter(villa_id=villa_id)
@@ -37,7 +53,11 @@ def expense_list(request):
     due = request.GET.get('due', '')
     if due in dict(DueBucket.CHOICES):
         qs = expense_selectors.filter_by_due_bucket(qs, due, today)
-    summary_base = visible.filter(villa_id=villa_id) if villa_id.isdigit() else visible
+
+    summary_base = visible.filter(date__gte=start, date__lte=end)
+    if villa_id.isdigit():
+        summary_base = summary_base.filter(villa_id=villa_id)
+
     page_obj = paginate_queryset(request, qs.order_by('due_date', '-date', '-id') if due in (DueBucket.UNPAID, DueBucket.OVERDUE, DueBucket.TODAY, DueBucket.UPCOMING) else qs.order_by('-date', '-id'))
     scope = selectors.ManageScope(request.user)
     is_field_staff = selectors.is_field_staff(request.user)
@@ -47,9 +67,33 @@ def expense_list(request):
         expense.can_pay = scope.can_pay_expense(expense)
         expense.can_verify = scope.can_verify_expense(expense)
         expense.can_edit = expense.can_manage and expense.status == 'active' and expense.paid_on is None and not (is_field_staff and expense.paid_by == PaidBy.OWNER)
+
     villas = selectors.villas_visible_to(request.user).filter(is_archived=False).select_related('business')
     has_filters = bool(villa_id.isdigit() or (due in dict(DueBucket.CHOICES)) or ('status' in request.GET and status != Expense.Status.ACTIVE))
-    context = {'page_obj': page_obj, 'status': status, 'due': due, 'due_choices': DueBucket.CHOICES, 'is_field_staff': is_field_staff, 'villas': villas, 'selected_villa': villa_id, 'has_filters': has_filters, 'summary': expense_selectors.due_summary(summary_base, today), 'can_add': selectors.manageable_villas(request.user).filter(is_archived=False).exists(), 'breadcrumbs': [('Expenses', None)]}
+
+    keep = []
+    if villa_id.isdigit():
+        keep.append(('villa', villa_id))
+    if due in dict(DueBucket.CHOICES):
+        keep.append(('due', due))
+    if status and status != Expense.Status.ACTIVE:
+        keep.append(('status', status))
+
+    context = {
+        'page_obj': page_obj,
+        'status': status,
+        'due': due,
+        'due_choices': DueBucket.CHOICES,
+        'is_field_staff': is_field_staff,
+        'villas': villas,
+        'selected_villa': villa_id,
+        'has_filters': has_filters,
+        'summary': expense_selectors.due_summary(summary_base, today),
+        'can_add': selectors.manageable_villas(request.user).filter(is_archived=False).exists(),
+        'breadcrumbs': [('Expenses', None)],
+        'keep': keep,
+        **period,
+    }
     return render(request, 'expenses/list.html', context)
 
 def _expense_form_context(request, form, villa_pk, visible_expenses):

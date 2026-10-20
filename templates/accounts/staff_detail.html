@@ -6,12 +6,15 @@
       <h1>{{ staff.get_full_name|default:staff.username }}</h1>
       <div class="page-header__meta">{{ staff.email|default:"No email on file" }} · WhatsApp: {% if staff.whatsapp_number %}{{ staff.whatsapp_number }}{% else %}<strong>not set</strong>{% endif %} · <a href="{% url 'accounts:staff_whatsapp_edit' staff.pk %}">Edit</a> · Last login: {{ staff.last_login|date:"d M Y H:i"|default:"Never" }}</div>
     </div>
-    {% if staff.is_active %}
-      <a class="btn btn--ghost" href="{% url 'accounts:staff_deactivate' staff.pk %}">Deactivate</a>
-    {% else %}
-      <span class="pill pill--neutral">Inactive</span>
-      <form method="post" action="{% url 'accounts:staff_activate' staff.pk %}">{% csrf_token %}<button class="btn btn--primary" type="submit">Activate</button></form>
-    {% endif %}
+    <div style="display: flex; gap: var(--space-2); align-items: center;">
+      <a class="btn btn--ghost" href="{% url 'accounts:staff_password_change' staff.pk %}">Change Password</a>
+      {% if staff.is_active %}
+        <a class="btn btn--ghost" href="{% url 'accounts:staff_deactivate' staff.pk %}">Deactivate</a>
+      {% else %}
+        <span class="pill pill--neutral">Inactive</span>
+        <form method="post" action="{% url 'accounts:staff_activate' staff.pk %}">{% csrf_token %}<button class="btn btn--primary" type="submit">Activate</button></form>
+      {% endif %}
+    </div>
   </div>
 
   <div class="detail-section">

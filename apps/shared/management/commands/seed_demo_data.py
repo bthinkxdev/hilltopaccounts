@@ -66,10 +66,14 @@ class Command(BaseCommand):
         if owner is None:
             owner = User.objects.create_superuser('owner', 'owner@example.com', DEMO_PASSWORD)
             owner.is_owner = True
-            owner.first_name = 'Faisal'
-            owner.last_name = 'Owner'
+            owner.first_name = 'Admin'
+            owner.last_name = ''
             owner.save()
             self.stdout.write('Created Owner account.')
+        else:
+            owner.first_name = 'Admin'
+            owner.last_name = ''
+            owner.save()
         return owner
 
     def _get_or_create_charge_types(self) -> dict:

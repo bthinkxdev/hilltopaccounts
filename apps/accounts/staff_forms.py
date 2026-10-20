@@ -43,6 +43,33 @@ class StaffCreateForm(forms.Form):
                     self.add_error('password1', exc)
         return cleaned
 
+class StaffPasswordChangeForm(forms.Form):
+    new_password1 = forms.CharField(widget=forms.PasswordInput, label='New password')
+    new_password2 = forms.CharField(widget=forms.PasswordInput, label='New password confirmation')
+
+    def __init__(self, staff, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.staff = staff
+
+    def clean(self):
+        cleaned = super().clean()
+        p1, p2 = (cleaned.get('new_password1'), cleaned.get('new_password2'))
+        if p1 and p2:
+            if p1 != p2:
+                self.add_error('new_password2', 'Passwords do not match.')
+            else:
+                try:
+                    validate_password(p1)
+                except forms.ValidationError as exc:
+                    self.add_error('new_password1', exc)
+        return cleaned
+
+    def save(self, commit=True):
+        self.staff.set_password(self.cleaned_data['new_password1'])
+        if commit:
+            self.staff.save()
+        return self.staff
+
 class StaffWhatsAppForm(forms.Form):
     whatsapp_number = forms.CharField(max_length=32, label='WhatsApp number', help_text='Include the country code, e.g. +974 5555 1234.')
 
