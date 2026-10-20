@@ -18,9 +18,16 @@ class _TaggedSelect(forms.Select):
             option['attrs'][self.data_attr] = getattr(instance, self.instance_attr)
         return option
 
+class PartitionChoiceField(forms.ModelChoiceField):
+    def label_from_instance(self, obj):
+        tenant = obj.current_tenant
+        if tenant:
+            return f"{obj.name} (Tenant: {tenant.name})"
+        return f"{obj.name} (Vacant)"
+
 class ExpenseForm(forms.Form):
     villa = forms.ModelChoiceField(queryset=Villa.objects.none(), empty_label='Select a villa…', widget=forms.Select())
-    partition = forms.ModelChoiceField(queryset=Partition.objects.none(), required=False, empty_label='Whole villa (no specific partition)', widget=_TaggedSelect(data_attr='data-villa', instance_attr='villa_id'))
+    partition = PartitionChoiceField(queryset=Partition.objects.none(), required=False, empty_label='Whole villa (no specific partition)', widget=_TaggedSelect(data_attr='data-villa', instance_attr='villa_id'))
     name = forms.CharField(max_length=100, label='Expense', widget=forms.TextInput(attrs={'list': 'expense-names', 'autocomplete': 'off', 'placeholder': 'e.g. Electricity'}))
     amount = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12, widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01'}))
     date = forms.DateField(label='Expense date', widget=forms.DateInput(attrs={'type': 'date'}))
@@ -37,7 +44,7 @@ class ExpenseForm(forms.Form):
         self.user = user
         if user is not None:
             from apps.accounts import selectors
-            villas = selectors.manageable_villas(user)
+            villas = selectors.manageable_villas(user).filter(is_sold=False)
             if not user.is_owner:
                 villas = villas.filter(is_archived=False)
             self.fields['villa'].queryset = villas.select_related('business')
@@ -62,6 +69,10 @@ class ExpenseForm(forms.Form):
         cleaned = super().clean()
         villa = cleaned.get('villa')
         partition = cleaned.get('partition')
+        if villa and villa.is_sold:
+            self.add_error('villa', 'Cannot add expenses to a sold villa.')
+        if partition and partition.villa.is_sold:
+            self.add_error('partition', 'Cannot add expenses to a sold villa.')
         if partition and villa and partition.villa_id != villa.id:
             self.add_error('partition', "This partition doesn't belong to the selected villa.")
         if partition and cleaned.get('name', '').strip().lower() in ('villa rent', 'villa owner rent'):

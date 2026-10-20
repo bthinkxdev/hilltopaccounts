@@ -20,6 +20,7 @@ class Action(models.TextChoices):
     VILLA_CREATED = ('villa.created', 'Villa created')
     VILLA_UPDATED = ('villa.updated', 'Villa updated')
     VILLA_ARCHIVED = ('villa.archived', 'Villa archived')
+    VILLA_SOLD = ('villa.sold', 'Villa sold')
     PARTITION_CREATED = ('partition.created', 'Partition created')
     PARTITION_UPDATED = ('partition.updated', 'Partition updated')
     PARTITION_ARCHIVED = ('partition.archived', 'Partition archived')

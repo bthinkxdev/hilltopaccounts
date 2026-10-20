@@ -21,6 +21,8 @@ from .services import (cancel_expense, can_pay_expense, create_expense, create_r
 
 def _can_manage_expense(user, expense):
     if expense.villa_id:
+        if expense.villa.is_sold:
+            return False
         return selectors.can_manage_villa(user, expense.villa)
     return selectors.is_business_manager_of(user, expense.business)
 
@@ -39,7 +41,7 @@ def expense_list(request):
         except Exception:
             pass
 
-    period = period_context(request, today, allow_future=True)
+    period = period_context(request, today)
     start, end = period['period_start'], period['period_end']
 
     visible = selectors.expenses_visible_to(request.user)
@@ -68,7 +70,7 @@ def expense_list(request):
         expense.can_verify = scope.can_verify_expense(expense)
         expense.can_edit = expense.can_manage and expense.status == 'active' and expense.paid_on is None and not (is_field_staff and expense.paid_by == PaidBy.OWNER)
 
-    villas = selectors.villas_visible_to(request.user).filter(is_archived=False).select_related('business')
+    villas = selectors.villas_visible_to(request.user).filter(is_archived=False, is_sold=False).select_related('business')
     has_filters = bool(villa_id.isdigit() or (due in dict(DueBucket.CHOICES)) or ('status' in request.GET and status != Expense.Status.ACTIVE))
 
     keep = []
@@ -89,7 +91,7 @@ def expense_list(request):
         'selected_villa': villa_id,
         'has_filters': has_filters,
         'summary': expense_selectors.due_summary(summary_base, today),
-        'can_add': selectors.manageable_villas(request.user).filter(is_archived=False).exists(),
+        'can_add': selectors.manageable_villas(request.user).filter(is_archived=False, is_sold=False).exists(),
         'breadcrumbs': [('Expenses', None)],
         'keep': keep,
         **period,
@@ -105,10 +107,19 @@ def _expense_form_context(request, form, villa_pk, visible_expenses):
 def expense_create(request, villa_pk=None):
     if villa_pk is not None:
         villa = get_object_or_404(selectors.villas_visible_to(request.user), pk=villa_pk)
+        if villa.is_sold:
+            messages.info(request, 'This villa has been sold. No expenses can be added.')
+            return redirect('villas:villa_detail', pk=villa.pk)
         if selectors.is_field_staff(request.user) and (villa.is_archived or villa.business.is_archived):
             messages.info(request, 'This villa has been archived.')
             return redirect('villas:villa_list')
-    manageable = selectors.manageable_villas(request.user)
+    partition_id = request.GET.get('partition')
+    if partition_id and partition_id.isdigit():
+        partition = Partition.objects.filter(pk=partition_id).select_related('villa').first()
+        if partition and partition.villa.is_sold:
+            messages.info(request, 'This villa has been sold. No expenses can be added.')
+            return redirect('villas:villa_detail', pk=partition.villa.pk)
+    manageable = selectors.manageable_villas(request.user).filter(is_sold=False)
     if not request.user.is_owner:
         manageable = manageable.filter(is_archived=False)
     if not manageable.exists():
@@ -235,8 +246,10 @@ def expense_revise(request, pk):
 
 def _villa_for_fixed_expenses(request, villa_pk):
     villa = get_object_or_404(selectors.villas_visible_to(request.user).select_related('business'), pk=villa_pk)
-    if not (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)):
-        raise PermissionDenied('Only the Owner or the Business Manager can set fixed expenses.')
+    if villa.is_sold:
+        raise PermissionDenied('This villa has been sold. Fixed expenses cannot be configured.')
+    if not (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business) or selectors.is_villa_staff_of(request.user, villa)):
+        raise PermissionDenied('Only the Owner, Business Manager, or assigned Villa Staff can set fixed expenses.')
     return villa
 
 @login_required

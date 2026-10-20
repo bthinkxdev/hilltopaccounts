@@ -35,6 +35,8 @@ def _charge_snapshot(charge: Charge) -> dict:
     return {f: str(getattr(charge, f)) for f in CHARGE_TRACKED_FIELDS}
 
 def create_charge(*, partition, charge_type, amount, start_date, created_by, **fields) -> Charge:
+    if partition.villa.is_sold:
+        raise DomainError(f'Cannot add charges to sold villa “{partition.villa.name}”.')
     with transaction.atomic():
         charge = Charge(partition=partition, charge_type=charge_type, amount=amount, start_date=start_date, created_by=created_by, **fields)
         charge.full_clean()

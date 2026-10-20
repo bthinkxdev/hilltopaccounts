@@ -5,20 +5,24 @@
     <div>
       <h1>{{ villa.name }}</h1>
       <div class="page-header__meta">
-        {% if villa.is_archived %}<span class="pill pill--neutral">Archived</span> · {% endif %}
+        {% if villa.is_sold %}<span class="pill pill--warning">Sold</span> · {% elif villa.is_archived %}<span class="pill pill--neutral">Archived</span> · {% endif %}
         {% if not nav_is_field_staff %}{{ villa.business.name }} · {% endif %}{% if villa.address %}{{ villa.address }} · {% endif %}{{ occupied_count }} occupied, {{ vacant_count }} vacant
       </div>
     </div>
-    {% if can_manage %}
+    {% if can_manage and not villa.is_sold %}
       <div class="quick-actions">
         {% if not villa.is_archived %}
-          <a class="btn btn--primary" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>
+          <a class="btn btn--primary" href="{% url 'expenses:recurring_create' villa.pk %}">+ Add Expense</a>
           {% if can_add_partition %}<a class="btn btn--ghost" href="{% url 'villas:partition_create' villa.pk %}">+ Partition</a>{% endif %}
           <a class="btn btn--ghost" href="{% url 'villas:villa_photo_add' villa.pk %}">+ Photo</a>
-          {% if is_admin %}<a class="btn btn--ghost" href="{% url 'villas:villa_edit' villa.pk %}">Edit</a><a class="btn btn--ghost" href="{% url 'villas:villa_archive' villa.pk %}">Archive</a>{% endif %}
-        {% else %}
-          {% if user.is_owner %}<a class="btn btn--primary" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>{% endif %}
           {% if is_admin %}
+            <a class="btn btn--ghost" href="{% url 'villas:villa_edit' villa.pk %}">Edit</a>
+            {% if user.is_owner and not villa.is_sold %}<a class="btn btn--ghost" href="{% url 'villas:villa_sell' villa.pk %}">Sold</a>{% endif %}
+            <a class="btn btn--ghost" href="{% url 'villas:villa_archive' villa.pk %}">Archive</a>
+          {% endif %}
+        {% else %}
+          {% if user.is_owner and not villa.is_sold %}<a class="btn btn--primary" href="{% url 'expenses:recurring_create' villa.pk %}">+ Add Expense</a>{% endif %}
+          {% if is_admin and not villa.is_sold %}
             <form method="post" action="{% url 'villas:villa_unarchive' villa.pk %}" style="display:inline;">
               {% csrf_token %}
               <button class="btn btn--ghost" type="submit">Unarchive</button>
@@ -28,6 +32,20 @@
       </div>
     {% endif %}
   </div>
+
+  {% if villa.is_sold %}
+    <div class="alert alert--warning" style="margin-bottom: var(--space-4); display: flex; flex-wrap: wrap; gap: var(--space-4); justify-content: space-between; align-items: center;">
+      <div>
+        <strong style="font-size: 15px;">Villa Sold</strong>
+        <div style="font-size: 13px; margin-top: 4px;">
+          Sold on <strong>{{ villa.sold_date|date:"d M Y"|default:"-" }}</strong> to <strong>{{ villa.buyer_name }}</strong> ({{ villa.buyer_phone }}) for <strong style="color: var(--text-primary);">QAR {{ villa.sale_amount|floatformat:"2g" }}</strong>
+        </div>
+      </div>
+      {% if villa.sold_by %}
+        <div style="font-size: 12px; color: var(--text-secondary);">Recorded by {{ villa.sold_by.get_full_name|default:villa.sold_by.username }}</div>
+      {% endif %}
+    </div>
+  {% endif %}
 
   <div class="period-bar">
     <span class="period-bar__label">{{ period_label }}</span>
@@ -152,7 +170,36 @@
             <div class="tile__cover">{% if partition.cover %}<img src="{% url 'villas:photo_file' partition.cover.pk %}" alt="{{ partition.name }}" loading="lazy">{% else %}<span aria-hidden="true">&#9638;</span>{% endif %}</div>
             <div class="tile__body">
               <div class="tile__title">{{ partition.name }}</div>
-              <div class="tile__meta">{% if partition.status == 'archived' %}Archived{% elif partition.tenant %}{{ partition.tenant.name }} · {{ partition.tenant.monthly_rent|floatformat:"0g" }}/mo{% elif partition.rent %}Rent: QAR {{ partition.rent|floatformat:"0g" }}/mo{% else %}No tenant{% endif %}</div>
+              <div class="tile__meta">
+                {% if partition.status == 'archived' %}Archived
+                {% elif partition.tenant %}
+                  <strong style="color: var(--text-primary);">Tenant: {{ partition.tenant.name }}</strong> · {{ partition.tenant.monthly_rent|floatformat:"0g" }}/mo
+                  <div style="margin-top: 3px; display: flex; align-items: center; justify-content: space-between;">
+                    <span>
+                      Deposit: QAR {{ partition.tenant.deposit|floatformat:"0g" }}
+                      {% if partition.tenant.deposit > 0 %}
+                        {% if partition.tenant.deposit_status == 'received' %}
+                          <span class="pill pill--success" style="font-size: 10px; padding: 1px 6px;">Received</span>
+                        {% elif partition.tenant.deposit_status == 'partially_paid' %}
+                          <span class="pill pill--warning" style="font-size: 10px; padding: 1px 6px;">Received {{ partition.tenant.deposit_paid|floatformat:"0g" }} · Pending {{ partition.tenant.deposit_pending|floatformat:"0g" }}</span>
+                        {% else %}
+                          <span class="pill pill--neutral" style="font-size: 10px; padding: 1px 6px;">Pending</span>
+                        {% endif %}
+                      {% endif %}
+                    </span>
+                    {% if can_manage %}
+                      <button type="button" class="btn btn--ghost btn--sm" style="font-size: 11px; padding: 1px 6px; height: auto;"
+                        data-url="{% url 'tenancy:deposit_edit' partition.tenant.pk %}"
+                        data-partition="{{ partition.name }}"
+                        data-tenant="{{ partition.tenant.name }}"
+                        data-deposit="{{ partition.tenant.deposit }}"
+                        data-paid="{{ partition.tenant.deposit_paid }}"
+                        onclick="openDepositModal(event, this)">Edit</button>
+                    {% endif %}
+                  </div>
+                {% elif partition.rent %}Rent: QAR {{ partition.rent|floatformat:"0g" }}/mo
+                {% else %}No tenant{% endif %}
+              </div>
               <div class="tile__pills">
                 {% if partition.status == 'archived' %}<span class="pill pill--neutral">Archived</span>
                 {% elif partition.tenant %}<span class="pill pill--success">Occupied</span>
@@ -410,7 +457,7 @@
           {% include "components/expense_actions.html" %}
         </div>
       {% empty %}
-        <div class="empty-state"><div class="empty-state__title">No partition expenses in {{ period_label }}.</div>{% if can_manage and not villa.is_archived or user.is_owner %}<a class="btn btn--primary btn--sm" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>{% endif %}</div>
+        <div class="empty-state"><div class="empty-state__title">No partition expenses in {{ period_label }}.</div>{% if can_manage and not villa.is_archived and not villa.is_sold %}<a class="btn btn--primary btn--sm" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>{% endif %}</div>
       {% endfor %}
       <a class="btn btn--ghost btn--sm" href="{% url 'expenses:list' %}?villa={{ villa.pk }}">All expenses for this villa</a>
     </div>
@@ -542,6 +589,50 @@
         </div>
       </form>
     </dialog>
+
+    <dialog id="deposit-modal" tabindex="-1" style="width: calc(100% - var(--space-6)); max-width: 440px; outline: none;">
+      <h3 style="margin-bottom: var(--space-1);">Deposit Collection</h3>
+      <div style="color: var(--text-secondary); margin-bottom: var(--space-3); font-size: 14px;">
+        <span id="dep-modal-partition" style="font-weight: 600; color: var(--text-primary);"></span> · <span id="dep-modal-tenant"></span>
+      </div>
+
+      <div style="background: var(--surface-sunken, rgba(255,255,255,0.04)); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: var(--space-3); margin-bottom: var(--space-3);">
+        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: var(--space-1);">
+          <span>Total Deposit</span>
+          <span id="dep-modal-total-text" style="font-weight: 600;"></span>
+        </div>
+        <div id="dep-already-paid-row" style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: var(--space-1); color: var(--success, #10b981);">
+          <span>Already Paid</span>
+          <span id="dep-modal-paid-text" style="font-weight: 600;"></span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 13px; border-top: 1px dashed var(--border-subtle); padding-top: var(--space-1); font-weight: 600;">
+          <span>Remaining Pending</span>
+          <span id="dep-modal-pending-text" style="color: var(--warning, #f59e0b);"></span>
+        </div>
+      </div>
+
+      <form id="dep-modal-form" method="post" style="margin: 0;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <input type="hidden" id="dep-paid" name="deposit_paid">
+        
+        <div class="field" style="margin-bottom: var(--space-3);">
+          <label for="dep-amount" style="font-size: 13px; font-weight: 600;">Total Deposit Amount (QAR)</label>
+          <input type="number" step="0.01" min="0" id="dep-amount" name="deposit" required>
+        </div>
+
+        <div class="field" style="margin-bottom: var(--space-4);">
+          <label for="dep-received-now" style="font-size: 13px; font-weight: 600; margin-bottom: var(--space-1); display: block;">Amount Received Now (QAR)</label>
+          <input type="number" step="0.01" min="0" id="dep-received-now">
+          <div id="dep-calc-hint" style="font-size: 12px; margin-top: var(--space-1); font-weight: 500;"></div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: var(--space-2);">
+          <button type="button" class="btn btn--ghost" onclick="document.getElementById('deposit-modal').close()">Cancel</button>
+          <button type="submit" id="dep-submit-btn" class="btn btn--primary">Save</button>
+        </div>
+      </form>
+    </dialog>
   {% endif %}
 {% endblock %}
 
@@ -667,9 +758,72 @@ function closeRentCollectModal() {
   document.getElementById('rent-collect-modal')?.close();
 }
 
+let depModalState = { total: 0, alreadyPaid: 0 };
+
+function openDepositModal(e, btn) {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  document.getElementById('dep-modal-form').action = btn.getAttribute('data-url');
+  document.getElementById('dep-modal-partition').textContent = btn.getAttribute('data-partition') || '';
+  document.getElementById('dep-modal-tenant').textContent = btn.getAttribute('data-tenant') || '';
+  
+  depModalState.total = parseFloat(btn.getAttribute('data-deposit')) || 0;
+  depModalState.alreadyPaid = parseFloat(btn.getAttribute('data-paid')) || 0;
+
+  const pending = Math.max(0, depModalState.total - depModalState.alreadyPaid);
+  document.getElementById('dep-amount').value = depModalState.total.toFixed(2);
+  document.getElementById('dep-received-now').value = pending > 0 ? pending.toFixed(2) : '0.00';
+
+  updateDepositCalc();
+  const modal = document.getElementById('deposit-modal');
+  modal.showModal();
+  modal.focus();
+}
+
+
+function updateDepositCalc() {
+  const total = parseFloat(document.getElementById('dep-amount').value) || 0;
+  const pending = Math.max(0, total - depModalState.alreadyPaid);
+  const receivedNow = parseFloat(document.getElementById('dep-received-now').value) || 0;
+  const newTotalPaid = depModalState.alreadyPaid + receivedNow;
+  const rem = total - newTotalPaid;
+  const isOver = rem < -0.009;
+
+  document.getElementById('dep-modal-total-text').textContent = `QAR ${total.toFixed(2)}`;
+  document.getElementById('dep-modal-paid-text').textContent = `QAR ${depModalState.alreadyPaid.toFixed(2)}`;
+  document.getElementById('dep-modal-pending-text').textContent = `QAR ${pending.toFixed(2)}`;
+
+  const alreadyRow = document.getElementById('dep-already-paid-row');
+  if (alreadyRow) alreadyRow.style.display = depModalState.alreadyPaid > 0 ? 'flex' : 'none';
+
+  const hint = document.getElementById('dep-calc-hint');
+  const submitBtn = document.getElementById('dep-submit-btn');
+  if (submitBtn) submitBtn.disabled = isOver;
+
+  if (isOver) {
+    hint.textContent = `Cannot record: Exceeds remaining pending deposit (Max: QAR ${pending.toFixed(2)}).`;
+    hint.style.color = 'var(--danger, #ef4444)';
+  } else if (rem <= 0.009 && total > 0 && receivedNow > 0) {
+    hint.textContent = `Full payment: Clears remaining deposit.`;
+    hint.style.color = 'var(--success, #10b981)';
+  } else if (receivedNow > 0) {
+    hint.textContent = `Partial payment: QAR ${Math.max(0, rem).toFixed(2)} will remain pending.`;
+    hint.style.color = 'var(--warning, #f59e0b)';
+  } else {
+    hint.textContent = `No new payment: QAR ${pending.toFixed(2)} remains pending.`;
+    hint.style.color = 'var(--text-secondary)';
+  }
+
+  document.getElementById('dep-paid').value = Math.max(0, newTotalPaid).toFixed(2);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('modal-rent-amount')?.addEventListener('input', fillRemainingBalance);
   document.getElementById('modal-received-amount')?.addEventListener('input', updateRentBalanceCalc);
+  document.getElementById('dep-amount')?.addEventListener('input', updateDepositCalc);
+  document.getElementById('dep-received-now')?.addEventListener('input', updateDepositCalc);
+  document.getElementById('deposit-modal')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.close();
+  });
 });
 </script>
 {% endblock %}

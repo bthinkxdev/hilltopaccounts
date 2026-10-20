@@ -51,7 +51,7 @@ class PartnerShareForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.partner = partner
         from apps.villas.models import Villa
-        qs = Villa.objects.filter(is_archived=False).order_by('name')
+        qs = Villa.objects.filter(is_archived=False, is_sold=False, business__is_archived=False).order_by('name')
         if partner:
             qs = qs.exclude(partner_shares__partner=partner)
         self.fields['villa'].queryset = qs

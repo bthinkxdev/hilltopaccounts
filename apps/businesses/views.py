@@ -35,19 +35,19 @@ def business_list(request):
         qs = qs.filter(name__icontains=q)
     page_obj = paginate_queryset(request, qs)
     for business in page_obj:
-        business.scoped_villa_count = selectors.villas_visible_to(request.user).filter(business=business).count()
+        business.scoped_villa_count = selectors.villas_visible_to(request.user).filter(business=business, is_archived=False, is_sold=False).count()
     return render(request, 'businesses/list.html', {'page_obj': page_obj, 'q': q, 'selected_status': status, 'breadcrumbs': [('Businesses', None)]})
 
 @login_required
 def business_detail(request, pk):
     business = get_object_or_404(selectors.businesses_visible_to(request.user), pk=pk)
-    villas = selectors.villas_visible_to(request.user).filter(business=business, is_archived=False)
+    villas = selectors.villas_visible_to(request.user).filter(business=business, is_archived=False, is_sold=False)
     period = period_context(request)
-    financial = selectors.financial_villas(request.user).filter(business=business)
+    financial = selectors.financial_villas(request.user).filter(business=business, is_sold=False)
     context = {'period_pnl': billing_selectors.period_profit_loss(selectors.invoices_visible_to(request.user).filter(partition__villa__in=financial), selectors.expenses_visible_to(request.user).filter(villa__in=financial), period['period_start'], period['period_end']) if financial.exists() else None, 'keep': [], **period, 'business': business, 'villas': villas, 'can_view_financials': selectors.can_view_financial_kpis(request.user), 'breadcrumbs': [('Businesses', reverse('businesses:list')), (business.name, None)]}
     if context['can_view_financials']:
-        invoices = selectors.invoices_visible_to(request.user).filter(partition__villa__business=business)
-        expenses = selectors.expenses_visible_to(request.user).filter(business=business)
+        invoices = selectors.invoices_visible_to(request.user).filter(partition__villa__business=business, partition__villa__is_sold=False)
+        expenses = selectors.expenses_visible_to(request.user).filter(business=business).filter(models.Q(villa__isnull=True) | models.Q(villa__is_sold=False))
         context.update(expected_revenue=billing_selectors.expected_revenue(invoices), collected=billing_selectors.collected_amount(invoices), outstanding=billing_selectors.outstanding_amount(invoices), total_expenses=expenses_selectors.valid_expense_total(expenses), net_profit=billing_selectors.profit(invoices, expenses))
     return render(request, 'businesses/detail.html', context)
 
@@ -108,7 +108,7 @@ def partner_list(request):
         qs = qs.filter(name__icontains=q)
 
     period = period_context(request)
-    villas = selectors.villas_visible_to(request.user).filter(is_archived=False)
+    villas = selectors.villas_visible_to(request.user).filter(is_archived=False, is_sold=False)
     pnl = billing_selectors.profit_loss_by_villa(
         selectors.invoices_visible_to(request.user).filter(partition__villa__in=villas),
         selectors.expenses_visible_to(request.user).filter(villa__in=villas),
@@ -194,7 +194,7 @@ def partner_detail(request, pk):
         raise PermissionDenied('Only the owner can view partner details.')
     partner = get_object_or_404(Partner, pk=pk)
     period = period_context(request)
-    villas = selectors.villas_visible_to(request.user).filter(is_archived=False)
+    villas = selectors.villas_visible_to(request.user).filter(is_archived=False, is_sold=False)
     pnl = billing_selectors.profit_loss_by_villa(
         selectors.invoices_visible_to(request.user).filter(partition__villa__in=villas),
         selectors.expenses_visible_to(request.user).filter(villa__in=villas),

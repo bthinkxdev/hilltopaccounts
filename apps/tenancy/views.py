@@ -14,7 +14,7 @@ from apps.billing import selectors as billing_selectors
 from apps.shared.exceptions import DomainError
 from apps.shared.pagination import paginate_queryset
 from apps.villas.models import Partition
-from .forms import MoveOutForm, TenantForm
+from .forms import MoveOutForm, TenantForm, DepositEditForm
 from .models import Tenant
 from .services import create_tenant, move_out_tenant, update_tenant
 
@@ -25,7 +25,9 @@ def tenant_list(request):
     if q:
         qs = qs.filter(Q(name__icontains=q) | Q(mobile__icontains=q))
     status = request.GET.get('status', Tenant.Status.ACTIVE)
-    if status:
+    if status == Tenant.Status.ACTIVE:
+        qs = qs.filter(status=status, partition__villa__is_sold=False)
+    elif status:
         qs = qs.filter(status=status)
     page_obj = paginate_queryset(request, qs.order_by('-move_in_date'))
     has_filters = bool(q or ('status' in request.GET and status != Tenant.Status.ACTIVE))
@@ -50,7 +52,7 @@ def tenant_detail(request, pk):
         'invoices': invoices,
         'outstanding_balance': balance,
         'unbilled_balance': unbilled,
-        'can_manage': request.user.is_owner or selectors.is_business_manager_of(request.user, partition.villa.business) or selectors.is_villa_staff_of(request.user, partition.villa),
+        'can_manage': (request.user.is_owner or selectors.is_business_manager_of(request.user, partition.villa.business) or selectors.is_villa_staff_of(request.user, partition.villa)) and not partition.villa.is_sold,
         'breadcrumbs': prefix + [
             (partition.villa.name, reverse('villas:villa_detail', args=[partition.villa.pk])),
             (partition.name, reverse('villas:partition_detail', args=[partition.pk])),
@@ -62,6 +64,8 @@ def tenant_detail(request, pk):
 def tenant_edit(request, pk):
     tenant = get_object_or_404(selectors.tenants_visible_to(request.user), pk=pk, status=Tenant.Status.ACTIVE)
     partition = tenant.partition
+    if partition.villa.is_sold:
+        raise PermissionDenied('Cannot edit tenants of a sold villa.')
     if not (request.user.is_owner or selectors.can_manage_villa(request.user, partition.villa)):
         raise PermissionDenied('You cannot edit this tenant.')
     if request.method == 'POST':
@@ -101,7 +105,7 @@ def tenant_create(request, partition_pk):
     partition = get_object_or_404(selectors.partitions_visible_to(request.user), pk=partition_pk)
     if not (request.user.is_owner or selectors.can_manage_villas_and_tenants(request.user)):
         raise PermissionDenied('You cannot move in a tenant here.')
-    if partition.status == 'archived' or partition.villa.is_archived or partition.villa.business.is_archived:
+    if partition.villa.is_sold or partition.status == 'archived' or partition.villa.is_archived or partition.villa.business.is_archived:
         if selectors.is_field_staff(request.user):
             return redirect('villas:villa_list')
         return redirect('villas:partition_detail', pk=partition.pk)
@@ -127,6 +131,8 @@ def tenant_create(request, partition_pk):
 def tenant_move_out(request, pk):
     tenant = get_object_or_404(selectors.tenants_visible_to(request.user), pk=pk)
     partition = tenant.partition
+    if partition.villa.is_sold:
+        raise PermissionDenied('Cannot move out tenants of a sold villa.')
     if not (request.user.is_owner or selectors.can_manage_villas_and_tenants(request.user)):
         raise PermissionDenied('You cannot move out this tenant.')
     if request.method == 'POST':
@@ -142,3 +148,36 @@ def tenant_move_out(request, pk):
     else:
         form = MoveOutForm()
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Move Out — {tenant.name}', 'submit_label': 'Move Out', 'cancel_url': reverse('tenancy:detail', args=[tenant.pk])})
+
+@login_required
+def tenant_deposit_edit(request, pk):
+    tenant = get_object_or_404(selectors.tenants_visible_to(request.user), pk=pk)
+    partition = tenant.partition
+    if partition.villa.is_sold:
+        raise PermissionDenied('Cannot edit deposit details for a sold villa.')
+    if not (request.user.is_owner or selectors.can_manage_villa(request.user, partition.villa)):
+        raise PermissionDenied('You cannot edit deposit details for this tenant.')
+
+    if request.method == 'POST':
+        form = DepositEditForm(request.POST)
+        if form.is_valid():
+            update_tenant(tenant=tenant, updated_by=request.user, **form.cleaned_data)
+            messages.success(request, f'Deposit updated for {tenant.name}.')
+        else:
+            for error_list in form.errors.values():
+                for error in error_list:
+                    messages.error(request, error)
+        next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or reverse('villas:villa_detail', args=[partition.villa_id])
+        return redirect(next_url)
+
+    form = DepositEditForm(initial={'deposit': tenant.deposit, 'deposit_paid': tenant.deposit_paid})
+    is_fully_paid = tenant.deposit > 0 and tenant.deposit_paid >= tenant.deposit
+    return render(request, 'components/form_page.html', {
+        'form': form,
+        'title': f'Edit Deposit — {partition.name} ({tenant.name})',
+        'submit_label': 'Save Deposit',
+        'cancel_url': request.GET.get('next') or reverse('villas:villa_detail', args=[partition.villa_id]),
+        'deposit_edit_page': True,
+        'is_fully_paid': is_fully_paid,
+    })
+

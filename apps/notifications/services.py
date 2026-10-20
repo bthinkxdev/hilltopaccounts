@@ -70,9 +70,9 @@ def _handover_candidates(user, today):
 
 def _managed_villas(user):
     if user.is_owner:
-        return Villa.objects.filter(is_archived=False)
+        return Villa.objects.filter(is_archived=False, is_sold=False)
     business_ids = Assignment.objects.filter(user=user, role=Assignment.Role.BUSINESS_MANAGER).values('business_id')
-    return Villa.objects.filter(is_archived=False, business_id__in=business_ids)
+    return Villa.objects.filter(is_archived=False, is_sold=False, business_id__in=business_ids)
 
 def _contract_candidates(user, today):
     villas = _managed_villas(user).filter(contract_end__gte=today, contract_end__lte=today + timedelta(days=CONTRACT_EXPIRY_WINDOW_DAYS))
@@ -81,7 +81,7 @@ def _contract_candidates(user, today):
         yield Candidate(Notification.Kind.CONTRACT_EXPIRING, f'contract_expiring:{villa.pk}:{villa.contract_end.isoformat()}', f'Contract for {villa.name} expires in {days} day{"s" if days != 1 else ""}', f'Ends {villa.contract_end:%d %b %Y}', reverse('villas:villa_detail', args=[villa.pk]))
 
 def _vacancy_candidates(user, today):
-    villas = selectors.manageable_villas(user).filter(is_archived=False)
+    villas = selectors.manageable_villas(user).filter(is_archived=False, is_sold=False)
     vacant = Partition.objects.filter(villa__in=villas, status=Partition.Status.ACTIVE).exclude(tenancies__status=Tenant.Status.ACTIVE).select_related('villa')
     for partition in vacant:
         yield Candidate(Notification.Kind.VACANT_PARTITION, f'vacant_partition:{partition.pk}', f'{partition.name} is vacant', partition.villa.name, reverse('villas:partition_detail', args=[partition.pk]))
@@ -91,7 +91,7 @@ def sync_for_user(user, today=None) -> None:
     today = today or date.today()
     # Make sure this month's fixed expenses exist before deciding what is due or overdue.
     from apps.expenses.services import ensure_fixed_expenses
-    ensure_fixed_expenses(villa_ids=list(selectors.villas_visible_to(user).values_list('pk', flat=True)), year=today.year, month=today.month)
+    ensure_fixed_expenses(villa_ids=list(selectors.villas_visible_to(user).filter(is_sold=False).values_list('pk', flat=True)), year=today.year, month=today.month)
     candidates = {}
     for builder in (_expense_candidates, _verification_candidates, _invoice_candidates, _handover_candidates, _contract_candidates, _vacancy_candidates):
         for candidate in builder(user, today):

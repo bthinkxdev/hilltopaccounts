@@ -45,6 +45,26 @@ def archive_villa(*, villa: Villa, archived_by, reason='') -> Villa:
         audit_services.log(user=archived_by, action=Action.VILLA_ARCHIVED, obj=villa, business=villa.business, villa=villa, old_value={'is_archived': False}, new_value={'is_archived': True}, reason=reason)
     return villa
 
+def sell_villa(*, villa: Villa, sold_by, **fields) -> Villa:
+    if not sold_by.is_owner:
+        raise PermissionDenied('Only the Owner can sell a villa.')
+    if villa.is_sold:
+        raise DomainError(f'Villa “{villa.name}” is already marked as sold.')
+    with transaction.atomic():
+        villa.is_sold, villa.is_archived, villa.sold_by = True, False, sold_by
+        for k, v in fields.items():
+            setattr(villa, k, v)
+        villa.save()
+        from apps.accounts.models import Assignment
+        Assignment.objects.filter(villa=villa).delete()
+        from apps.billing.models import Charge
+        Charge.objects.filter(partition__villa=villa, is_active=True).update(is_active=False)
+        from apps.expenses.models import RecurringExpense
+        RecurringExpense.objects.filter(villa=villa, is_active=True).update(is_active=False)
+        audit_services.log(user=sold_by, action=Action.VILLA_SOLD, obj=villa, business=villa.business, villa=villa, new_value={'is_sold': True, **{k: str(v) for k, v in fields.items()}}, reason='Villa sold')
+    return villa
+
+
 def unarchive_villa(*, villa: Villa, unarchived_by) -> Villa:
     if villa.business.is_archived:
         raise DomainError(f'Cannot unarchive villa while its parent business “{villa.business.name}” is archived.')

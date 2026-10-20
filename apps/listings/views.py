@@ -12,7 +12,7 @@ from apps.villas.photos import ALLOWED_EXTENSIONS
 
 def _public_partitions():
     """Active partitions of non-archived villas/businesses. Public pages never expose tenant, billing or landlord data."""
-    return (Partition.objects.filter(status=Partition.Status.ACTIVE, villa__is_archived=False, villa__business__is_archived=False)
+    return (Partition.objects.filter(status=Partition.Status.ACTIVE, villa__is_archived=False, villa__business__is_archived=False, villa__is_sold=False)
             .select_related('villa', 'villa__business')
             .prefetch_related(Prefetch('photos', queryset=Photo.objects.order_by('created_at', 'id')), Prefetch('villa__photos', queryset=Photo.objects.filter(partition__isnull=True).order_by('created_at', 'id'))))
 
@@ -116,7 +116,7 @@ def listing_detail(request, pk):
 
 def listing_photo(request, pk):
     """Public photo endpoint, limited to photos of listed (active, non-archived) partitions or villas."""
-    photo = get_object_or_404(Photo.objects.filter(villa__is_archived=False, villa__business__is_archived=False), pk=pk)
+    photo = get_object_or_404(Photo.objects.filter(villa__is_archived=False, villa__business__is_archived=False, villa__is_sold=False), pk=pk)
     if photo.partition_id and photo.partition.status != Partition.Status.ACTIVE:
         raise Http404
     extension = photo.image.name.rsplit('.', 1)[-1].lower()

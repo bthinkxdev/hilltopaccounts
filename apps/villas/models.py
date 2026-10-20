@@ -10,6 +10,12 @@ class Villa(models.Model):
     contract_start = models.DateField(null=True, blank=True)
     contract_end = models.DateField(null=True, blank=True)
     is_archived = models.BooleanField(default=False)
+    is_sold = models.BooleanField(default=False)
+    sale_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    buyer_name = models.CharField(max_length=200, blank=True)
+    buyer_phone = models.CharField(max_length=50, blank=True)
+    sold_date = models.DateField(null=True, blank=True)
+    sold_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name='+')
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
 
@@ -54,6 +60,8 @@ class Partition(models.Model):
 
     @property
     def current_tenant(self):
+        if hasattr(self, 'active_tenancies'):
+            return self.active_tenancies[0] if self.active_tenancies else None
         from apps.tenancy.models import Tenant
         return self.tenancies.filter(status=Tenant.Status.ACTIVE).first()
 

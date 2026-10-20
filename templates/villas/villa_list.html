@@ -44,6 +44,7 @@
           <select name="status" onchange="this.form.submit()" aria-label="Status">
             <option value="active" {% if selected_status == "active" %}selected{% endif %}>Active</option>
             <option value="archived" {% if selected_status == "archived" %}selected{% endif %}>Archived</option>
+            <option value="sold" {% if selected_status == "sold" %}selected{% endif %}>Sold</option>
             <option value="all" {% if selected_status == "all" %}selected{% endif %}>All</option>
           </select>
         {% endif %}
@@ -64,7 +65,7 @@
               <div class="tile__meta" style="color: var(--accent-primary, #3b82f6); font-size: 13px;">Profit Share: {{ villa.partner_share_labels|join:" · " }}</div>
             {% endif %}
             <div class="tile__pills">
-              {% if villa.is_archived or villa.business.is_archived %}<span class="pill pill--neutral">Archived</span>{% endif %}
+              {% if villa.is_sold %}<span class="pill pill--warning">Sold</span>{% elif villa.is_archived or villa.business.is_archived %}<span class="pill pill--neutral">Archived</span>{% endif %}
               {% if villa.partition_total %}<span class="pill pill--success">{{ villa.occupied_total }} occ</span>{% if villa.vacant_total %}<span class="pill pill--neutral">{{ villa.vacant_total }} vacant</span>{% endif %}{% else %}<span class="pill pill--neutral">No partitions</span>{% endif %}
               {% if villa.pending_rent %}<span class="pill pill--warning">{{ villa.pending_rent }} pending</span>{% endif %}
               {% if villa.fixed_pending %}<span class="pill pill--warning">{{ villa.fixed_pending }} fixed unpaid</span>{% endif %}

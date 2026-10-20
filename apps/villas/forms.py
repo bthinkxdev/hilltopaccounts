@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from django import forms
 from apps.businesses.forms import ArchiveReasonForm
@@ -96,3 +97,12 @@ class PhotoForm(forms.Form):
         image = self.cleaned_data['image']
         validate_photo(image)
         return image
+
+
+class VillaSellForm(forms.Form):
+    sale_amount = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=14, label='Sale Amount (QAR)')
+    buyer_name = forms.CharField(max_length=200, label='Buyer Name')
+    buyer_phone = forms.CharField(max_length=50, label='Buyer Phone')
+    sold_date = forms.DateField(label='Sold Date', widget=forms.DateInput(attrs={'type': 'date'}), initial=date.today)
+
+

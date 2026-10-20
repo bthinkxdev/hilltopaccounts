@@ -20,8 +20,8 @@ class HomeView(LoginRequiredMixin, TemplateView):
         ctx = super().get_context_data(**kwargs)
         user = self.request.user
         businesses = selectors.businesses_visible_to(user).filter(is_archived=False)
-        villas = selectors.villas_visible_to(user).filter(is_archived=False, business__is_archived=False).select_related('business')
-        partitions = selectors.partitions_visible_to(user).filter(status='active', villa__is_archived=False, villa__business__is_archived=False)
+        villas = selectors.villas_visible_to(user).filter(is_archived=False, business__is_archived=False, is_sold=False).select_related('business')
+        partitions = selectors.partitions_visible_to(user).filter(status='active', villa__is_archived=False, villa__business__is_archived=False, villa__is_sold=False)
         staff_view = selectors.is_field_staff(user)
         ctx['staff_view'] = staff_view
         ctx['businesses'] = businesses
@@ -87,7 +87,7 @@ class HomeView(LoginRequiredMixin, TemplateView):
         if my_unclaimed.exists():
             needs_attention.append({'label': 'Your cash ready to hand over', 'count': my_unclaimed.count(), 'meta': f'QAR {cash_selectors.outstanding_cash_for(user)} to submit', 'url': f"{reverse('cash:handover_submit')}?next={dashboard_url}"})
             quick_actions.append({'label': 'Submit Cash Handover', 'url': f"{reverse('cash:handover_submit')}?next={dashboard_url}"})
-        if selectors.manageable_villas(user).filter(is_archived=False, business__is_archived=False).exists():
+        if selectors.manageable_villas(user).filter(is_archived=False, business__is_archived=False, is_sold=False).exists():
             quick_actions.append({'label': '+ Add Expense', 'url': f"{reverse('expenses:create')}?next={dashboard_url}"})
         if user.is_owner:
             quick_actions.insert(0, {'label': '+ Add Business', 'url': f"{reverse('businesses:create')}?next={dashboard_url}"})
@@ -114,8 +114,11 @@ def global_search(request):
         user = request.user
         if not selectors.is_field_staff(user):
             results['businesses'] = selectors.businesses_visible_to(user).filter(name__icontains=q)[:10]
-        results['villas'] = selectors.villas_visible_to(user).filter(name__icontains=q)[:10]
-        results['partitions'] = selectors.partitions_visible_to(user).filter(name__icontains=q)[:10]
+            results['villas'] = selectors.villas_visible_to(user).filter(name__icontains=q)[:10]
+            results['partitions'] = selectors.partitions_visible_to(user).filter(name__icontains=q)[:10]
+        else:
+            results['villas'] = selectors.villas_visible_to(user).filter(name__icontains=q, is_sold=False, is_archived=False)[:10]
+            results['partitions'] = selectors.partitions_visible_to(user).filter(name__icontains=q, villa__is_sold=False, villa__is_archived=False)[:10]
         results['tenants'] = selectors.tenants_visible_to(user).filter(Q(name__icontains=q) | Q(mobile__icontains=q))[:10]
         results['invoices'] = selectors.invoices_visible_to(user).filter(invoice_number__icontains=q)[:10]
         if user.is_owner:

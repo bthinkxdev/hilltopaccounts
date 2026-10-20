@@ -4,10 +4,14 @@
   <div class="page-header">
     <div>
       <h1>{{ tenant.name }}</h1>
-      <div class="page-header__meta">{{ tenant.partition.villa.name }} — {{ tenant.partition.name }}</div>
+      <div class="page-header__meta">
+        {{ tenant.partition.villa.name }} — {{ tenant.partition.name }}
+        {% if tenant.partition.villa.is_sold %}<span class="pill pill--warning">Sold</span>{% endif %}
+      </div>
     </div>
-    {% if can_manage and tenant.status == "active" %}
+    {% if can_manage and tenant.status == "active" and not tenant.partition.villa.is_sold %}
       <div style="display: flex; gap: var(--space-2);">
+        <a class="btn btn--ghost" href="{% url 'tenancy:deposit_edit' tenant.pk %}?next={{ request.get_full_path|urlencode }}">Edit Deposit</a>
         <a class="btn btn--ghost" href="{% url 'tenancy:edit' tenant.pk %}">Edit</a>
         <a class="btn btn--ghost" href="{% url 'tenancy:move_out' tenant.pk %}">Move Out</a>
       </div>
@@ -18,7 +22,19 @@
     <div class="card__title">Tenant information</div>
     <div class="grid--kpi">
       <div class="kpi"><div class="kpi__label">Monthly Rent</div><div class="kpi__value">QAR {{ tenant.monthly_rent }}</div></div>
-      <div class="kpi"><div class="kpi__label">Deposit</div><div class="kpi__value">QAR {{ tenant.deposit }}</div></div>
+      <div class="kpi">
+        <div class="kpi__label">Deposit</div>
+        <div class="kpi__value">QAR {{ tenant.deposit }}</div>
+        <div class="kpi__sub" style="margin-top:2px;">
+          {% if tenant.deposit_status == 'received' %}
+            <span class="pill pill--success" style="font-size:10px; padding:1px 6px;">Received</span>
+          {% elif tenant.deposit_status == 'partially_paid' %}
+            <span class="pill pill--warning" style="font-size:10px; padding:1px 6px;">Received {{ tenant.deposit_paid|floatformat:"0g" }} · Pending {{ tenant.deposit_pending|floatformat:"0g" }}</span>
+          {% else %}
+            <span class="pill pill--neutral" style="font-size:10px; padding:1px 6px;">Pending</span>
+          {% endif %}
+        </div>
+      </div>
       <div class="kpi"><div class="kpi__label">Outstanding Balance</div><div class="kpi__value {% if outstanding_balance > 0 %}kpi__value--warning{% endif %}">QAR {{ outstanding_balance|floatformat:"2" }}</div></div>
       <div class="kpi"><div class="kpi__label">Status</div><div class="kpi__value">{{ tenant.get_status_display }}</div></div>
     </div>

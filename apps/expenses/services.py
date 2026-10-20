@@ -65,6 +65,8 @@ def create_expense(*, villa, category, amount, date, created_by, partition=None,
     """Record an expense against a villa. The business is always derived from the villa."""
     if villa is None:
         raise ValidationError('An expense must be recorded against a villa.')
+    if villa.is_sold:
+        raise DomainError(f'Cannot add expenses to sold villa “{villa.name}”.')
     if not selectors.can_manage_villa(created_by, villa):
         raise PermissionDenied('You cannot add expenses to this villa.')
     with transaction.atomic():
@@ -204,10 +206,12 @@ def _recurring_snapshot(recurring: RecurringExpense) -> dict:
     return {f: str(getattr(recurring, f)) for f in RECURRING_TRACKED_FIELDS}
 
 def _require_fixed_expense_admin(user, villa):
-    if not (user.is_owner or selectors.is_business_manager_of(user, villa.business)):
-        raise PermissionDenied('Only the Owner or the Business Manager can set a villa\'s fixed expenses.')
+    if not (user.is_owner or selectors.is_business_manager_of(user, villa.business) or selectors.is_villa_staff_of(user, villa)):
+        raise PermissionDenied('Only the Owner, Business Manager, or assigned Villa Staff can set a villa\'s fixed expenses.')
 
 def create_recurring_expense(*, villa, category, amount, due_day, created_by, paid_by=PaidBy.OWNER, auto_debit=False) -> RecurringExpense:
+    if villa.is_sold:
+        raise DomainError(f'Cannot add fixed expenses to sold villa “{villa.name}”.')
     _require_fixed_expense_admin(created_by, villa)
     with transaction.atomic():
         recurring = RecurringExpense(villa=villa, category=category, amount=amount, due_day=due_day, paid_by=paid_by, auto_debit=auto_debit, created_by=created_by)

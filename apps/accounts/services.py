@@ -40,6 +40,8 @@ def enable_user(*, user: User, enabled_by, reason='') -> User:
     return user
 
 def _create_assignment(*, user, role, business, villa, assigned_by, can_add_partitions=False) -> Assignment:
+    if villa and villa.is_sold:
+        raise ValidationError(f'Cannot assign staff to sold villa “{villa.name}”.')
     with transaction.atomic():
         target = villa or business
         if Assignment.objects.filter(user=user, role=role, business=business, villa=villa).exists():

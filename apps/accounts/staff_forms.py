@@ -80,7 +80,7 @@ class AssignmentForm(forms.Form):
     role = forms.ChoiceField(choices=Assignment.Role.choices)
     business = forms.ModelChoiceField(queryset=Business.objects.filter(is_archived=False), required=False, empty_label='Select a business…')
     villa = forms.ModelChoiceField(
-        queryset=Villa.objects.filter(is_archived=False).select_related('business'),
+        queryset=Villa.objects.filter(is_archived=False, is_sold=False, business__is_archived=False).select_related('business'),
         required=False,
         empty_label='Select a villa…',
         widget=TaggedSelect(data_attr='data-business', instance_attr='business_id'),
@@ -93,6 +93,8 @@ class AssignmentForm(forms.Form):
     def clean(self):
         cleaned = super().clean()
         role, business, villa = cleaned.get('role'), cleaned.get('business'), cleaned.get('villa')
+        if villa and villa.is_sold:
+            self.add_error('villa', 'Cannot assign staff to a sold villa.')
         if self.staff:
             villa_staff_biz = set(Assignment.objects.filter(user=self.staff, role=Assignment.Role.VILLA_STAFF).values_list('villa__business_id', flat=True))
             manager_biz = set(Assignment.objects.filter(user=self.staff, role=Assignment.Role.BUSINESS_MANAGER).values_list('business_id', flat=True))

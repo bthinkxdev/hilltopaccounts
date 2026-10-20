@@ -133,10 +133,10 @@ def can_delete_photo(user, photo) -> bool:
 
 def partition_creatable_villas(user) -> QuerySet[Villa]:
     if user.is_owner:
-        return Villa.objects.filter(is_archived=False, business__is_archived=False)
+        return Villa.objects.filter(is_archived=False, business__is_archived=False, is_sold=False)
     managed = Assignment.objects.filter(user=user, role=Assignment.Role.BUSINESS_MANAGER).values('business_id')
     staffed = Assignment.objects.filter(user=user, role=Assignment.Role.VILLA_STAFF, can_add_partitions=True).values('villa_id')
-    return Villa.objects.filter(Q(business_id__in=managed) | Q(pk__in=staffed), is_archived=False, business__is_archived=False).distinct()
+    return Villa.objects.filter(Q(business_id__in=managed) | Q(pk__in=staffed), is_archived=False, business__is_archived=False, is_sold=False).distinct()
 
 def manageable_villas(user) -> QuerySet[Villa]:
     if user.is_owner:

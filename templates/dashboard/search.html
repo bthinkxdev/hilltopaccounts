@@ -21,7 +21,7 @@
         <div class="detail-section__title">Villas</div>
         <div class="card">
           {% for villa in results.villas %}
-            <div class="list-row"><a class="list-row__title" href="{% url 'villas:villa_detail' villa.pk %}">{{ villa.name }}</a>{% if not nav_is_field_staff %}<span class="list-row__meta">{{ villa.business.name }}</span>{% endif %}</div>
+            <div class="list-row"><a class="list-row__title" href="{% url 'villas:villa_detail' villa.pk %}">{{ villa.name }}</a>{% if not nav_is_field_staff %}<span class="list-row__meta">{{ villa.business.name }}</span>{% endif %}{% if villa.is_sold %}<span class="pill pill--warning">Sold</span>{% elif villa.is_archived %}<span class="pill pill--neutral">Archived</span>{% endif %}</div>
           {% endfor %}
         </div>
       </div>
@@ -31,7 +31,7 @@
         <div class="detail-section__title">Partitions</div>
         <div class="card">
           {% for partition in results.partitions %}
-            <div class="list-row"><a class="list-row__title" href="{% url 'villas:partition_detail' partition.pk %}">{{ partition.name }}</a><span class="list-row__meta">{{ partition.villa.name }}</span></div>
+            <div class="list-row"><a class="list-row__title" href="{% url 'villas:partition_detail' partition.pk %}">{{ partition.name }}</a><span class="list-row__meta">{{ partition.villa.name }}</span>{% if partition.villa.is_sold %}<span class="pill pill--warning">Sold</span>{% elif partition.status == 'archived' or partition.villa.is_archived %}<span class="pill pill--neutral">Archived</span>{% endif %}</div>
           {% endfor %}
         </div>
       </div>

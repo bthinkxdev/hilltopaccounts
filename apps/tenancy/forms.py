@@ -3,6 +3,8 @@ from datetime import date
 from decimal import Decimal
 from django import forms
 
+from .models import Tenant
+
 class TenantForm(forms.Form):
     name = forms.CharField(max_length=200)
     mobile = forms.CharField(required=False, max_length=32)
@@ -10,7 +12,9 @@ class TenantForm(forms.Form):
     nationality = forms.CharField(required=False, max_length=100)
     move_in_date = forms.DateField(widget=forms.DateInput(attrs={'type': 'date'}))
     monthly_rent = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12)
-    deposit = forms.DecimalField(required=False, min_value=Decimal('0'), decimal_places=2, max_digits=12, initial=Decimal('0'))
+    deposit = forms.DecimalField(required=False, min_value=Decimal('0'), decimal_places=2, max_digits=12, initial=Decimal('0'), label='Total Deposit (QAR)')
+    deposit_status = forms.ChoiceField(required=False, choices=Tenant.DepositStatus.choices, initial=Tenant.DepositStatus.PENDING, label='Deposit Status')
+    deposit_paid = forms.DecimalField(required=False, min_value=Decimal('0'), decimal_places=2, max_digits=12, initial=Decimal('0'), label='Amount Received (QAR)', help_text='Required if deposit is partially paid.')
     notes = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2}))
 
     def __init__(self, *args, restrict_past_move_in=False, lock_rent=False, **kwargs):
@@ -42,8 +46,33 @@ class TenantForm(forms.Form):
             raise forms.ValidationError('Move-in date cannot be in the past.')
         return move_in
 
-    def clean_deposit(self):
-        return self.cleaned_data.get('deposit') or Decimal('0.00')
+    def clean(self):
+        cleaned_data = super().clean()
+        deposit = cleaned_data.get('deposit') or Decimal('0.00')
+        status = cleaned_data.get('deposit_status') or Tenant.DepositStatus.PENDING
+        paid = cleaned_data.get('deposit_paid') or Decimal('0.00')
+
+        if status == Tenant.DepositStatus.PARTIALLY_PAID and paid <= 0:
+            self.add_error('deposit_paid', 'Enter received amount for partially paid deposit.')
+        elif status == Tenant.DepositStatus.RECEIVED and paid <= 0:
+            paid = deposit
+
+        cleaned_data['deposit'] = deposit
+        cleaned_data['deposit_paid'] = paid
+        return cleaned_data
+
+class DepositEditForm(forms.Form):
+    deposit = forms.DecimalField(min_value=Decimal('0'), decimal_places=2, max_digits=12)
+    deposit_paid = forms.DecimalField(required=False, min_value=Decimal('0'), decimal_places=2, max_digits=12, initial=Decimal('0'))
+
+    def clean(self):
+        cleaned_data = super().clean()
+        deposit = cleaned_data.get('deposit') or Decimal('0.00')
+        deposit_paid = cleaned_data.get('deposit_paid') or Decimal('0.00')
+        if deposit_paid > deposit:
+            self.add_error('deposit_paid', 'Amount received cannot exceed total deposit.')
+        cleaned_data['deposit_paid'] = deposit_paid
+        return cleaned_data
 
 class MoveOutForm(forms.Form):
     move_out_date = forms.DateField(widget=forms.DateInput(attrs={'type': 'date'}))

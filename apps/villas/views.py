@@ -19,11 +19,11 @@ from apps.shared.periods import period_context
 from django.db import transaction
 from apps.expenses.services import (create_recurring_expense, deactivate_recurring_expense,
                                     get_or_create_category, update_expense, update_recurring_expense)
-from .forms import FIXED_EXPENSE_DEFAULTS, PartitionForm, PhotoForm, VillaEditForm, VillaForm
+from .forms import FIXED_EXPENSE_DEFAULTS, PartitionForm, PhotoForm, VillaEditForm, VillaForm, VillaSellForm
 from apps.expenses.models import Expense, RecurringExpense
 from .models import Partition, Photo, Villa
 from .services import (add_photo, archive_partition, archive_villa, create_partition, create_villa,
-                      delete_photo, unarchive_partition, unarchive_villa, update_partition, update_villa)
+                      delete_photo, sell_villa, unarchive_partition, unarchive_villa, update_partition, update_villa)
 
 def _first_photo_by(photos, key):
     """Map group id -> first photo, from a single already-fetched list of photos."""
@@ -40,13 +40,15 @@ def villa_list(request):
     is_staff = selectors.is_field_staff(request.user)
     if is_staff:
         status = 'active'
-        base = selectors.villas_visible_to(request.user).filter(is_archived=False, business__is_archived=False)
+        base = selectors.villas_visible_to(request.user).filter(is_archived=False, business__is_archived=False, is_sold=False)
     elif status == 'archived':
-        base = selectors.villas_visible_to(request.user).filter(Q(is_archived=True) | Q(business__is_archived=True))
+        base = selectors.villas_visible_to(request.user).filter(Q(is_archived=True) | Q(business__is_archived=True), is_sold=False)
+    elif status == 'sold':
+        base = selectors.villas_visible_to(request.user).filter(is_sold=True)
     elif status == 'all':
         base = selectors.villas_visible_to(request.user)
     else:
-        base = selectors.villas_visible_to(request.user).filter(is_archived=False, business__is_archived=False)
+        base = selectors.villas_visible_to(request.user).filter(is_archived=False, business__is_archived=False, is_sold=False)
     q = request.GET.get('q', '').strip()
     if q:
         base = base.filter(name__icontains=q)
@@ -129,17 +131,18 @@ def villa_detail(request, pk):
     today = date.today()
     villa = get_object_or_404(selectors.villas_visible_to(request.user).select_related('business'), pk=pk)
     is_field_staff = selectors.is_field_staff(request.user)
-    if is_field_staff and (villa.is_archived or villa.business.is_archived):
-        messages.info(request, 'This villa has been archived.')
+    if is_field_staff and (villa.is_archived or villa.business.is_archived or villa.is_sold):
+        messages.info(request, 'This villa has been sold.' if villa.is_sold else 'This villa has been archived.')
         return redirect('villas:villa_list')
     period = period_context(request, today, allow_future=True)
     start, end = period['period_start'], period['period_end']
     # Fixed expenses show up by themselves every month (idempotent, system-attributed) — nobody re-adds them.
-    for month in ([period['month']] if period['period'] == 'month' else range(1, 13)):
-        ensure_fixed_expenses(villa_ids=[villa.pk], year=period['year'], month=month)
+    if not villa.is_sold:
+        for month in ([period['month']] if period['period'] == 'month' else range(1, 13)):
+            ensure_fixed_expenses(villa_ids=[villa.pk], year=period['year'], month=month)
     scope = selectors.ManageScope(request.user)
-    can_manage = scope.can_manage_villa(villa.pk, villa.business_id)
-    is_admin = scope.is_admin(villa.business_id)
+    can_manage = scope.can_manage_villa(villa.pk, villa.business_id) and not villa.is_sold
+    is_admin = scope.is_admin(villa.business_id) and not villa.is_sold
     all_partitions = list(selectors.partitions_visible_to(request.user).filter(villa=villa).order_by('name'))
     active_partitions = [p for p in all_partitions if p.status == 'active']
     status = request.GET.get('status', 'active')
@@ -214,8 +217,8 @@ def villa_detail(request, pk):
         'occupied_count': len(tenants),
         'vacant_count': len([p for p in active_partitions if p.pk not in tenant_by_partition]),
         'can_manage': can_manage,
-        'can_add_partition': selectors.can_add_partition(request.user, villa),
-        'can_admin_fixed': is_admin,
+        'can_add_partition': False if villa.is_sold else selectors.can_add_partition(request.user, villa),
+        'can_admin_fixed': can_manage,
         'is_admin': is_admin,
         'can_delete_photos': is_admin,
         'can_view_financials': can_view_financials,
@@ -378,6 +381,25 @@ def villa_unarchive(request, pk):
     return redirect('villas:villa_detail', pk=villa.pk)
 
 @login_required
+def villa_sell(request, pk):
+    villa = get_object_or_404(selectors.villas_visible_to(request.user), pk=pk)
+    if not request.user.is_owner:
+        raise PermissionDenied('Only the Owner can mark a villa as sold.')
+    form = VillaSellForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        try:
+            sell_villa(villa=villa, sold_by=request.user, **form.cleaned_data)
+            messages.success(request, f'Villa “{villa.name}” marked as sold.')
+            return redirect('villas:villa_list')
+        except DomainError as exc:
+            form.add_error(None, str(exc))
+    return render(request, 'components/form_page.html', {
+        'form': form, 'title': f'Mark as Sold — {villa.name}', 'submit_label': 'Confirm Sale',
+        'cancel_url': reverse('villas:villa_detail', args=[villa.pk]),
+    })
+
+
+@login_required
 def partition_list(request):
     qs = selectors.partitions_visible_to(request.user).select_related('villa', 'villa__business')
     q = request.GET.get('q', '').strip()
@@ -389,23 +411,23 @@ def partition_list(request):
     occupancy = request.GET.get('occupancy', '')
     if selectors.is_field_staff(request.user):
         occupancy = 'occupied' if occupancy == 'occupied' else ('vacant' if occupancy == 'vacant' else '')
-        qs = qs.filter(status='active', villa__is_archived=False, villa__business__is_archived=False)
+        qs = qs.filter(status='active', villa__is_archived=False, villa__business__is_archived=False, villa__is_sold=False)
         if occupancy in ('occupied', 'vacant'):
             occupied_ids = qs.filter(tenancies__status='active').values_list('pk', flat=True).distinct()
             qs = qs.filter(pk__in=occupied_ids) if occupancy == 'occupied' else qs.exclude(pk__in=occupied_ids)
     elif occupancy == 'archived':
-        qs = qs.filter(Q(status='archived') | Q(villa__is_archived=True) | Q(villa__business__is_archived=True))
+        qs = qs.filter(Q(status='archived') | Q(villa__is_archived=True) | Q(villa__business__is_archived=True)).exclude(villa__is_sold=True)
     elif occupancy == 'all':
         pass
     else:
-        qs = qs.filter(status='active', villa__is_archived=False, villa__business__is_archived=False)
+        qs = qs.filter(status='active', villa__is_archived=False, villa__business__is_archived=False, villa__is_sold=False)
         if occupancy in ('occupied', 'vacant'):
             occupied_ids = qs.filter(tenancies__status='active').values_list('pk', flat=True).distinct()
             qs = qs.filter(pk__in=occupied_ids) if occupancy == 'occupied' else qs.exclude(pk__in=occupied_ids)
     page_obj = paginate_queryset(request, qs.order_by('villa__name', 'name'))
     for partition in page_obj:
         partition.occupied = partition.is_occupied
-    return render(request, 'villas/partition_list.html', {'page_obj': page_obj, 'q': q, 'villas': selectors.villas_visible_to(request.user).filter(is_archived=False, business__is_archived=False), 'selected_villa': villa_id, 'selected_occupancy': occupancy, 'can_create_partition': selectors.partition_creatable_villas(request.user).exists(), 'breadcrumbs': [('Partitions', None)]})
+    return render(request, 'villas/partition_list.html', {'page_obj': page_obj, 'q': q, 'villas': selectors.villas_visible_to(request.user).filter(is_archived=False, business__is_archived=False, is_sold=False), 'selected_villa': villa_id, 'selected_occupancy': occupancy, 'can_create_partition': selectors.partition_creatable_villas(request.user).exists(), 'breadcrumbs': [('Partitions', None)]})
 
 @login_required
 def partition_detail(request, pk):
@@ -414,8 +436,8 @@ def partition_detail(request, pk):
     from apps.expenses import selectors as expenses_selectors
     today = date.today()
     partition = get_object_or_404(selectors.partitions_visible_to(request.user).select_related('villa', 'villa__business'), pk=pk)
-    if selectors.is_field_staff(request.user) and (partition.villa.is_archived or partition.villa.business.is_archived or partition.status == 'archived'):
-        messages.info(request, 'This villa has been archived.')
+    if selectors.is_field_staff(request.user) and (partition.villa.is_archived or partition.villa.business.is_archived or partition.villa.is_sold or partition.status == 'archived'):
+        messages.info(request, 'This villa has been sold.' if partition.villa.is_sold else 'This villa has been archived.')
         return redirect('villas:villa_list')
     villa = partition.villa
     period = period_context(request, today)
@@ -429,22 +451,22 @@ def partition_detail(request, pk):
     expenses = selectors.expenses_visible_to(request.user).filter(partition=partition)
     recent_expenses = list(expenses.filter(date__gte=start, date__lte=end).select_related('category', 'paid_by_user', 'created_by').order_by('-date', '-id')[:8])
     scope = selectors.ManageScope(request.user)
-    can_manage_here = scope.can_manage_villa(villa.pk, villa.business_id)
+    can_manage_here = scope.can_manage_villa(villa.pk, villa.business_id) and not villa.is_sold
     is_staff = selectors.is_field_staff(request.user)
     for expense in recent_expenses:
         expense.due_state = expenses_selectors.due_state(expense, today)
-        expense.can_pay = scope.can_pay_expense(expense)
-        expense.can_verify = scope.can_verify_expense(expense)
+        expense.can_pay = scope.can_pay_expense(expense) and not villa.is_sold
+        expense.can_verify = scope.can_verify_expense(expense) and not villa.is_sold
         expense.can_edit = can_manage_here and expense.status == 'active' and expense.paid_on is None and not (is_staff and expense.paid_by == 'owner')
     from apps.tenancy.models import Tenant
     past_tenants = list(selectors.tenants_visible_to(request.user).filter(partition=partition, status=Tenant.Status.MOVED_OUT).order_by('-move_out_date', '-id'))
     can_view_financials = selectors.can_view_villa_financials(request.user, villa)
     partition_photos = list(Photo.objects.filter(partition=partition))
     for p in partition_photos:
-        p.can_delete = selectors.can_delete_photo(request.user, p)
+        p.can_delete = selectors.can_delete_photo(request.user, p) and not villa.is_sold
     active_charges = list(Charge.objects.filter(partition=partition, is_active=True).filter(Q(end_date__isnull=True) | Q(end_date__gt=today))) if current_tenant else []
-    can_add_charge = ChargeType.objects.filter(is_active=True).exclude(id__in={c.charge_type_id for c in active_charges}).exists() if current_tenant else False
-    context = {'partition': partition, 'villa': villa, 'current_tenant': current_tenant, 'past_tenants': past_tenants, 'charges': active_charges, 'can_add_charge': can_add_charge, 'invoices': invoices, 'recent_expenses': recent_expenses, 'photos': partition_photos, 'can_manage': selectors.can_manage_villa(request.user, villa), 'can_archive': request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business), 'can_delete_photos': request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business), 'can_view_financials': can_view_financials, 'keep': [], 'breadcrumbs': [('Villas', reverse('villas:villa_list')), (villa.name, reverse('villas:villa_detail', args=[villa.pk])), (partition.name, None)], **period}
+    can_add_charge = (not villa.is_sold) and (ChargeType.objects.filter(is_active=True).exclude(id__in={c.charge_type_id for c in active_charges}).exists() if current_tenant else False)
+    context = {'partition': partition, 'villa': villa, 'current_tenant': current_tenant, 'past_tenants': past_tenants, 'charges': active_charges, 'can_add_charge': can_add_charge, 'invoices': invoices, 'recent_expenses': recent_expenses, 'photos': partition_photos, 'can_manage': selectors.can_manage_villa(request.user, villa) and not villa.is_sold, 'can_archive': (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)) and not villa.is_sold, 'can_delete_photos': (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)) and not villa.is_sold, 'can_view_financials': can_view_financials, 'keep': [], 'breadcrumbs': [('Villas', reverse('villas:villa_list')), (villa.name, reverse('villas:villa_detail', args=[villa.pk])), (partition.name, None)], **period}
     if can_view_financials:
         context['pnl'] = billing_selectors.period_profit_loss(all_invoices, expenses, start, end)
         context['outstanding'] = billing_selectors.outstanding_amount(all_invoices)
@@ -481,10 +503,12 @@ def partition_create(request, villa_pk=None):
 @login_required
 def partition_edit(request, pk):
     partition = get_object_or_404(selectors.partitions_visible_to(request.user).select_related('villa', 'villa__business'), pk=pk)
-    if selectors.is_field_staff(request.user) and (partition.villa.is_archived or partition.villa.business.is_archived or partition.status == 'archived'):
-        messages.info(request, 'This villa has been archived.')
+    if selectors.is_field_staff(request.user) and (partition.villa.is_archived or partition.villa.business.is_archived or partition.villa.is_sold or partition.status == 'archived'):
+        messages.info(request, 'This villa has been sold.' if partition.villa.is_sold else 'This villa has been archived.')
         return redirect('villas:villa_list')
     villa = partition.villa
+    if partition.villa.is_sold:
+        raise PermissionDenied('Cannot edit partitions of a sold villa.')
     if not (request.user.is_owner or selectors.can_manage_villa(request.user, villa)):
         raise PermissionDenied('You cannot edit this partition.')
     if request.method == 'POST':
@@ -569,6 +593,8 @@ def _photo_redirect(villa, partition):
 def photo_add(request, villa_pk=None, partition_pk=None):
     partition = get_object_or_404(selectors.partitions_visible_to(request.user).select_related('villa'), pk=partition_pk) if partition_pk else None
     villa = partition.villa if partition else get_object_or_404(selectors.villas_visible_to(request.user), pk=villa_pk)
+    if villa.is_sold:
+        raise PermissionDenied('Cannot add photos to a sold villa.')
     if selectors.is_field_staff(request.user) and (villa.is_archived or villa.business.is_archived):
         messages.info(request, 'This villa has been archived.')
         return redirect('villas:villa_list')

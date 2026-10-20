@@ -9,7 +9,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         today = date.today()
-        villa_ids = RecurringExpense.objects.filter(is_active=True, villa__is_archived=False).values_list('villa_id', flat=True).distinct()
+        villa_ids = RecurringExpense.objects.filter(is_active=True, villa__is_archived=False, villa__is_sold=False).values_list('villa_id', flat=True).distinct()
         created = 0
         for villa in Villa.objects.filter(pk__in=villa_ids).select_related('business'):
             created += len(generate_recurring_expenses_as_system(villa=villa, year=today.year, month=today.month))

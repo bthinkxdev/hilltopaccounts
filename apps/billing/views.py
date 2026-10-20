@@ -17,11 +17,15 @@ from .models import Charge, ChargeType, Invoice
 from .services import collect_rent, cancel_charge, cancel_invoice, cancel_payment, correct_payment, create_charge, generate_monthly_invoice, record_payment
 
 def _can_manage(user, villa):
+    if villa.is_sold:
+        return False
     return user.is_owner or selectors.is_business_manager_of(user, villa.business) or selectors.is_villa_staff_of(user, villa)
 
 @login_required
 def charge_create(request, partition_pk):
     partition = get_object_or_404(selectors.partitions_visible_to(request.user).select_related('villa', 'villa__business'), pk=partition_pk)
+    if partition.villa.is_sold:
+        raise PermissionDenied('Cannot add charges to a sold villa.')
     if not _can_manage(request.user, partition.villa):
         raise PermissionDenied('You cannot add a charge to this partition.')
     today = date.today()
