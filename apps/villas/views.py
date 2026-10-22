@@ -312,11 +312,14 @@ def villa_detail(request, pk):
             owner_cut = (distributable_profit * (owner_pct / Decimal('100.00'))).quantize(Decimal('0.01'))
             context['villa_partner_shares'] = shares
             context['villa_owner_share'] = {'percentage': owner_pct, 'cut': owner_cut}
-            context['has_unpaid_partners'] = (distributable_profit > 0) and any(not s.is_fully_paid for s in shares)
+            unhanded_cash = context['cash']['holding']
+            context['has_unhanded_cash'] = (unhanded_cash > 0)
+            context['has_unpaid_partners'] = (distributable_profit > 0) and any(not s.is_fully_paid for s in shares) and not context['has_unhanded_cash']
         else:
             context['villa_partner_shares'] = []
             context['villa_owner_share'] = {'percentage': Decimal('100.00'), 'cut': distributable_profit}
             context['has_unpaid_partners'] = False
+            context['has_unhanded_cash'] = False
 
         context['owner_share_amount'] = context['villa_owner_share']['cut']
         context['owner_share_pct'] = context['villa_owner_share']['percentage']

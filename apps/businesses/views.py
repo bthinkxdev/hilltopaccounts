@@ -335,14 +335,21 @@ def partner_detail(request, pk):
         s.is_partial = (0 < s.paid_amount < s.cut)
         s.payout = s.villa_payouts[-1] if s.villa_payouts else None
 
+    from apps.cash import selectors as cash_selectors
+    for s in shares:
+        s.cash_pos = cash_selectors.villa_cash_position(s.villa)
+        s.has_unhanded_cash = (s.cash_pos['holding'] > 0)
+
     total_payout = sum((s.cut for s in shares), Decimal('0.00'))
     remaining_payout = max(Decimal('0.00'), total_payout - period_paid_amount)
+    any_unhanded_cash = any(s.has_unhanded_cash for s in shares)
 
     return render(request, 'businesses/partner_detail.html', {
         'partner': partner, 'shares': shares,
         'total_payout': total_payout,
         'period_paid_amount': period_paid_amount,
         'remaining_payout': remaining_payout,
+        'any_unhanded_cash': any_unhanded_cash,
         'is_fully_paid': (period_paid_amount >= total_payout and total_payout > 0),
         'period_payouts': period_payouts,
         'payout_history': payout_history,
@@ -455,6 +462,18 @@ def partner_payout_create(request, partner_pk):
         except Exception:
             initial_amount = None
 
+    if villa:
+        from apps.cash import selectors as cash_selectors
+        cash_pos = cash_selectors.villa_cash_position(villa)
+        if cash_pos['holding'] > 0:
+            messages.error(request, f'Profit cannot be shared: Staff is currently holding QAR {cash_pos["holding"]:.2f} in cash for {villa.name}. All cash must be handed over by staff first.')
+            back_url = (
+                f"{reverse('villas:villa_detail', args=[villa.pk])}?period=month&year={year}&month={month}"
+                if request.GET.get('from') == 'villa' or request.POST.get('from') == 'villa'
+                else f"{reverse('businesses:partner_detail', args=[partner.pk])}?period=month&year={year}&month={month}"
+            )
+            return redirect(back_url)
+
     if request.method == 'POST':
         form = PartnerPayoutForm(request.POST)
         if form.is_valid():
@@ -556,7 +575,15 @@ def villa_partner_payout_batch(request, villa_pk):
     unpaid_shares = [s for s in shares if s.remaining > 0]
     total_unpaid = sum((s.remaining for s in unpaid_shares), Decimal('0.00'))
 
+    from apps.cash import selectors as cash_selectors
+    cash_pos = cash_selectors.villa_cash_position(villa)
+    cash_holding = cash_pos['holding']
+    cash_awaiting = cash_pos['awaiting_confirmation']
+
     if request.method == 'POST':
+        if cash_holding > 0:
+            messages.error(request, f'Profit cannot be shared: Staff is currently holding QAR {cash_holding:.2f} in cash for {villa.name}. All cash must be handed over by staff first.')
+            return redirect(f"{reverse('villas:villa_detail', args=[villa.pk])}?period=month&year={year}&month={month}")
         if distributable_profit <= 0:
             messages.error(request, 'Cannot record partner payouts when villa net profit is zero or negative.')
             return redirect(f"{reverse('villas:villa_detail', args=[villa.pk])}?period=month&year={year}&month={month}")
@@ -610,6 +637,8 @@ def villa_partner_payout_batch(request, villa_pk):
         'unpaid_shares': unpaid_shares,
         'total_unpaid': total_unpaid,
         'today': today.isoformat(),
+        'cash_holding': cash_holding,
+        'cash_awaiting': cash_awaiting,
         'breadcrumbs': [('Villas', reverse('villas:villa_list')), (villa.name, reverse('villas:villa_detail', args=[villa.pk])), ('Record Payouts', None)],
     })
 

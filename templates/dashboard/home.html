@@ -5,7 +5,7 @@
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>Welcome back, {{ user.get_full_name|default:user.username }} <span aria-hidden="true">&#128075;</span></h1>
+      <h1>Welcome back, {% if user.is_owner %}Admin{% else %}{{ user.get_full_name|default:user.username }}{% endif %} <span aria-hidden="true">&#128075;</span></h1>
       <div class="page-header__meta">
         {% for label in role_labels %}<span class="pill pill--neutral">{{ label }}</span>{% endfor %}
       </div>

@@ -16,7 +16,11 @@
       <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_edit' partner.pk %}">Edit Partner</a>
       <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_share_create' partner.pk %}">+ Assign Villa</a>
       {% if total_payout > 0 and not is_fully_paid %}
-        <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?{% if shares|length == 1 %}villa={{ shares.0.villa.pk }}&{% endif %}year={{ year }}&month={{ month }}&amount={{ remaining_payout }}">Record Payout</a>
+        {% if any_unhanded_cash %}
+          <span class="pill pill--warning" style="display: inline-flex; align-items: center; padding: 6px 12px; font-weight: 600;" title="Cannot distribute profit until staff cash is handed over">Handover Pending</span>
+        {% else %}
+          <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?{% if shares|length == 1 %}villa={{ shares.0.villa.pk }}&{% endif %}year={{ year }}&month={{ month }}&amount={{ remaining_payout }}">Record Payout</a>
+        {% endif %}
       {% endif %}
     </div>
   </div>
@@ -51,6 +55,13 @@
     </div>
   </div>
 
+  {% if any_unhanded_cash %}
+    <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid var(--warning, #f59e0b); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); margin-bottom: var(--space-4); display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap;">
+      <span style="font-size: 13px;">Staff is currently holding unhanded cash for one or more assigned villas. Profit cannot be shared until all cash is handed over by staff.</span>
+      <a href="{% url 'cash:handover_list' %}" class="btn btn--ghost btn--sm" style="white-space: nowrap;">Handovers &rarr;</a>
+    </div>
+  {% endif %}
+
   <div class="detail-section">
     <div class="detail-section__title">Assigned Villas &amp; Profit Cut — {{ period_label }}</div>
     <div class="card card--tight">
@@ -77,6 +88,8 @@
               <div class="partner-row__actions">
                 {% if share.is_fully_paid %}
                   <span class="pill pill--success">Paid</span>
+                {% elif share.has_unhanded_cash %}
+                  <span class="pill pill--warning" style="font-size: 11px;" title="Staff is holding QAR {{ share.cash_pos.holding|floatformat:'2g' }} in cash. Handover required before payout.">Handover Required</span>
                 {% elif share.is_partial %}
                   <span class="pill pill--warning" title="Paid QAR {{ share.paid_amount|floatformat:'2g' }}">Paid {{ share.paid_amount|floatformat:"2g" }} · Due {{ share.remaining|floatformat:"2g" }}</span>
                   <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?villa={{ share.villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.remaining }}">Pay QAR {{ share.remaining|floatformat:"2g" }}</a>

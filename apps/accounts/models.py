@@ -10,6 +10,16 @@ class User(AbstractUser):
     class Meta:
         ordering = ['username']
 
+    def get_full_name(self):
+        if self.is_owner:
+            return 'Admin'
+        return super().get_full_name()
+
+    def get_short_name(self):
+        if self.is_owner:
+            return 'Admin'
+        return super().get_short_name()
+
     def __str__(self):
         return self.get_full_name() or self.username
 

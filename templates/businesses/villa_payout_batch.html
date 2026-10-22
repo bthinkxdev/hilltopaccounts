@@ -30,6 +30,8 @@
           <div class="partner-row__actions">
             {% if share.is_fully_paid %}
               <span class="pill pill--success">Paid ({{ share.existing_payout.get_payment_method_display }})</span>
+            {% elif cash_holding > 0 %}
+              <span class="pill pill--warning" title="Staff is currently holding cash. Handover required before paying profit.">Handover Pending</span>
             {% elif share.is_partial %}
               <span class="pill pill--warning" title="Paid QAR {{ share.paid_amount|floatformat:'2g' }}">Paid {{ share.paid_amount|floatformat:"2g" }} · Due {{ share.remaining|floatformat:"2g" }}</span>
             {% else %}
@@ -41,7 +43,19 @@
     {% endfor %}
   </div>
 
-  {% if net_profit <= 0 %}
+  {% if cash_holding > 0 %}
+    <div class="empty-state" style="border: 1px solid rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.05);">
+      <div class="empty-state__title" style="color: var(--warning, #f59e0b);">Profit Sharing Blocked — Handover Required</div>
+      <p>
+        Staff is currently holding <b>QAR {{ cash_holding|floatformat:"2g" }}</b> in unhanded cash collected for <b>{{ villa.name }}</b>.
+        Cash collected by staff must be handed over and confirmed before profit can be distributed to partners.
+      </p>
+      <div style="display: flex; gap: var(--space-2); justify-content: center; margin-top: var(--space-3); flex-wrap: wrap;">
+        <a class="btn btn--primary btn--sm" href="{% url 'cash:handover_list' %}">Go to Cash Handovers &rarr;</a>
+        <a class="btn btn--ghost btn--sm" href="{% url 'villas:villa_detail' villa.pk %}?period=month&year={{ year }}&month={{ month }}">Return to Villa</a>
+      </div>
+    </div>
+  {% elif net_profit <= 0 %}
     <div class="empty-state">
       <div class="empty-state__title">No profit to distribute for {{ month_label }}.</div>
       <p>Villa net is <b>QAR {{ net_profit|floatformat:"2g" }}</b>. Profit payouts are only distributed when the villa generates a positive net profit.</p>
