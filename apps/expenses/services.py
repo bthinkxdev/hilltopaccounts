@@ -31,16 +31,17 @@ def _snapshot(expense: Expense) -> dict:
     return {f: str(getattr(expense, f)) for f in TRACKED_FIELDS}
 
 def can_pay_expense(user, expense: Expense) -> bool:
-    """Owner-account expenses are settled by the Owner or the villa's Business Manager; staff-paid ones by anyone on the villa."""
+    """Auto-debit or landlord rent expenses are settled by the Owner or the villa's Business Manager; other villa expenses by anyone on the villa."""
     if user.is_owner:
         return True
-    if expense.recurring_id is not None and getattr(expense.recurring, 'paid_by', '') == PaidBy.OWNER:
+    if expense.recurring_id is not None and getattr(expense.recurring, 'auto_debit', False):
         return selectors.is_business_manager_of(user, expense.business)
     if expense.category_id and re.search(selectors.LANDLORD_RENT_REGEX, expense.category.name, re.I):
         return selectors.is_business_manager_of(user, expense.business)
     if expense.villa_id:
         return selectors.can_manage_villa(user, expense.villa)
     return selectors.is_business_manager_of(user, expense.business)
+
 
 def _is_admin(user, business) -> bool:
     """Owner, or the Business Manager of that business — the people who confirm that money was really paid/received."""

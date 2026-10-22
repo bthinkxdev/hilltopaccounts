@@ -1,0 +1,319 @@
+<!-- Reusable Rent & Security Deposit Collection Modals -->
+
+<!-- rent / due collection modal -->
+<dialog id="rent-collect-modal" tabindex="-1" style="width: calc(100% - var(--space-6)); max-width: 460px; outline: none; border-radius: var(--radius-md); padding: var(--space-5);">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+    <h3 style="margin: 0; font-size: 16px; font-weight: 700;">Collect Rent &amp; Charges</h3>
+    <button type="button" class="export-close-btn" onclick="closeRentCollectModal()" aria-label="Close" style="background: transparent; border: none; cursor: pointer; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 6px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </button>
+  </div>
+
+  <div style="color: var(--text-secondary); margin-bottom: var(--space-3); font-size: 13px;">
+    <span id="modal-partition-name" style="font-weight: 600; color: var(--text-primary);"></span> &bull; <span id="modal-tenant-name"></span>
+  </div>
+
+  <!-- previous overdue breakdown section -->
+  <div id="modal-prior-overdue-container" style="display: none; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-sm); padding: var(--space-3); margin-bottom: var(--space-3);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+      <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--danger, #ef4444); display: flex; align-items: center; gap: 4px;">
+        ⚠️ Previous Overdue
+      </span>
+      <span id="modal-prior-overdue-total" style="font-size: 12px; font-weight: 700; color: var(--danger, #ef4444);"></span>
+    </div>
+    <div id="modal-prior-overdue-list" style="display: flex; flex-direction: column; gap: var(--space-2);">
+      <!-- injected dynamically by JS -->
+    </div>
+  </div>
+
+  <!-- current month charges breakdown box -->
+  <div id="modal-charges-container" style="background: var(--surface-sunken, rgba(255,255,255,0.04)); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: var(--space-3); margin-bottom: var(--space-3);">
+    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); margin-bottom: var(--space-2);">Current Month Charges Breakdown</div>
+    <div id="modal-charges-list" style="display: flex; flex-direction: column; gap: var(--space-1); font-size: 13px;">
+      <!-- injected dynamically by JS -->
+    </div>
+    <div style="display: flex; justify-content: space-between; border-top: 1px dashed var(--border-subtle); margin-top: var(--space-2); padding-top: var(--space-2); font-weight: 600; font-size: 13px;">
+      <span>Total Monthly Charges</span>
+      <span id="modal-charges-total"></span>
+    </div>
+    <div id="modal-paid-row" style="display: none; justify-content: space-between; color: var(--success, #10b981); font-size: 13px; margin-top: var(--space-1);">
+      <span>Already Paid</span>
+      <span id="modal-paid-amount"></span>
+    </div>
+  </div>
+
+  <form id="rent-collect-form" method="post" action="" style="margin: 0;">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <input type="hidden" name="year" value="{{ year }}">
+    <input type="hidden" name="month" value="{{ month }}">
+
+    <div class="field" style="margin-bottom: var(--space-3);">
+      <label for="modal-rent-amount" style="font-size: 13px; font-weight: 600; margin-bottom: var(--space-1); display: block;">Monthly Rent Amount (QAR)</label>
+      <input type="number" step="0.01" min="0.01" id="modal-rent-amount" name="rent_amount" required>
+      <div style="font-size: 12px; color: var(--text-secondary); margin-top: var(--space-1);">Base rent for this tenant (adjust only if rent changed).</div>
+    </div>
+
+    <div class="field" style="margin-bottom: var(--space-3);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-1);">
+        <label for="modal-received-amount" style="font-size: 13px; font-weight: 600; margin-bottom: 0;">Amount Received Now (QAR)</label>
+        <button type="button" id="modal-fill-balance-btn" class="btn btn--ghost btn--sm" style="font-size: 11px; padding: 2px 8px; height: auto;" onclick="fillRemainingBalance()">Set to balance</button>
+      </div>
+      <input type="number" step="0.01" min="0.01" id="modal-received-amount" name="amount" required>
+      <div id="modal-calc-hint" style="font-size: 12px; margin-top: var(--space-1); font-weight: 500;"></div>
+    </div>
+
+    <div class="field" style="margin-bottom: var(--space-3);">
+      <label for="modal-payment-method" style="font-size: 13px; font-weight: 600; margin-bottom: var(--space-1); display: block;">Payment Method</label>
+      <select id="modal-payment-method" name="method">
+        <option value="cash" selected>Cash</option>
+        <option value="bank_transfer">Bank Transfer</option>
+      </select>
+    </div>
+
+    <div class="field" style="margin-bottom: var(--space-4);">
+      <label for="modal-collection-date" style="font-size: 13px; font-weight: 600; margin-bottom: var(--space-1); display: block;">Collection Date</label>
+      <input type="date" id="modal-collection-date" name="collected_at" value="{% now 'Y-m-d' %}">
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4);">
+      <button type="button" class="btn btn--ghost" onclick="closeRentCollectModal()">Cancel</button>
+      <button type="submit" id="modal-submit-btn" class="btn btn--primary">Confirm Payment</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- security deposit collection modal -->
+<dialog id="deposit-modal" tabindex="-1" style="width: calc(100% - var(--space-6)); max-width: 440px; outline: none; border-radius: var(--radius-md); padding: var(--space-5);">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+    <h3 style="margin: 0; font-size: 16px; font-weight: 700;">Record Security Deposit</h3>
+    <button type="button" class="export-close-btn" onclick="closeDepositModal()" aria-label="Close" style="background: transparent; border: none; cursor: pointer; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 6px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </button>
+  </div>
+
+  <div style="color: var(--text-secondary); margin-bottom: var(--space-3); font-size: 13px;">
+    <span id="dep-modal-partition" style="font-weight: 600; color: var(--text-primary);"></span> &bull; <span id="dep-modal-tenant"></span>
+  </div>
+
+  <!-- deposit summary breakdown box -->
+  <div style="background: var(--surface-sunken, rgba(255,255,255,0.04)); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: var(--space-3); margin-bottom: var(--space-3);">
+    <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: var(--space-1);">
+      <span>Total Deposit</span>
+      <span id="dep-modal-total-text" style="font-weight: 600;"></span>
+    </div>
+    <div id="dep-already-paid-row" style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: var(--space-1); color: var(--success, #10b981);">
+      <span>Already Paid</span>
+      <span id="dep-modal-paid-text" style="font-weight: 600;"></span>
+    </div>
+    <div style="display: flex; justify-content: space-between; font-size: 13px; border-top: 1px dashed var(--border-subtle); padding-top: var(--space-1); font-weight: 600;">
+      <span>Remaining Pending</span>
+      <span id="dep-modal-pending-text" style="color: var(--warning, #f59e0b);"></span>
+    </div>
+  </div>
+
+  <form id="dep-modal-form" method="post" action="" style="margin: 0;">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <input type="hidden" id="dep-paid" name="deposit_paid">
+
+    <div class="field" style="margin-bottom: var(--space-3);">
+      <label for="dep-amount" style="font-size: 13px; font-weight: 600; margin-bottom: var(--space-1); display: block;">Total Deposit Amount (QAR)</label>
+      <input type="number" step="0.01" min="0" id="dep-amount" name="deposit" required>
+    </div>
+
+    <div class="field" style="margin-bottom: var(--space-4);">
+      <label for="dep-received-now" style="font-size: 13px; font-weight: 600; margin-bottom: var(--space-1); display: block;">Amount Received Now (QAR)</label>
+      <input type="number" step="0.01" min="0" id="dep-received-now">
+      <div id="dep-calc-hint" style="font-size: 12px; margin-top: var(--space-1); font-weight: 500;"></div>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4);">
+      <button type="button" class="btn btn--ghost" onclick="closeDepositModal()">Cancel</button>
+      <button type="submit" id="dep-submit-btn" class="btn btn--primary">Save Deposit</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  let rentModalState = { rent: 0, due: 0, paid: 0, balance: 0, charges: [], priorUnpaid: [] };
+
+  function openRentCollectModal(btn) {
+    const g = attr => btn.getAttribute(attr);
+    let charges = [], prior = [];
+    try { charges = JSON.parse(g('data-charges') || '[]'); } catch(e) {}
+    try { prior = JSON.parse(g('data-prior-unpaid') || '[]'); } catch(e) {}
+
+    const rent = parseFloat(g('data-rent')) || (charges.find(c => c.name === 'Rent')?.amount) || parseFloat(g('data-due')) || 0;
+    rentModalState = {
+      rent,
+      due: parseFloat(g('data-due')) || 0,
+      paid: parseFloat(g('data-paid')) || 0,
+      balance: parseFloat(g('data-balance')) || 0,
+      charges,
+      priorUnpaid: prior
+    };
+
+    const modal = document.getElementById('rent-collect-modal');
+    document.getElementById('rent-collect-form').action = g('data-action-url');
+    document.getElementById('modal-partition-name').textContent = g('data-partition') || '';
+    document.getElementById('modal-tenant-name').textContent = g('data-tenant') || '';
+
+    //overdue breakdown section
+    const priorBox = document.getElementById('modal-prior-overdue-container');
+    if (prior.length > 0) {
+      const totalPrior = prior.reduce((s, p) => s + (parseFloat(p.outstanding) || 0), 0);
+      document.getElementById('modal-prior-overdue-total').textContent = `Total: QAR ${totalPrior.toFixed(2)}`;
+      document.getElementById('modal-prior-overdue-list').innerHTML = prior.map(p => `
+        <div style="background:rgba(0,0,0,0.2); border:1px solid rgba(239,68,68,0.25); border-radius:4px; padding:6px 8px; font-size:12px;">
+          <div style="display:flex; justify-content:space-between; font-weight:600; margin-bottom:3px;">
+            <span>${p.period}</span><span style="color:var(--danger,#ef4444);">QAR ${parseFloat(p.outstanding).toFixed(2)} pending</span>
+          </div>
+          ${(p.charges || []).map(c => `<div style="display:flex; justify-content:space-between; color:var(--text-secondary); font-size:11px;"><span>• ${c.name}</span><span>QAR ${parseFloat(c.amount).toFixed(2)}</span></div>`).join('')}
+          ${p.paid > 0 ? `<div style="display:flex; justify-content:space-between; font-size:11px; color:var(--success,#10b981); border-top:1px dashed rgba(255,255,255,0.1); padding-top:2px; margin-top:2px;"><span>Paid</span><span>QAR ${parseFloat(p.paid).toFixed(2)}</span></div>` : ''}
+        </div>
+      `).join('');
+      priorBox.style.display = 'block';
+    } else {
+      priorBox.style.display = 'none';
+    }
+
+    //current charges breakdown
+    const list = charges.length ? charges : [{ name: 'Rent', amount: rent }];
+    document.getElementById('modal-charges-list').innerHTML = list.map(c => `
+      <div style="display:flex; justify-content:space-between; font-size:13px;">
+        <span>${c.name}</span>
+        <span ${c.name === 'Rent' ? 'id="modal-charge-rent-val"' : ''} style="font-weight:500;">QAR ${parseFloat(c.amount).toFixed(2)}</span>
+      </div>
+    `).join('');
+
+    document.getElementById('modal-paid-row').style.display = rentModalState.paid > 0 ? 'flex' : 'none';
+    if (rentModalState.paid > 0) document.getElementById('modal-paid-amount').textContent = `- QAR ${rentModalState.paid.toFixed(2)}`;
+
+    const rentInput = document.getElementById('modal-rent-amount');
+    rentInput.value = rent.toFixed(2);
+    document.getElementById('modal-received-amount').value = rentModalState.balance.toFixed(2);
+
+    updateRentBalanceCalc();
+    modal.showModal();
+    modal.focus();
+    setTimeout(() => rentInput.blur(), 20);
+  }
+
+  function fillRemainingBalance() {
+    const rent = parseFloat(document.getElementById('modal-rent-amount').value) || 0;
+    const other = rentModalState.charges.reduce((s, c) => c.name !== 'Rent' ? s + (+c.amount || 0) : s, 0);
+    document.getElementById('modal-received-amount').value = Math.max(0, rent + other - rentModalState.paid).toFixed(2);
+    updateRentBalanceCalc();
+  }
+
+  function updateRentBalanceCalc() {
+    const rent = parseFloat(document.getElementById('modal-rent-amount').value) || 0;
+    const total = rent + rentModalState.charges.reduce((s, c) => c.name !== 'Rent' ? s + (+c.amount || 0) : s, 0);
+    const balance = Math.max(0, total - rentModalState.paid);
+    const received = parseFloat(document.getElementById('modal-received-amount').value) || 0;
+    const rem = total - rentModalState.paid - received;
+    const isOver = rem < -0.009;
+
+    document.getElementById('modal-charges-total').textContent = `QAR ${total.toFixed(2)}`;
+    const rentRow = document.getElementById('modal-charge-rent-val');
+    if (rentRow) rentRow.textContent = `QAR ${rent.toFixed(2)}`;
+
+    const hint = document.getElementById('modal-calc-hint');
+    const submitBtn = document.getElementById('modal-submit-btn');
+    if (submitBtn) submitBtn.disabled = received <= 0 || isOver;
+
+    if (isOver) {
+      hint.textContent = `Cannot record: Exceeds balance (Max: QAR ${balance.toFixed(2)}).`;
+      hint.style.color = 'var(--danger, #ef4444)';
+    } else if (rem > 0.009) {
+      hint.textContent = `Partial payment: QAR ${rem.toFixed(2)} will remain unpaid.`;
+      hint.style.color = 'var(--warning, #f59e0b)';
+    } else {
+      hint.textContent = received > 0 ? `Full payment: Clears balance.` : `Enter an amount to collect.`;
+      hint.style.color = received > 0 ? 'var(--success, #10b981)' : 'var(--text-secondary)';
+    }
+  }
+
+  function closeRentCollectModal() {
+    document.getElementById('rent-collect-modal')?.close();
+  }
+
+  let depModalState = { total: 0, alreadyPaid: 0 };
+
+  function openDepositModal(e, btn) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    document.getElementById('dep-modal-form').action = btn.getAttribute('data-action-url') || btn.getAttribute('data-url');
+    document.getElementById('dep-modal-partition').textContent = btn.getAttribute('data-partition') || '';
+    document.getElementById('dep-modal-tenant').textContent = btn.getAttribute('data-tenant') || '';
+
+    depModalState.total = parseFloat(btn.getAttribute('data-deposit')) || 0;
+    depModalState.alreadyPaid = parseFloat(btn.getAttribute('data-paid')) || 0;
+
+    const pending = Math.max(0, depModalState.total - depModalState.alreadyPaid);
+    document.getElementById('dep-amount').value = depModalState.total.toFixed(2);
+    document.getElementById('dep-received-now').value = pending > 0 ? pending.toFixed(2) : '0.00';
+
+    updateDepositCalc();
+    const modal = document.getElementById('deposit-modal');
+    modal.showModal();
+    modal.focus();
+  }
+
+  function updateDepositCalc() {
+    const total = parseFloat(document.getElementById('dep-amount').value) || 0;
+    const pending = Math.max(0, total - depModalState.alreadyPaid);
+    const receivedNow = parseFloat(document.getElementById('dep-received-now').value) || 0;
+    const newTotalPaid = depModalState.alreadyPaid + receivedNow;
+    const rem = total - newTotalPaid;
+    const isOver = rem < -0.009;
+
+    document.getElementById('dep-modal-total-text').textContent = `QAR ${total.toFixed(2)}`;
+    document.getElementById('dep-modal-paid-text').textContent = `QAR ${depModalState.alreadyPaid.toFixed(2)}`;
+    document.getElementById('dep-modal-pending-text').textContent = `QAR ${pending.toFixed(2)}`;
+
+    const alreadyRow = document.getElementById('dep-already-paid-row');
+    if (alreadyRow) alreadyRow.style.display = depModalState.alreadyPaid > 0 ? 'flex' : 'none';
+
+    const hint = document.getElementById('dep-calc-hint');
+    const submitBtn = document.getElementById('dep-submit-btn');
+    if (submitBtn) submitBtn.disabled = isOver;
+
+    if (isOver) {
+      hint.textContent = `Cannot record: Exceeds remaining pending deposit (Max: QAR ${pending.toFixed(2)}).`;
+      hint.style.color = 'var(--danger, #ef4444)';
+    } else if (rem <= 0.009 && total > 0 && receivedNow > 0) {
+      hint.textContent = `Full payment: Clears remaining deposit.`;
+      hint.style.color = 'var(--success, #10b981)';
+    } else if (receivedNow > 0) {
+      hint.textContent = `Partial payment: QAR ${Math.max(0, rem).toFixed(2)} will remain pending.`;
+      hint.style.color = 'var(--warning, #f59e0b)';
+    } else {
+      hint.textContent = `No new payment: QAR ${pending.toFixed(2)} remains pending.`;
+      hint.style.color = 'var(--text-secondary)';
+    }
+
+    document.getElementById('dep-paid').value = Math.max(0, newTotalPaid).toFixed(2);
+  }
+
+  function closeDepositModal() {
+    document.getElementById('deposit-modal')?.close();
+  }
+
+  //input listeners & backdrop click auto-close
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('modal-rent-amount')?.addEventListener('input', fillRemainingBalance);
+    document.getElementById('modal-received-amount')?.addEventListener('input', updateRentBalanceCalc);
+    document.getElementById('dep-amount')?.addEventListener('input', updateDepositCalc);
+    document.getElementById('dep-received-now')?.addEventListener('input', updateDepositCalc);
+
+    [document.getElementById('rent-collect-modal'), document.getElementById('deposit-modal')].forEach(m => {
+      m?.addEventListener('click', (e) => {
+        const rect = m.getBoundingClientRect();
+        if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+          m.close();
+        }
+      });
+    });
+  });
+</script>

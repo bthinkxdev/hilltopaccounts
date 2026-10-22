@@ -189,11 +189,12 @@ class ManageScope:
         return self.is_admin(expense.business_id)
 
     def can_pay_expense(self, expense) -> bool:
-        """Mirrors expenses.services.can_pay_expense — owner-account expenses need an admin; staff-paid ones any villa manager."""
+        """Mirrors expenses.services.can_pay_expense — auto-debit or landlord rent needs an admin; other villa expenses can be paid by staff."""
         if self.is_admin(expense.business_id):
             return True
-        if expense.recurring_id is not None and getattr(expense.recurring, 'paid_by', '') == 'owner':
+        if expense.recurring_id is not None and getattr(expense.recurring, 'auto_debit', False):
             return False
         if expense.category_id and re.search(LANDLORD_RENT_REGEX, expense.category.name, re.I):
             return False
         return expense.villa_id is not None and expense.villa_id in self.staff_villa_ids
+

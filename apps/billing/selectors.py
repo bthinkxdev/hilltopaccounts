@@ -106,7 +106,24 @@ def period_profit_loss(invoice_queryset, expense_queryset, start: date, end: dat
     live_expenses = in_period.filter(status='active')
     by_payer = {row['paid_by']: row['total'] for row in live_expenses.order_by().values('paid_by').annotate(total=Sum('amount'))}
     zero = Decimal('0.00')
-    return {'income': income, 'expenses': expenses, 'staff_expenses': by_payer.get(PaidBy.STAFF, zero), 'owner_expenses': by_payer.get(PaidBy.OWNER, zero), 'to_verify': valid_expense_total(live_expenses.filter(paid_on__isnull=False, verified_at__isnull=True)), 'outstanding': outstanding_billed_between(invoice_queryset, start, end), 'unpaid_expenses': valid_expense_total(unpaid(in_period)), 'net': income - expenses}
+
+    live_invoices = invoice_queryset.filter(is_cancelled=False)
+    live_payments = Payment.objects.filter(invoice__in=live_invoices, is_cancelled=False, collected_at__gte=start, collected_at__lte=end)
+    admin_collected = live_payments.filter(collected_by__is_owner=True).aggregate(total=Sum('amount'))['total'] or zero
+    staff_collected = live_payments.filter(collected_by__is_owner=False).aggregate(total=Sum('amount'))['total'] or zero
+
+    return {
+        'income': income,
+        'expenses': expenses,
+        'net': income - expenses,
+        'staff_collected': staff_collected,
+        'admin_collected': admin_collected,
+        'staff_expenses': by_payer.get(PaidBy.STAFF, zero),
+        'owner_expenses': by_payer.get(PaidBy.OWNER, zero),
+        'to_verify': valid_expense_total(live_expenses.filter(paid_on__isnull=False, verified_at__isnull=True)),
+        'outstanding': outstanding_billed_between(invoice_queryset, start, end),
+        'unpaid_expenses': valid_expense_total(unpaid(in_period)),
+    }
 
 def _profit_loss_by(invoice_queryset, expense_queryset, start: date, end: date, *, payment_key: str, expense_key: str) -> dict:
     """Income, expenses and net per group, using the same rules as period_profit_loss but in two grouped queries."""
@@ -119,7 +136,18 @@ def _profit_loss_by(invoice_queryset, expense_queryset, start: date, end: date, 
     zero = Decimal('0.00')
     return {key: {'income': income.get(key, zero), 'expenses': spent.get(key, zero), 'net': income.get(key, zero) - spent.get(key, zero)} for key in set(income) | set(spent)}
 
-EMPTY_PROFIT_LOSS = {'income': Decimal('0.00'), 'expenses': Decimal('0.00'), 'net': Decimal('0.00')}
+EMPTY_PROFIT_LOSS = {
+    'income': Decimal('0.00'),
+    'expenses': Decimal('0.00'),
+    'net': Decimal('0.00'),
+    'staff_collected': Decimal('0.00'),
+    'admin_collected': Decimal('0.00'),
+    'staff_expenses': Decimal('0.00'),
+    'owner_expenses': Decimal('0.00'),
+    'to_verify': Decimal('0.00'),
+    'outstanding': Decimal('0.00'),
+    'unpaid_expenses': Decimal('0.00'),
+}
 
 def profit_loss_by_villa(invoice_queryset, expense_queryset, start: date, end: date) -> dict:
     return _profit_loss_by(invoice_queryset, expense_queryset, start, end, payment_key='invoice__partition__villa_id', expense_key='villa_id')
@@ -208,7 +236,7 @@ def rent_sheet(*, partitions, tenant_by_partition: dict, invoice_queryset, year:
     from collections import defaultdict
     start, end = period_bounds(year, month)
     invoices_by_partition_tenant = defaultdict(list)
-    for invoice in rent_invoice_queryset(invoice_queryset, year, month).prefetch_related('items'):
+    for invoice in rent_invoice_queryset(invoice_queryset, year, month).prefetch_related('items', 'payments__collected_by'):
         invoices_by_partition_tenant[(invoice.partition_id, invoice.tenant_id)].append(invoice)
     unbilled_map = unbilled_charges_by_partition([p.pk for p in partitions], year, month, tenant_by_partition)
     unbilled_details_map = unbilled_charges_details_by_partition([p.pk for p in partitions], year, month, tenant_by_partition)
@@ -222,6 +250,9 @@ def rent_sheet(*, partitions, tenant_by_partition: dict, invoice_queryset, year:
         p_invoices = invoices_by_partition_tenant.get((partition.pk, tenant.pk), [])
         unbilled = unbilled_map[partition.pk]
         charges_breakdown = []
+        live_payments = []
+        staff_collected = zero
+        admin_collected = zero
         if p_invoices:
             due = sum((inv._total for inv in p_invoices), start=zero) + unbilled
             paid = sum((inv._paid for inv in p_invoices), start=zero)
@@ -229,6 +260,13 @@ def rent_sheet(*, partitions, tenant_by_partition: dict, invoice_queryset, year:
             for inv in p_invoices:
                 for item in inv.items.all():
                     charges_breakdown.append({'name': item.description, 'amount': item.amount})
+                for p in inv.payments.all():
+                    if not p.is_cancelled:
+                        live_payments.append(p)
+                        if p.collected_by and p.collected_by.is_owner:
+                            admin_collected += p.amount
+                        elif p.collected_by:
+                            staff_collected += p.amount
             for c in unbilled_details_map.get(partition.pk, []):
                 charges_breakdown.append(c)
             if due > 0 and paid >= due:
@@ -256,6 +294,22 @@ def rent_sheet(*, partitions, tenant_by_partition: dict, invoice_queryset, year:
             if item.get('name') == 'Rent':
                 rent_amount = item.get('amount', tenant.monthly_rent)
                 break
+        collector_users = list({p.collected_by for p in live_payments if p.collected_by})
+        collector_user_ids = {p.collected_by_id for p in live_payments if p.collected_by_id}
+        breakdown_by_user = {}
+        for p in live_payments:
+            if p.collected_by:
+                uid = p.collected_by_id
+                if uid not in breakdown_by_user:
+                    breakdown_by_user[uid] = {
+                        'user': p.collected_by,
+                        'amount': zero,
+                        'is_owner': p.collected_by.is_owner,
+                        'role': 'Admin' if p.collected_by.is_owner else 'Staff',
+                    }
+                breakdown_by_user[uid]['amount'] += p.amount
+        collector_breakdown = list(breakdown_by_user.values())
+
         rows.append({
             'partition': partition,
             'tenant': tenant,
@@ -268,6 +322,12 @@ def rent_sheet(*, partitions, tenant_by_partition: dict, invoice_queryset, year:
             'prior_unpaid': prior_unpaid,
             'prior_unpaid_total': prior_unpaid_total,
             'rent_amount': rent_amount,
+            'payments': live_payments,
+            'staff_collected': staff_collected,
+            'admin_collected': admin_collected,
+            'collector_users': collector_users,
+            'collector_user_ids': collector_user_ids,
+            'collector_breakdown': collector_breakdown,
         })
         expected += due
         collected += paid

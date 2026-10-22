@@ -108,12 +108,85 @@ def partner_list(request):
         qs = qs.filter(name__icontains=q)
 
     period = period_context(request)
-    villas = selectors.villas_visible_to(request.user).filter(is_archived=False, is_sold=False)
+    all_villas = list(selectors.villas_visible_to(request.user).filter(is_archived=False, is_sold=False).order_by('name'))
+    all_partners = list(Partner.objects.all().order_by('name'))
+
+    villa_id = request.GET.get('villa', '').strip()
+    filter_villa = None
+    villas = list(all_villas)
+    if villa_id.isdigit():
+        filter_villa = next((v for v in all_villas if v.pk == int(villa_id)), None)
+        if filter_villa:
+            villas = [filter_villa]
+            qs = qs.filter(villa_shares__villa=filter_villa).distinct()
+
+    partner_id = request.GET.get('partner', '').strip()
+    filter_partner = None
+    if partner_id.isdigit():
+        filter_partner = next((p for p in all_partners if p.pk == int(partner_id)), None)
+        if not filter_partner:
+            filter_partner = Partner.objects.filter(pk=int(partner_id)).first()
+        if filter_partner:
+            qs = qs.filter(pk=filter_partner.pk)
+            partner_villa_ids = set(filter_partner.villa_shares.values_list('villa_id', flat=True))
+            if not filter_villa:
+                villas = [v for v in villas if v.pk in partner_villa_ids]
+
     pnl = billing_selectors.profit_loss_by_villa(
         selectors.invoices_visible_to(request.user).filter(partition__villa__in=villas),
         selectors.expenses_visible_to(request.user).filter(villa__in=villas),
         period['period_start'], period['period_end']
     )
+    total_net = sum((pnl.get(v.pk, {}).get('net', Decimal('0.00')) for v in villas), Decimal('0.00'))
+    distributable_net = max(Decimal('0.00'), total_net)
+
+    from apps.businesses.models import PartnerVillaShare
+    all_active_shares = list(PartnerVillaShare.objects.filter(villa__in=villas, partner__is_active=True).select_related('partner'))
+    if filter_partner:
+        target_shares = [s for s in all_active_shares if s.partner_id == filter_partner.pk]
+        total_partner_payout_all = sum(
+            (max(Decimal('0.00'), pnl.get(s.villa_id, {}).get('net', Decimal('0.00'))) * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
+            for s in target_shares
+        ) or Decimal('0.00')
+    else:
+        total_partner_payout_all = sum(
+            (max(Decimal('0.00'), pnl.get(s.villa_id, {}).get('net', Decimal('0.00'))) * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
+            for s in all_active_shares
+        ) or Decimal('0.00')
+
+    owner_villa_breakdown = []
+    for v in villas:
+        v_net = pnl.get(v.pk, {}).get('net', Decimal('0.00'))
+        if v_net > 0:
+            v_all_shares = [s for s in all_active_shares if s.villa_id == v.pk]
+            v_total_partner_pct = sum((s.percentage for s in v_all_shares), Decimal('0.00'))
+            v_owner_pct = max(Decimal('0.00'), Decimal('100.00') - v_total_partner_pct)
+            v_owner_cut = (v_net * (v_owner_pct / Decimal('100.00'))).quantize(Decimal('0.01'))
+
+            if filter_partner:
+                v_partner_shares = [s for s in v_all_shares if s.partner_id == filter_partner.pk]
+                v_partner_pct = sum((s.percentage for s in v_partner_shares), Decimal('0.00'))
+                v_partner_cut = (v_net * (v_partner_pct / Decimal('100.00'))).quantize(Decimal('0.01'))
+                v_partner_names = f"{filter_partner.name} ({v_partner_pct}%)" if v_partner_shares else "None"
+            else:
+                v_partner_pct = v_total_partner_pct
+                v_partner_cut = (v_net * (v_partner_pct / Decimal('100.00'))).quantize(Decimal('0.01'))
+                v_partner_names = ", ".join([f"{s.partner.name} ({s.percentage}%)" for s in v_all_shares]) if v_all_shares else "None (100% Owner)"
+
+            owner_villa_breakdown.append({
+                'villa_pk': v.pk,
+                'villa_name': v.name,
+                'pct': v_owner_pct,
+                'cut': v_owner_cut,
+                'net': v_net,
+                'partner_cut': v_partner_cut,
+                'partner_pct': v_partner_pct,
+                'partner_names': v_partner_names,
+            })
+
+    total_owner_cut = sum((b['cut'] for b in owner_villa_breakdown), Decimal('0.00'))
+    owner_pct = ((total_owner_cut / distributable_net) * Decimal('100.0')).quantize(Decimal('0.1')) if distributable_net > 0 else Decimal('100.0')
+
     page_obj = paginate_queryset(request, qs)
     partner_ids = [p.pk for p in page_obj]
     paid_by_partner = {
@@ -125,8 +198,13 @@ def partner_list(request):
         ).values('partner_id').annotate(total=models.Sum('amount'))
     }
     for p in page_obj:
-        p.shares = list(p.villa_shares.all())
+        p.shares = [s for s in p.villa_shares.all() if s.villa_id in [v.pk for v in villas]]
         p.shares_label = [f"{s.villa.name} ({s.percentage}%)" for s in p.shares]
+        p.shares_details = []
+        for s in p.shares:
+            v_net = max(Decimal('0.00'), pnl.get(s.villa_id, {}).get('net', Decimal('0.00')))
+            cut = (v_net * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
+            p.shares_details.append(f"{s.villa.name} ({s.percentage}% of QAR {v_net:.2f} = QAR {cut:.2f})")
         p.total_payout = sum(
             (max(Decimal('0.00'), pnl.get(s.villa_id, {}).get('net', Decimal('0.00'))) * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
             for s in p.shares
@@ -142,12 +220,36 @@ def partner_list(request):
         else:
             p.payment_status = 'none'
 
+    tab = request.GET.get('tab', 'all')
+    if tab not in ('owner', 'partners', 'all'):
+        tab = 'all'
+
+    keep = [(k, v) for k, v in (('q', q), ('status', status if status != 'active' else ''), ('villa', villa_id if villa_id else ''), ('partner', partner_id if partner_id else ''), ('tab', tab if tab != 'all' else '')) if v]
+    breadcrumbs = [('Profit Sharing', reverse('businesses:partner_list'))]
+    if tab == 'owner':
+        breadcrumbs.append(('Owner Profit Statement', None))
+    elif tab == 'partners':
+        breadcrumbs.append(('Partners & Payouts', None))
+    else:
+        breadcrumbs = [('Partners & Profit Sharing', None)]
+
     return render(request, 'businesses/partner_list.html', {
         'page_obj': page_obj, 'q': q, 'selected_status': status,
-        'breadcrumbs': [('Partners', None)],
-        'keep': [(k, v) for k, v in (('q', q), ('status', status if status != 'active' else '')) if v],
+        'tab': tab,
+        'breadcrumbs': breadcrumbs,
+        'keep': keep,
+        'total_net': total_net,
+        'total_owner_cut': total_owner_cut,
+        'owner_pct': owner_pct,
+        'owner_villa_breakdown': owner_villa_breakdown,
+        'total_partner_payout': total_partner_payout_all,
+        'all_villas': all_villas,
+        'all_partners': all_partners,
+        'filter_villa': filter_villa,
+        'filter_partner': filter_partner,
         **period,
     })
+
 
 
 @login_required

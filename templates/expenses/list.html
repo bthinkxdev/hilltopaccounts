@@ -65,6 +65,11 @@
         <option value="reversed" {% if status == "reversed" %}selected{% endif %}>Reversed</option>
         <option value="" {% if not status %}selected{% endif %}>All</option>
       </select>
+      <select name="paid_by" onchange="this.form.submit()">
+        <option value="">All expenses</option>
+        <option value="staff" {% if paid_by == "staff" %}selected{% endif %}>Staff Spent</option>
+        <option value="owner" {% if paid_by == "owner" %}selected{% endif %}>Admin Spent</option>
+      </select>
       {% if has_filters %}<a class="btn btn--ghost filter-clear-btn" href="{{ request.path }}?period={{ period }}&year={{ year }}{% if period == 'month' %}&month={{ month }}{% endif %}">Clear Filter</a>{% endif %}
     </form>
   </div>

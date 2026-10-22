@@ -55,12 +55,15 @@ def expense_list(request):
     due = request.GET.get('due', '')
     if due in dict(DueBucket.CHOICES):
         qs = expense_selectors.filter_by_due_bucket(qs, due, today)
+    paid_by = request.GET.get('paid_by', '')
+    if paid_by in (PaidBy.STAFF, PaidBy.OWNER):
+        qs = qs.filter(paid_by=paid_by)
 
     summary_base = visible.filter(date__gte=start, date__lte=end)
     if villa_id.isdigit():
         summary_base = summary_base.filter(villa_id=villa_id)
 
-    page_obj = paginate_queryset(request, qs.order_by('due_date', '-date', '-id') if due in (DueBucket.UNPAID, DueBucket.OVERDUE, DueBucket.TODAY, DueBucket.UPCOMING) else qs.order_by('-date', '-id'))
+    page_obj = paginate_queryset(request, qs.order_by('due_date', '-created_at', '-id') if due in (DueBucket.UNPAID, DueBucket.OVERDUE, DueBucket.TODAY, DueBucket.UPCOMING) else qs.order_by('-created_at', '-id'))
     scope = selectors.ManageScope(request.user)
     is_field_staff = selectors.is_field_staff(request.user)
     for expense in page_obj:
@@ -71,7 +74,7 @@ def expense_list(request):
         expense.can_edit = expense.can_manage and expense.status == 'active' and expense.paid_on is None and not (is_field_staff and expense.paid_by == PaidBy.OWNER)
 
     villas = selectors.villas_visible_to(request.user).filter(is_archived=False, is_sold=False).select_related('business')
-    has_filters = bool(villa_id.isdigit() or (due in dict(DueBucket.CHOICES)) or ('status' in request.GET and status != Expense.Status.ACTIVE))
+    has_filters = bool(villa_id.isdigit() or (due in dict(DueBucket.CHOICES)) or ('status' in request.GET and status != Expense.Status.ACTIVE) or paid_by)
 
     keep = []
     if villa_id.isdigit():
@@ -80,11 +83,14 @@ def expense_list(request):
         keep.append(('due', due))
     if status and status != Expense.Status.ACTIVE:
         keep.append(('status', status))
+    if paid_by:
+        keep.append(('paid_by', paid_by))
 
     context = {
         'page_obj': page_obj,
         'status': status,
         'due': due,
+        'paid_by': paid_by,
         'due_choices': DueBucket.CHOICES,
         'is_field_staff': is_field_staff,
         'villas': villas,
@@ -176,7 +182,7 @@ def expense_suggest(request):
 
 @login_required
 def expense_mark_paid(request, pk):
-    expense = get_object_or_404(selectors.expenses_visible_to(request.user).select_related('villa', 'business', 'category'), pk=pk)
+    expense = get_object_or_404(selectors.expenses_visible_to(request.user).select_related('villa', 'business', 'category', 'recurring'), pk=pk)
     if not can_pay_expense(request.user, expense):
         raise PermissionDenied('You cannot settle this expense.')
     if request.method == 'POST':
@@ -321,7 +327,7 @@ def _back_to(request, default):
 def expense_batch(request, action='paid'):
     """Bulk mark paid or bulk verify selected expenses in one tap."""
     ids = request.POST.getlist('expense_ids')
-    qs = selectors.expenses_visible_to(request.user).filter(pk__in=ids, status=Expense.Status.ACTIVE).select_related('villa', 'business')
+    qs = selectors.expenses_visible_to(request.user).filter(pk__in=ids, status=Expense.Status.ACTIVE).select_related('villa', 'business', 'category', 'recurring')
     count = 0
     for exp in qs:
         try:
@@ -342,7 +348,7 @@ def expense_batch(request, action='paid'):
 @require_POST
 def expense_quick_paid(request, pk):
     """One tap: 'Paid'. Staff-paid money awaits the owner's verification; the owner's own payment is final."""
-    expense = get_object_or_404(selectors.expenses_visible_to(request.user).select_related('villa', 'business', 'category'), pk=pk)
+    expense = get_object_or_404(selectors.expenses_visible_to(request.user).select_related('villa', 'business', 'category', 'recurring'), pk=pk)
     if not can_pay_expense(request.user, expense):
         raise PermissionDenied('You cannot settle this expense.')
     is_admin = request.user.is_owner or selectors.is_business_manager_of(request.user, expense.business)

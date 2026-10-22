@@ -1,0 +1,112 @@
+<details class="export-dropdown">
+  <summary class="btn {{ btn_class|default:'btn--primary' }} export-dropdown-trigger">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+    <span>Export CSV</span>
+  </summary>
+  <div class="export-dropdown-backdrop" onclick="this.closest('details').removeAttribute('open');"></div>
+  <form method="get" action="{% url 'dashboard:export_financials_csv' %}" onsubmit="return prepareExportSubmit(event, this);" class="card export-dropdown-card">
+    {% if villa %}<input type="hidden" name="villa" value="{{ villa.pk }}">{% endif %}
+    <div class="export-modal-header">
+      <span>Export Financial Summary</span>
+      <button type="button" class="export-close-btn" onclick="this.closest('details').removeAttribute('open');" aria-label="Close">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
+
+    <div class="export-tabs">
+      <button type="button" class="export-tab-btn export-tab-btn--active" onclick="switchExportTab(this, 'range')">Date Range</button>
+      <button type="button" class="export-tab-btn" onclick="switchExportTab(this, 'day')">Single Day</button>
+      <button type="button" class="export-tab-btn" onclick="switchExportTab(this, 'year')">Full Year</button>
+    </div>
+
+    <div data-tab-content="range" class="export-tab-panel">
+      <div>
+        <label class="export-field-label">From</label>
+        <input type="date" name="start_date" value="{{ period_start|date:'Y-m-d' }}" class="export-input" oninput="clearExportError(this);">
+      </div>
+      <div>
+        <label class="export-field-label">To</label>
+        <input type="date" name="end_date" value="{{ period_end|date:'Y-m-d' }}" class="export-input" oninput="clearExportError(this);">
+      </div>
+    </div>
+
+    <div data-tab-content="day" class="export-tab-panel" style="display: none;">
+      <label class="export-field-label">Select Date</label>
+      <input type="date" class="exp-day-input export-input" value="{% now 'Y-m-d' %}">
+    </div>
+
+    <div data-tab-content="year" class="export-tab-panel" style="display: none;">
+      <label class="export-field-label">Select Year</label>
+      <select class="exp-year-select export-input">
+        {% for y in year_choices %}
+          <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+        {% empty %}
+          <option value="{% now 'Y' %}" selected>{% now 'Y' %}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="export-error" style="display: none; color: var(--danger); font-size: 13px; font-weight: 500; margin-bottom: 12px; background: var(--tint-danger-bg, rgba(220, 38, 38, 0.08)); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--tint-danger-border, rgba(220, 38, 38, 0.2));"></div>
+
+    <div class="export-actions">
+      <button type="submit" class="btn btn--primary export-btn">Download CSV</button>
+      <button type="button" class="btn btn--ghost export-btn" onclick="this.closest('details').removeAttribute('open');">Cancel</button>
+    </div>
+  </form>
+</details>
+<script>
+  function clearExportError(input) {
+    var form = input.closest("form");
+    if (!form) return;
+    var err = form.querySelector(".export-error");
+    if (err) err.style.display = "none";
+    var endInput = form.querySelector('[name="end_date"]');
+    if (endInput) endInput.style.borderColor = "";
+  }
+  function switchExportTab(btn, tab) {
+    var form = btn.closest("form");
+    if (!form) return;
+    form.dataset.activeTab = tab;
+    var err = form.querySelector(".export-error");
+    if (err) err.style.display = "none";
+    var endInput = form.querySelector('[name="end_date"]');
+    if (endInput) endInput.style.borderColor = "";
+    form.querySelectorAll(".export-tab-btn").forEach(function (b) {
+      b.classList.toggle("export-tab-btn--active", b === btn);
+    });
+    form.querySelectorAll("[data-tab-content]").forEach(function (c) {
+      c.style.display = c.dataset.tabContent === tab ? "flex" : "none";
+    });
+  }
+  function prepareExportSubmit(e, form) {
+    var tab = form.dataset.activeTab || "range";
+    var startInput = form.querySelector('[name="start_date"]');
+    var endInput = form.querySelector('[name="end_date"]');
+    var err = form.querySelector(".export-error");
+
+    if (err) err.style.display = "none";
+    if (endInput) endInput.style.borderColor = "";
+
+    if (!startInput || !endInput) return true;
+
+    if (tab === "range") {
+      if (startInput.value && endInput.value && startInput.value > endInput.value) {
+        if (e && e.preventDefault) e.preventDefault();
+        if (err) {
+          err.textContent = "To date cannot be earlier than From date.";
+          err.style.display = "block";
+        }
+        endInput.style.borderColor = "var(--danger)";
+        endInput.focus();
+        return false;
+      }
+    } else if (tab === "day") {
+      var d = form.querySelector(".exp-day-input");
+      if (d && d.value) { startInput.value = d.value; endInput.value = d.value; }
+    } else if (tab === "year") {
+      var y = form.querySelector(".exp-year-select");
+      if (y && y.value) { startInput.value = y.value + "-01-01"; endInput.value = y.value + "-12-31"; }
+    }
+    return true;
+  }
+</script>

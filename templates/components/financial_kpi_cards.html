@@ -1,0 +1,111 @@
+{% comment %}
+Reusable Financial KPI Cards: 4 Card Rows (Income/Expenses/Profit, Collections, Expenses, Profit Share).
+{% endcomment %}
+
+{# row 1: total income,expense,and profit #}
+<div class="card card--tight">
+  <div class="card__title">Income, Expenses &amp; Profit — {{ period_label }}</div>
+  <div class="grid--kpi">
+    <a class="kpi kpi--ic-wallet" href="{{ period_pnl_urls.income }}" title="View Income Collections">
+      <div class="kpi__label">Total Income &rarr;</div>
+      <div class="kpi__value kpi__value--success">QAR {{ pnl.income|floatformat:"2g" }}</div>
+    </a>
+    <a class="kpi kpi--ic-receipt" href="{{ period_pnl_urls.expenses }}" title="View Expenses">
+      <div class="kpi__label">Total Expenses &rarr;</div>
+      <div class="kpi__value kpi__value--danger">QAR {{ pnl.expenses|floatformat:"2g" }}</div>
+    </a>
+    <a class="kpi kpi--ic-chart" href="{{ period_pnl_urls.profit|default:'#' }}" title="View Profit / Loss">
+      <div class="kpi__label">{% if pnl.net >= 0 %}Net Profit{% else %}Net Loss{% endif %}{% if period_pnl_urls.profit != '#' %} &rarr;{% endif %}</div>
+      <div class="kpi__value {% if pnl.net >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">QAR {{ pnl.net|floatformat:"2g" }}</div>
+    </a>
+  </div>
+</div>
+
+{# row 2: collection details #}
+<div class="card card--tight">
+  <div class="card__title">Collection Details — {{ period_label }}</div>
+  <div class="grid--kpi">
+    {% if rent_totals %}
+    <a class="kpi kpi--ic-wallet" href="#rent" title="View Expected Tenant Rent">
+      <div class="kpi__label">Expected &rarr;</div>
+      <div class="kpi__value">QAR {{ rent_totals.expected|floatformat:"2g" }}</div>
+    </a>
+    {% endif %}
+    <a class="kpi kpi--ic-user" href="{{ period_pnl_urls.staff_collections }}" title="View Staff Collections">
+      <div class="kpi__label">Staff Collected &rarr;</div>
+      <div class="kpi__value kpi__value--success">QAR {{ pnl.staff_collected|floatformat:"2g" }}</div>
+    </a>
+    <a class="kpi kpi--ic-wallet" href="{{ period_pnl_urls.admin_collections }}" title="View Admin Collections">
+      <div class="kpi__label">Admin Collected &rarr;</div>
+      <div class="kpi__value kpi__value--accent">QAR {{ pnl.admin_collected|floatformat:"2g" }}</div>
+    </a>
+    <a class="kpi kpi--ic-wallet" href="{{ period_pnl_urls.income }}" title="View All Collections">
+      <div class="kpi__label">Total Collected &rarr;</div>
+      <div class="kpi__value">QAR {{ pnl.income|floatformat:"2g" }}</div>
+    </a>
+    {% if rent_totals %}
+    <a class="kpi kpi--ic-home" href="#rent" title="View Pending Tenant Collections">
+      <div class="kpi__label">Pending ({{ rent_totals.pending_count }}) &rarr;</div>
+      <div class="kpi__value {% if rent_totals.pending %}kpi__value--warning{% endif %}">QAR {{ rent_totals.pending|floatformat:"2g" }}</div>
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+{# row 3: expense details #}
+<div class="card card--tight">
+  <div class="card__title">Expense Details — {{ period_label }}</div>
+  <div class="grid--kpi">
+    <a class="kpi kpi--ic-receipt" href="{{ period_pnl_urls.staff_expenses }}" title="View Staff Spent Expenses">
+      <div class="kpi__label">Staff Spent Expenses &rarr;</div>
+      <div class="kpi__value kpi__value--warning">QAR {{ pnl.staff_expenses|floatformat:"2g" }}</div>
+    </a>
+    <a class="kpi kpi--ic-receipt" href="{{ period_pnl_urls.admin_expenses }}" title="View Admin Spent Expenses">
+      <div class="kpi__label">Admin Spent Expenses &rarr;</div>
+      <div class="kpi__value kpi__value--danger">QAR {{ pnl.owner_expenses|floatformat:"2g" }}</div>
+    </a>
+    <a class="kpi kpi--ic-receipt" href="{{ period_pnl_urls.expenses }}" title="View All Expenses">
+      <div class="kpi__label">Total Expenses &rarr;</div>
+      <div class="kpi__value">QAR {{ pnl.expenses|floatformat:"2g" }}</div>
+    </a>
+  </div>
+</div>
+
+{# row 4: profit share #}
+{% if user.is_owner %}
+<div class="card card--tight">
+  <div class="card__title">Profit Share — {{ period_label }}</div>
+  <div class="grid--kpi">
+    <a class="kpi kpi--ic-chart" href="{{ period_pnl_urls.owner_profit|default:period_pnl_urls.profit_share|default:'#' }}" title="View Owner Profit Breakdown">
+      <div class="kpi__label">{% if villa %}Owner Share ({{ owner_share_pct|floatformat:"1g" }}%){% else %}Owner Profit Share{% endif %} &rarr;</div>
+      <div class="kpi__value {% if owner_share_amount > 0 %}kpi__value--success{% endif %}">QAR {{ owner_share_amount|floatformat:"2g" }}</div>
+    </a>
+    <a class="kpi kpi--ic-user" href="{{ period_pnl_urls.profit_share|default:'#' }}" title="View Partner Shares">
+      <div class="kpi__label">
+        {% if villa and partner_count == 1 %}
+          {{ partner_share_cards.0.name }} ({{ partner_share_cards.0.percentage|floatformat:"1g" }}%)
+        {% elif villa and total_partner_pct %}
+          Partners Share ({{ total_partner_pct|floatformat:"1g" }}%)
+        {% elif partner_count > 0 %}
+          Total Partners Share ({{ partner_count }})
+        {% else %}
+          Total Partners Share
+        {% endif %} &rarr;
+      </div>
+      <div class="kpi__value {% if total_partner_cut > 0 %}kpi__value--accent{% endif %}">
+        {% if total_partner_cut > 0 %}
+          QAR {{ total_partner_cut|floatformat:"2g" }}
+        {% else %}
+          <span style="font-size: 15px; color: var(--text-tertiary);">No Partners (100% Owner)</span>
+        {% endif %}
+      </div>
+    </a>
+    <a class="kpi kpi--ic-wallet" href="{{ period_pnl_urls.profit|default:period_pnl_urls.profit_share|default:'#' }}" title="View Distributable Net Profit">
+      <div class="kpi__label">Distributable Net Profit &rarr;</div>
+      <div class="kpi__value {% if distributable_profit > 0 or pnl.net > 0 %}kpi__value--success{% elif pnl.net < 0 %}kpi__value--danger{% endif %}">
+        QAR {{ distributable_profit|default:pnl.net|floatformat:"2g" }}
+      </div>
+    </a>
+  </div>
+</div>
+{% endif %}

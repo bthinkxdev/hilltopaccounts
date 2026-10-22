@@ -12,13 +12,12 @@
     </div>
   </div>
 
-  {% if quick_actions %}
-    <div class="quick-actions">
-      {% for action in quick_actions %}
-        <a class="btn btn--primary" href="{{ action.url }}">{{ action.label }}</a>
-      {% endfor %}
-    </div>
-  {% endif %}
+  <div class="quick-actions">
+    {% for action in quick_actions %}
+      <a class="btn btn--primary" href="{{ action.url }}">{{ action.label }}</a>
+    {% endfor %}
+    {% include 'components/export_modal.html' with btn_class='btn--primary' %}
+  </div>
 
   {% if needs_attention %}
     <div class="card">
@@ -93,22 +92,7 @@
     <span class="period-bar__label">Showing {{ period_label }}</span>
     {% include "components/period_picker.html" %}
   </div>
-  <div class="card">
-    <div class="card__title">Income, expenses &amp; profit — {{ period_label }}</div>
-    <div class="grid--kpi">
-      <div class="kpi kpi--ic-wallet"><div class="kpi__label">Income</div><div class="kpi__value kpi__value--success">QAR {{ period_pnl.income|floatformat:"2g" }}</div></div>
-      <div class="kpi kpi--ic-receipt"><div class="kpi__label">Expenses</div><div class="kpi__value kpi__value--danger">QAR {{ period_pnl.expenses|floatformat:"2g" }}</div></div>
-      <div class="kpi kpi--ic-chart"><div class="kpi__label">{% if period_pnl.net >= 0 %}Profit{% else %}Loss{% endif %}</div><div class="kpi__value {% if period_pnl.net >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">QAR {{ period_pnl.net|floatformat:"2g" }}</div></div>
-      <div class="kpi kpi--ic-clock"><div class="kpi__label">Unpaid expenses</div><div class="kpi__value">QAR {{ period_pnl.unpaid_expenses|floatformat:"2g" }}</div></div>
-    </div>
-    {% if period_pnl.staff_expenses or period_pnl.owner_expenses %}
-    <div class="stat-line" style="margin-top: var(--space-2);">
-      <span>Paid by staff: <b>QAR {{ period_pnl.staff_expenses|floatformat:"2g" }}</b></span>
-      <span>Paid by owner: <b>QAR {{ period_pnl.owner_expenses|floatformat:"2g" }}</b></span>
-    </div>
-    {% endif %}
-    <p class="list-row__meta">Open the Villas page to see this broken down villa by villa.</p>
-  </div>
+  {% include "components/financial_kpi_cards.html" %}
   {% endif %}
 
   {% if can_view_financials %}
@@ -169,7 +153,7 @@
         {% for villa in villas %}
           <div class="list-row">
             <a class="list-row__title" href="{% url 'villas:villa_detail' villa.pk %}">{{ villa.name }}</a>
-            {% if not staff_view %}<span class="list-row__meta">{{ villa.business.name }}</span>{% endif %}
+            <span class="list-row__meta">{{ villa.address|default:villa.business.name }}</span>
           </div>
         {% endfor %}
         <div style="display: flex; justify-content: center; margin-top: var(--space-4);">

@@ -118,7 +118,7 @@ def fixed_expense_checklist(villa, year: int, month: int, today=None):
     zero = Decimal('0.00')
     rows, totals = [], {'total': zero, 'paid': zero, 'unpaid': zero, 'unpaid_count': 0, 'missing_count': 0, 'to_verify_count': 0}
     last_day = calendar.monthrange(year, month)[1]
-    for template in sorted(templates.values(), key=lambda t: (t.due_day, t.category.name)):
+    for template in sorted(templates.values(), key=lambda t: (-(t.created_at.timestamp() if getattr(t, 'created_at', None) else 0), -t.pk)):
         expense = generated.get(template.pk)
         if expense is None:
             due_date = date_type(year, month, min(template.due_day, last_day))
