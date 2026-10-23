@@ -72,7 +72,7 @@
             <div class="partner-row__main">
               <a class="list-row__title" href="{% url 'villas:villa_detail' b.villa_pk %}?period={{ period }}&year={{ year }}&month={{ month }}" style="font-weight: 600;">{{ b.villa_name }}</a>
               <div class="list-row__meta">
-                Villa Net Profit: <b>QAR {{ b.net|floatformat:"2g" }}</b> · Owner Retained: <b>{{ b.pct|floatformat:"0g" }}%</b>
+                Villa Net Profit: <b>QAR {{ b.net|floatformat:"2g" }}</b> · Expenses: <b>QAR {{ b.expenses|floatformat:"2g" }}</b> · Owner Retained: <b>{{ b.pct|floatformat:"0g" }}%</b>
                 {% if b.partner_cut > 0 %} · Partners: {{ b.partner_names }} (QAR {{ b.partner_cut|floatformat:"2g" }}){% else %} · No partners (100% owner){% endif %}
               </div>
             </div>

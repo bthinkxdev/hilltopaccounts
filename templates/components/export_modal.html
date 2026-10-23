@@ -1,10 +1,10 @@
 <details class="export-dropdown">
   <summary class="btn {{ btn_class|default:'btn--primary' }} export-dropdown-trigger">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-    <span>Export CSV</span>
+    <span>Export</span>
   </summary>
   <div class="export-dropdown-backdrop" onclick="this.closest('details').removeAttribute('open');"></div>
-  <form method="get" action="{% url 'dashboard:export_financials_csv' %}" onsubmit="return prepareExportSubmit(event, this);" class="card export-dropdown-card">
+  <form method="get" action="{% url 'dashboard:export_financials_pdf' %}" onsubmit="return prepareExportSubmit(event, this);" class="card export-dropdown-card">
     {% if villa %}<input type="hidden" name="villa" value="{{ villa.pk }}">{% endif %}
     <div class="export-modal-header">
       <span>Export Financial Summary</span>
@@ -48,8 +48,14 @@
 
     <div class="export-error" style="display: none; color: var(--danger); font-size: 13px; font-weight: 500; margin-bottom: 12px; background: var(--tint-danger-bg, rgba(220, 38, 38, 0.08)); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--tint-danger-border, rgba(220, 38, 38, 0.2));"></div>
 
-    <div class="export-actions">
-      <button type="submit" class="btn btn--primary export-btn">Download CSV</button>
+    <div class="export-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <button type="submit" formaction="{% url 'dashboard:export_financials_pdf' %}" class="btn btn--primary export-btn" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+        <span>Download PDF</span>
+      </button>
+      {% comment %} <button type="submit" formaction="{% url 'dashboard:export_financials_csv' %}" class="btn btn--secondary export-btn" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+        <span>Download CSV</span>
+      </button> {% endcomment %}
       <button type="button" class="btn btn--ghost export-btn" onclick="this.closest('details').removeAttribute('open');">Cancel</button>
     </div>
   </form>

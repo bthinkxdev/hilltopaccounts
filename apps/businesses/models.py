@@ -17,6 +17,7 @@ class Business(models.Model):
         return self.name
 
 class Partner(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='partner_profile')
     name = models.CharField(max_length=200)
     phone = models.CharField(max_length=50, blank=True)
     email = models.EmailField(blank=True)

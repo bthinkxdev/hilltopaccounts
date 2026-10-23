@@ -8,12 +8,16 @@
       {% if request.GET.next %}<input type="hidden" name="next" value="{{ request.GET.next }}">{% endif %}
       {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors.0 }}</div>{% endif %}
       {% for field in form %}
-        <div class="field">
-          <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="field__required">*</span>{% endif %}</label>
+        {% if field.is_hidden %}
           {{ field }}
-          {% if field.help_text %}<div class="list-row__meta">{{ field.help_text }}</div>{% endif %}
-          {% if field.errors %}<div class="field__error">{{ field.errors.0 }}</div>{% endif %}
-        </div>
+        {% else %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="field__required">*</span>{% endif %}</label>
+            {{ field }}
+            {% if field.help_text %}<div class="list-row__meta">{{ field.help_text }}</div>{% endif %}
+            {% if field.errors %}<div class="field__error">{{ field.errors.0 }}</div>{% endif %}
+          </div>
+        {% endif %}
       {% endfor %}
       {% if handover_form %}
         <div style="margin: var(--space-4) 0; padding: var(--space-4); background: var(--surface-solid); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);">
@@ -54,6 +58,7 @@
     var partition = document.getElementById('{{ form.partition.id_for_label }}');
     var name = document.getElementById('{{ form.name.id_for_label }}');
     var amount = document.getElementById('{{ form.amount.id_for_label }}');
+    var dueDate = document.getElementById('{{ form.due_date.id_for_label }}');
     var paid = document.getElementById('{{ form.mark_paid.id_for_label }}');
     var method = document.getElementById('{{ form.payment_method.id_for_label }}');
     var datalist = document.getElementById('expense-names');
@@ -75,6 +80,14 @@
       var row = method.closest('.field');
       if (row) row.style.display = paid.checked ? '' : 'none';
     }
+    function toggleDueDate() {
+      if (!dueDate) return;
+      var row = dueDate.closest('.field');
+      if (!row) return;
+      var isPartition = !!(partition && partition.value);
+      row.style.display = isPartition ? 'none' : '';
+      if (isPartition) dueDate.value = '';
+    }
     function filterExpenseNames() {
       if (!datalist || !partition) return;
       var isPartition = !!partition.value;
@@ -95,14 +108,15 @@
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (data) { if (data && data.amount && !amountEdited) amount.value = data.amount; });
     }
-    villa.addEventListener('change', function () { narrowPartitions(); filterExpenseNames(); prefill(); });
-    partition.addEventListener('change', filterExpenseNames);
+    villa.addEventListener('change', function () { narrowPartitions(); filterExpenseNames(); prefill(); toggleDueDate(); });
+    partition.addEventListener('change', function () { filterExpenseNames(); toggleDueDate(); });
     name.addEventListener('change', prefill);
     name.addEventListener('blur', prefill);
     paid.addEventListener('change', togglePaid);
     narrowPartitions();
     filterExpenseNames();
     togglePaid();
+    toggleDueDate();
   })();
   </script>
 {% endif %}

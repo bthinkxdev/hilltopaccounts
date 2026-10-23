@@ -29,6 +29,7 @@ class Assignment(models.Model):
         BUSINESS_MANAGER = ('business_manager', 'Business Manager')
         VILLA_STAFF = ('villa_staff', 'Villa Staff')
         ACCOUNTANT = ('accountant', 'Accountant')
+        PARTNER = ('partner', 'Partner')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='assignments')
     role = models.CharField(max_length=20, choices=Role.choices)
     business = models.ForeignKey('businesses.Business', on_delete=models.CASCADE, null=True, blank=True, related_name='manager_assignments')
@@ -44,7 +45,8 @@ class Assignment(models.Model):
                 check=models.Q(role='business_manager', business__isnull=False, villa__isnull=True)
                 | models.Q(role='villa_staff', villa__isnull=False, business__isnull=True)
                 | models.Q(role='accountant', business__isnull=False, villa__isnull=True)
-                | models.Q(role='accountant', business__isnull=True, villa__isnull=False),
+                | models.Q(role='accountant', business__isnull=True, villa__isnull=False)
+                | models.Q(role='partner', villa__isnull=False, business__isnull=True),
                 name='assignment_scope_matches_role',
             ),
             models.UniqueConstraint(fields=['user', 'role', 'business'], condition=models.Q(business__isnull=False), name='unique_business_assignment'),

@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+{% block title %}Add Staff or Partner — Hilltop Accounting{% endblock %}
+
+{% block content %}
+  <div class="page-header" style="max-width: 600px; margin: 0 auto var(--space-4);">
+    <h1>{{ title }}</h1>
+  </div>
+
+  <div class="card card--narrow" style="max-width: 600px;">
+    <form method="post" id="staff-create-form" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+        <div class="form-error" style="margin-bottom: var(--space-3);">{{ form.non_field_errors.0 }}</div>
+      {% endif %}
+
+      <div class="field">
+        <label for="{{ form.username.id_for_label }}">Username <span class="field__required">*</span></label>
+        {{ form.username }}
+        {% if form.username.errors %}<div class="field__error">{{ form.username.errors.0 }}</div>{% endif %}
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3);">
+        <div class="field">
+          <label for="{{ form.first_name.id_for_label }}">First name</label>
+          {{ form.first_name }}
+          {% if form.first_name.errors %}<div class="field__error">{{ form.first_name.errors.0 }}</div>{% endif %}
+        </div>
+        <div class="field">
+          <label for="{{ form.last_name.id_for_label }}">Last name</label>
+          {{ form.last_name }}
+          {% if form.last_name.errors %}<div class="field__error">{{ form.last_name.errors.0 }}</div>{% endif %}
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="{{ form.email.id_for_label }}">Email</label>
+        {{ form.email }}
+        {% if form.email.errors %}<div class="field__error">{{ form.email.errors.0 }}</div>{% endif %}
+      </div>
+
+      <div class="field">
+        <label for="{{ form.whatsapp_number.id_for_label }}">WhatsApp number <span class="field__required">*</span></label>
+        {{ form.whatsapp_number }}
+        <div class="list-row__meta">{{ form.whatsapp_number.help_text }}</div>
+        {% if form.whatsapp_number.errors %}<div class="field__error">{{ form.whatsapp_number.errors.0 }}</div>{% endif %}
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3);">
+        <div class="field">
+          <label for="{{ form.password1.id_for_label }}">Password <span class="field__required">*</span></label>
+          {{ form.password1 }}
+          {% if form.password1.errors %}<div class="field__error">{{ form.password1.errors.0 }}</div>{% endif %}
+        </div>
+        <div class="field">
+          <label for="{{ form.password2.id_for_label }}">Confirm password <span class="field__required">*</span></label>
+          {{ form.password2 }}
+          {% if form.password2.errors %}<div class="field__error">{{ form.password2.errors.0 }}</div>{% endif %}
+        </div>
+      </div>
+
+      {# partner toggle section #}
+      <div style="margin: var(--space-4) 0; padding: var(--space-3) var(--space-4); background: var(--surface-solid); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);">
+          <div>
+            <div style="font-weight: 600; font-size: 14px; color: var(--text-primary);">Partner Account</div>
+            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+              Link this user to an existing Partner &amp; Villa to view profits and financials
+            </div>
+          </div>
+          <label class="switch" title="Toggle Partner Account">
+            <input type="checkbox" id="partner-toggle-switch" {% if form.is_partner.value %}checked{% endif %} onchange="onTogglePartner(this)">
+            <span class="switch__slider"></span>
+          </label>
+        </div>
+        <input type="checkbox" name="is_partner" id="id_is_partner" {% if form.is_partner.value %}checked{% endif %} style="display: none;">
+      </div>
+
+      {# hidden fields for partner and villa #}
+      <input type="hidden" name="partner" id="id_partner" value="{{ form.partner.value|default:'' }}">
+      <input type="hidden" name="villa" id="id_villa" value="{{ form.villa.value|default:'' }}">
+
+      {# linked partner badge #}
+      <div id="partner-link-badge" style="display: none; padding: var(--space-3) var(--space-4); background: rgba(59, 130, 246, 0.08); border: 1px solid var(--accent, #3b82f6); border-radius: var(--radius-md); margin-bottom: var(--space-4);">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: var(--space-2);">
+          <div>
+            <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--accent, #3b82f6); letter-spacing: 0.04em;">Linked Partner &amp; Villa</div>
+            <div id="partner-link-display" style="font-weight: 600; font-size: 14px; margin-top: 2px; color: var(--text-primary);"></div>
+          </div>
+          <button type="button" class="btn btn--ghost btn--sm" onclick="openPartnerModal()">Change</button>
+        </div>
+      </div>
+
+      {% if form.partner.errors or form.villa.errors %}
+        <div class="form-error" style="margin-bottom: var(--space-3);">
+          {% if form.partner.errors %}{{ form.partner.errors.0 }}<br>{% endif %}
+          {% if form.villa.errors %}{{ form.villa.errors.0 }}{% endif %}
+        </div>
+      {% endif %}
+
+      <div class="form-actions" style="margin-top: var(--space-5);">
+        <button class="btn btn--primary" id="form-submit-btn" type="submit">{{ submit_label|default:"Create Account" }}</button>
+        {% if cancel_url %}<a class="btn btn--ghost" href="{{ cancel_url }}">Cancel</a>{% endif %}
+      </div>
+    </form>
+  </div>
+
+  {# modal for linking partner & villa #}
+  <dialog id="partner-modal" tabindex="-1" style="width: calc(100% - var(--space-6)); max-width: 440px; border-radius: var(--radius-md); padding: var(--space-5); border: 1px solid var(--border-subtle); outline: none;">
+    <h3 style="margin-bottom: var(--space-2);">Link Existing Partner &amp; Villa</h3>
+    <p style="color: var(--text-secondary); margin-bottom: var(--space-4); font-size: 13px; line-height: 1.5;">
+      First choose the villa, then select the corresponding partner assigned to that villa.
+    </p>
+
+    <div class="field" style="margin-bottom: var(--space-3);">
+      <label for="modal-villa-select">Select Villa <span class="field__required">*</span></label>
+      <select id="modal-villa-select" class="form-control" onchange="onModalVillaChange(this.value)">
+        <option value="">-- Choose Villa --</option>
+        {% for v in villas %}
+          <option value="{{ v.pk }}" {% if form.villa.value|stringformat:"s" == v.pk|stringformat:"s" %}selected{% endif %}>
+            {{ v.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field" style="margin-bottom: var(--space-4);">
+      <label for="modal-partner-select">Select Partner <span class="field__required">*</span></label>
+      <select id="modal-partner-select" class="form-control">
+        <option value="">-- Choose Villa First --</option>
+      </select>
+    </div>
+
+    <div id="modal-error" style="display: none; color: var(--danger, #ef4444); font-size: 13px; margin-bottom: var(--space-3); font-weight: 500;"></div>
+
+    <div style="display: flex; justify-content: flex-end; gap: var(--space-2);">
+      <button type="button" class="btn btn--ghost" onclick="closePartnerModal(false)">Cancel</button>
+      <button type="button" class="btn btn--primary" onclick="confirmPartnerModal()">Confirm</button>
+    </div>
+  </dialog>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const villaPartnersMap = JSON.parse('{{ villa_partners_json|default:"{}"|escapejs }}');
+
+function onTogglePartner(toggle) {
+  const hiddenPartnerCheck = document.getElementById('id_is_partner');
+  hiddenPartnerCheck.checked = toggle.checked;
+  if (toggle.checked) {
+    openPartnerModal();
+  } else {
+    document.getElementById('id_partner').value = '';
+    document.getElementById('id_villa').value = '';
+    updatePartnerBadge();
+  }
+}
+
+function onModalVillaChange(villaId, selectedPartnerId) {
+  const pSelect = document.getElementById('modal-partner-select');
+  pSelect.innerHTML = '';
+
+  if (!villaId) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '-- Choose Villa First --';
+    pSelect.appendChild(opt);
+    pSelect.disabled = true;
+    return;
+  }
+
+  pSelect.disabled = false;
+  const partners = villaPartnersMap[villaId] || [];
+
+  if (partners.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '-- No partners assigned to this villa --';
+    pSelect.appendChild(opt);
+    return;
+  }
+
+  const allLinked = partners.every(function(p) { return p.has_account; });
+  const defaultOpt = document.createElement('option');
+  defaultOpt.value = '';
+  defaultOpt.textContent = allLinked ? '-- All partners already have accounts --' : '-- Choose Partner --';
+  pSelect.appendChild(defaultOpt);
+
+  partners.forEach(function(p) {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    if (p.has_account) {
+      opt.textContent = `${p.name} (${p.percentage}%) — Has account (@${p.username})`;
+      opt.disabled = true;
+      opt.style.color = 'var(--text-muted, #888)';
+    } else {
+      opt.textContent = `${p.name} (${p.percentage}%)`;
+    }
+    if (selectedPartnerId && String(p.id) === String(selectedPartnerId)) {
+      opt.selected = true;
+    }
+    pSelect.appendChild(opt);
+  });
+}
+
+function openPartnerModal() {
+  const modal = document.getElementById('partner-modal');
+  const partnerVal = document.getElementById('id_partner').value;
+  const villaVal = document.getElementById('id_villa').value;
+
+  if (villaVal) {
+    document.getElementById('modal-villa-select').value = villaVal;
+    onModalVillaChange(villaVal, partnerVal);
+  } else {
+    document.getElementById('modal-villa-select').value = '';
+    onModalVillaChange('');
+  }
+
+  document.getElementById('modal-error').style.display = 'none';
+  modal.showModal();
+}
+
+function closePartnerModal(wasConfirmed) {
+  const modal = document.getElementById('partner-modal');
+  modal.close();
+  if (!wasConfirmed) {
+    const partnerVal = document.getElementById('id_partner').value;
+    const villaVal = document.getElementById('id_villa').value;
+    if (!partnerVal || !villaVal) {
+      document.getElementById('partner-toggle-switch').checked = false;
+      document.getElementById('id_is_partner').checked = false;
+      updatePartnerBadge();
+    }
+  }
+}
+
+function confirmPartnerModal() {
+  const vSelect = document.getElementById('modal-villa-select');
+  const pSelect = document.getElementById('modal-partner-select');
+  const errDiv = document.getElementById('modal-error');
+
+  const vVal = vSelect.value;
+  const pVal = pSelect.value;
+  const selectedOpt = pSelect.options[pSelect.selectedIndex];
+
+  if (!vVal) {
+    errDiv.textContent = 'Please choose a villa first.';
+    errDiv.style.display = 'block';
+    return;
+  }
+
+  if (!pVal || (selectedOpt && selectedOpt.disabled)) {
+    errDiv.textContent = 'Please select an available partner who does not already have an account.';
+    errDiv.style.display = 'block';
+    return;
+  }
+
+  document.getElementById('id_villa').value = vVal;
+  document.getElementById('id_partner').value = pVal;
+  document.getElementById('partner-toggle-switch').checked = true;
+  document.getElementById('id_is_partner').checked = true;
+
+  updatePartnerBadge();
+  closePartnerModal(true);
+}
+
+function updatePartnerBadge() {
+  const badge = document.getElementById('partner-link-badge');
+  const display = document.getElementById('partner-link-display');
+  const vVal = document.getElementById('id_villa').value;
+  const pVal = document.getElementById('id_partner').value;
+
+  if (vVal && pVal) {
+    const vSelect = document.getElementById('modal-villa-select');
+    const vName = vSelect.querySelector(`option[value="${vVal}"]`)?.textContent.trim() || 'Villa';
+    const partners = villaPartnersMap[vVal] || [];
+    const pObj = partners.find(function(p) { return String(p.id) === String(pVal); });
+    const pName = pObj ? `${pObj.name} (${pObj.percentage}%)` : 'Partner';
+    display.textContent = `${vName} · ${pName}`;
+    badge.style.display = 'block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const villaVal = document.getElementById('id_villa').value;
+  const partnerVal = document.getElementById('id_partner').value;
+  if (villaVal) {
+    onModalVillaChange(villaVal, partnerVal);
+  }
+  updatePartnerBadge();
+});
+</script>
+{% endblock %}

@@ -31,7 +31,6 @@ class ExpenseForm(forms.Form):
     name = forms.CharField(max_length=100, label='Expense', widget=forms.TextInput(attrs={'list': 'expense-names', 'autocomplete': 'off', 'placeholder': 'e.g. Electricity'}))
     amount = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12, widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01'}))
     date = forms.DateField(label='Expense date', widget=forms.DateInput(attrs={'type': 'date'}))
-    due_date = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}), help_text='When this must be paid. Drives reminders.')
     paid_by = forms.ChoiceField(required=False, choices=PaidBy.choices, label='Paid by', help_text='Staff-paid expenses come out of the cash the staff collected; owner-paid ones are settled from the owner account.')
     mark_paid = forms.BooleanField(required=False, label='Already paid')
     payment_method = forms.ChoiceField(required=False, choices=[('', 'Select a method…')] + list(Expense.Method.choices), help_text='Needed when the expense is already paid.')
@@ -79,9 +78,6 @@ class ExpenseForm(forms.Form):
             self.add_error('name', "Villa rent is a whole-villa expense, not a partition expense.")
         if cleaned.get('mark_paid') and not cleaned.get('payment_method'):
             self.add_error('payment_method', 'Choose how this was paid.')
-        due, spent = cleaned.get('due_date'), cleaned.get('date')
-        if due and spent and due < spent:
-            self.add_error('due_date', 'Due date cannot be before the expense date.')
         return cleaned
 
 class MarkPaidForm(forms.Form):
@@ -92,15 +88,24 @@ class MarkPaidForm(forms.Form):
 class RecurringExpenseForm(forms.Form):
     name = forms.CharField(max_length=100, label='Expense', widget=forms.TextInput(attrs={'list': 'expense-names', 'autocomplete': 'off', 'placeholder': 'e.g. Villa owner rent'}))
     amount = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12, widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01'}))
-    due_day = forms.IntegerField(min_value=1, max_value=28, initial=1, label='Due day of month')
+    due_day = forms.IntegerField(min_value=1, max_value=28, initial=1, widget=forms.HiddenInput(), required=False)
     paid_by = forms.ChoiceField(choices=PaidBy.choices, initial=PaidBy.OWNER, label='Paid by')
     auto_debit = forms.BooleanField(required=False, label='Auto-debit from the owner account on the due date')
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if user and not user.is_owner:
+            self.fields['paid_by'].choices = [(PaidBy.STAFF, 'Staff — from collected cash')]
+            self.fields['paid_by'].initial = PaidBy.STAFF
+            self.fields.pop('auto_debit', None)
 
     def clean_name(self):
         return ' '.join(self.cleaned_data['name'].split())
 
     def clean(self):
         cleaned = super().clean()
+        if not cleaned.get('due_day'):
+            cleaned['due_day'] = 1
         if cleaned.get('auto_debit') and cleaned.get('paid_by') != PaidBy.OWNER:
             self.add_error('auto_debit', 'Only owner-account expenses can be auto-debited.')
         return cleaned

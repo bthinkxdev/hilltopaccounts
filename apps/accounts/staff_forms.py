@@ -1,7 +1,7 @@
 import re
 from django import forms
 from django.contrib.auth.password_validation import validate_password
-from apps.businesses.models import Business
+from apps.businesses.models import Business, Partner
 from apps.shared.forms import TaggedSelect
 from apps.villas.models import Villa
 from .models import Assignment, User
@@ -20,6 +20,9 @@ class StaffCreateForm(forms.Form):
     whatsapp_number = forms.CharField(max_length=32, label='WhatsApp number', help_text='Include the country code, e.g. +974 5555 1234. Used for listing enquiries.')
     password1 = forms.CharField(widget=forms.PasswordInput, label='Password')
     password2 = forms.CharField(widget=forms.PasswordInput, label='Confirm password')
+    is_partner = forms.BooleanField(required=False, label='Partner Account', widget=forms.CheckboxInput(attrs={'id': 'id_is_partner', 'class': 'switch__input'}))
+    partner = forms.ModelChoiceField(queryset=Partner.objects.filter(is_active=True), required=False, empty_label='Select Partner…', widget=forms.Select(attrs={'id': 'id_partner'}))
+    villa = forms.ModelChoiceField(queryset=Villa.objects.filter(is_archived=False, is_sold=False), required=False, empty_label='Select Villa…', widget=forms.Select(attrs={'id': 'id_villa'}))
 
     def clean_whatsapp_number(self):
         return validate_whatsapp(self.cleaned_data['whatsapp_number'])
@@ -41,6 +44,15 @@ class StaffCreateForm(forms.Form):
                     validate_password(p1)
                 except forms.ValidationError as exc:
                     self.add_error('password1', exc)
+        if cleaned.get('is_partner'):
+            partner = cleaned.get('partner')
+            if not partner:
+                self.add_error('partner', 'Please select a partner to link.')
+            elif partner.user_id:
+                username_hint = f' (@{partner.user.username})' if partner.user else ''
+                self.add_error('partner', f'{partner.name} already has an active account{username_hint}. A partner cannot be linked to more than one user account.')
+            if not cleaned.get('villa'):
+                self.add_error('villa', 'Please select a villa for this partner.')
         return cleaned
 
 class StaffPasswordChangeForm(forms.Form):
@@ -77,7 +89,9 @@ class StaffWhatsAppForm(forms.Form):
         return validate_whatsapp(self.cleaned_data['whatsapp_number'])
 
 class AssignmentForm(forms.Form):
-    role = forms.ChoiceField(choices=Assignment.Role.choices)
+    role = forms.ChoiceField(
+        choices=[(r.value, r.label) for r in Assignment.Role if r != Assignment.Role.PARTNER]
+    )
     business = forms.ModelChoiceField(queryset=Business.objects.filter(is_archived=False), required=False, empty_label='Select a business…')
     villa = forms.ModelChoiceField(
         queryset=Villa.objects.filter(is_archived=False, is_sold=False, business__is_archived=False).select_related('business'),
@@ -104,7 +118,6 @@ class AssignmentForm(forms.Form):
             elif role == Assignment.Role.VILLA_STAFF:
                 if villa and villa.business_id in manager_biz:
                     self.add_error('villa', f'{self.staff.username} is already the Business Manager of {villa.business.name} and cannot be assigned to its villas.')
-
 
         if role == Assignment.Role.BUSINESS_MANAGER:
             if not business:

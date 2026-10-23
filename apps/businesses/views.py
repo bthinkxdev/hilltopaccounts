@@ -179,6 +179,7 @@ def partner_list(request):
                 'pct': v_owner_pct,
                 'cut': v_owner_cut,
                 'net': v_net,
+                'expenses': pnl.get(v.pk, {}).get('expenses', Decimal('0.00')),
                 'partner_cut': v_partner_cut,
                 'partner_pct': v_partner_pct,
                 'partner_names': v_partner_names,

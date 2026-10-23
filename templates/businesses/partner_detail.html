@@ -75,7 +75,7 @@
                 {% if share.co_partners %}
                   · Other: {% for cp in share.co_partners %}<a href="{% url 'businesses:partner_detail' cp.partner.pk %}?period={{ period }}&year={{ year }}&month={{ month }}" style="color: inherit; text-decoration: underline;">{{ cp.partner.name }}</a>: <b>{{ cp.percentage }}%</b> (QAR {{ cp.cut|floatformat:"2g" }}){% if not forloop.last %}, {% endif %}{% endfor %}
                 {% endif %}
-                · You: <b>{{ share.owner_percentage }}%</b> · Net: QAR {{ share.villa_net|floatformat:"2g" }}
+                · You: <b>{{ share.owner_percentage }}%</b> · Expenses: <b>QAR {{ share.villa_expenses|floatformat:"2g" }}</b> · Net: <b>QAR {{ share.villa_net|floatformat:"2g" }}</b>
               </div>
             </div>
             <div class="partner-row__side">

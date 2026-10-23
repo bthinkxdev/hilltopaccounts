@@ -41,7 +41,7 @@ class HomeView(LoginRequiredMixin, TemplateView):
         ctx.update(period_context(self.request))
         ctx['keep'] = []
         financial = selectors.financial_villas(user)
-        if not financial.exists() and staff_view:
+        if not financial.exists() and selectors.is_partner(user):
             financial = selectors.villas_visible_to(user)
         ctx['period_pnl'] = billing_selectors.period_profit_loss(selectors.invoices_visible_to(user).filter(partition__villa__in=financial), selectors.expenses_visible_to(user).filter(villa__in=financial), ctx['period_start'], ctx['period_end']) if financial.exists() else None
         if ctx['period_pnl']:
@@ -62,6 +62,7 @@ class HomeView(LoginRequiredMixin, TemplateView):
             from apps.businesses.models import PartnerVillaShare
             active_shares = list(PartnerVillaShare.objects.filter(villa__in=financial, partner__is_active=True).select_related('partner'))
             partner_share_cards = []
+            partner_map = {}
             if active_shares and distributable > 0:
                 pnl_by_v = billing_selectors.profit_loss_by_villa(
                     selectors.invoices_visible_to(user).filter(partition__villa__in=financial),
@@ -69,7 +70,6 @@ class HomeView(LoginRequiredMixin, TemplateView):
                     ctx['period_start'], ctx['period_end']
                 )
                 tot_partner_cut = Decimal('0.00')
-                partner_map = {}
                 for s in active_shares:
                     v_net = pnl_by_v.get(s.villa_id, {}).get('net', Decimal('0.00'))
                     if v_net > 0:
@@ -102,6 +102,25 @@ class HomeView(LoginRequiredMixin, TemplateView):
             ctx['total_partner_cut'] = tot_partner_cut
             ctx['partner_count'] = partner_count
             ctx['distributable_profit'] = distributable
+
+            is_partner = selectors.is_partner(user)
+            ctx['is_partner'] = is_partner
+            if is_partner:
+                partner = getattr(user, 'partner_profile', None)
+                if partner and partner.id in partner_map:
+                    ctx['my_partner_share'] = {
+                        'name': partner_map[partner.id]['name'],
+                        'percentage': partner_map[partner.id]['percentage'],
+                        'cut': partner_map[partner.id]['cut'],
+                    }
+                elif partner:
+                    vs = PartnerVillaShare.objects.filter(partner=partner, villa__in=financial).first()
+                    pct = vs.percentage if vs else Decimal('0.00')
+                    ctx['my_partner_share'] = {
+                        'name': partner.name,
+                        'percentage': pct,
+                        'cut': Decimal('0.00'),
+                    }
 
         needs_attention = []
         quick_actions = []
@@ -191,8 +210,7 @@ def global_search(request):
             results['staff'] = User.objects.exclude(username='system').filter(username__icontains=q)[:10]
     return render(request, 'dashboard/search.html', {'q': q, 'results': results, 'breadcrumbs': [('Search', None)]})
 
-@login_required
-def export_financials_csv(request):
+def _get_financial_export_data(request):
     user, today = request.user, date.today()
     s = parse_date(request.GET.get('start_date') or '') or today.replace(day=1)
     e = parse_date(request.GET.get('end_date') or '') or today
@@ -214,11 +232,13 @@ def export_financials_csv(request):
     inc, exp_tot, net = pnl.get('income', Decimal('0.00')), pnl.get('expenses', Decimal('0.00')), pnl.get('net', Decimal('0.00'))
     distributable = max(Decimal('0.00'), net)
 
+    date_display = f"{s.strftime('%d %b %Y')}" if s == e else f"{s.strftime('%d %b %Y')} to {e.strftime('%d %b %Y')}"
+    exported_by = user.get_full_name() or user.username
     title = f"Hilltop Accounting — Financial Summary Report ({target_villa.name})" if target_villa else "Hilltop Accounting — Financial Summary Report"
     rows = [
         [title],
-        ['Date Range' if s != e else 'Date', f"{s.strftime('%d %b %Y')}" if s == e else f"{s.strftime('%d %b %Y')} to {e.strftime('%d %b %Y')}"],
-        ['Exported By', user.get_full_name() or user.username],
+        ['Date Range' if s != e else 'Date', date_display],
+        ['Exported By', exported_by],
     ]
     if target_villa:
         rows.append(['Villa', target_villa.name])
@@ -245,30 +265,38 @@ def export_financials_csv(request):
     rows.extend([
         [],
         [f'{sec}. EXPENSE DETAILS', 'Amount (QAR)'],
-        ['Staff Spent Expenses', f"{pnl.get('staff_expenses', Decimal('0.00')):.2f}"],
-        ['Admin Spent Expenses', f"{pnl.get('owner_expenses', Decimal('0.00')):.2f}"],
+        ['Staff Expenses', f"{pnl.get('staff_expenses', Decimal('0.00')):.2f}"],
+        ['Admin Expenses', f"{pnl.get('owner_expenses', Decimal('0.00')):.2f}"],
         ['Total Expenses', f"{exp_tot:.2f}"],
     ])
     sec += 1
 
-    if user.is_owner:
+    is_partner = selectors.is_partner(user)
+    show_profit_share = user.is_owner or is_partner
+    partner_breakdown_rows = []
+    tot_partner = Decimal('0.00')
+    owner_cut = Decimal('0.00')
+    admin_label = 'Admin Profit Share' if is_partner else 'Owner Profit Share'
+
+    if show_profit_share:
         from apps.businesses.models import PartnerVillaShare
         shares = PartnerVillaShare.objects.filter(villa__in=villas, partner__is_active=True).select_related('partner', 'villa')
         pnl_by_v = billing_selectors.profit_loss_by_villa(inv, exp, s, e) if shares and distributable > 0 else {}
         
-        partner_breakdown_rows = []
-        tot_partner = Decimal('0.00')
+        partner_villas_map = {}
         for sh in shares:
-            v_net = pnl_by_v.get(sh.villa_id, {}).get('net', Decimal('0.00'))
+            v_pnl = pnl_by_v.get(sh.villa_id, {})
+            v_net = v_pnl.get('net', Decimal('0.00'))
             cut = (v_net * (sh.percentage / Decimal('100.00'))).quantize(Decimal('0.01')) if v_net > 0 else Decimal('0.00')
             tot_partner += cut
-            partner_breakdown_rows.append([
-                sh.partner.name,
-                sh.villa.name,
-                f"{v_net:.2f}",
-                f"{sh.percentage:.2f}%",
-                f"{cut:.2f}"
-            ])
+            cut_str = f"{cut:.2f}".rstrip('0').rstrip('.') if '.' in f"{cut:.2f}" and f"{cut:.2f}".endswith('.00') else f"{cut:.2f}"
+            pct_str = f"{sh.percentage:.2f}".rstrip('0').rstrip('.') if '.' in f"{sh.percentage:.2f}" and f"{sh.percentage:.2f}".endswith('.00') else f"{sh.percentage:.2f}"
+            partner_villas_map.setdefault(sh.partner.name, []).append(f"{sh.villa.name}={cut_str}({pct_str}%)")
+
+        partner_breakdown_rows = [
+            [p_name, ", ".join(v_list)]
+            for p_name, v_list in partner_villas_map.items()
+        ]
 
         owner_cut = max(Decimal('0.00'), distributable - tot_partner)
 
@@ -276,7 +304,7 @@ def export_financials_csv(request):
             [],
             [f'{sec}. PROFIT SHARE', 'Amount (QAR)'],
             ['Distributable Net Profit', f"{distributable:.2f}"],
-            ['Owner Profit Share', f"{owner_cut:.2f}"],
+            [admin_label, f"{owner_cut:.2f}"],
             ['Total Partners Share', f"{tot_partner:.2f}"],
         ])
         sec += 1
@@ -284,14 +312,15 @@ def export_financials_csv(request):
         rows.extend([
             [],
             [f'{sec}. PROFIT SHARE DETAILS (PARTNERS BY VILLA)'],
-            ['Partner Name', 'Assigned Villa', 'Villa Net Profit (QAR)', 'Assigned Share %', 'Partner Cut (QAR)'],
+            ['Partner Name', 'Assigned Villa'],
         ])
         sec += 1
         if partner_breakdown_rows:
             rows.extend(partner_breakdown_rows)
         else:
-            rows.append(['No active partner shares (100% Owner)'])
+            rows.append(['No active partner shares', '100% Admin' if is_partner else '100% Owner'])
 
+    villa_rows = []
     if not target_villa:
         from apps.billing.models import Payment
         from apps.expenses.models import Expense
@@ -340,20 +369,73 @@ def export_financials_csv(request):
         rows.extend([
             [],
             [f'{sec}. VILLA FINANCIAL BREAKDOWN'],
-            ['Villa Name', 'Total Income (QAR)', 'Total Expenses (QAR)', 'Net Profit (QAR)', 'Staff Collected (QAR)', 'Admin Collected (QAR)', 'Staff Spent (QAR)', 'Admin Spent (QAR)'],
+            ['Villa Name', 'Total Income (QAR)', 'Total Expenses (QAR)', 'Net Profit (QAR)', 'Staff Collected (QAR)', 'Admin Collected (QAR)', 'Staff Expenses (QAR)', 'Admin Expenses (QAR)'],
             *villa_rows,
             ['Total', f"{inc:.2f}", f"{exp_tot:.2f}", f"{net:.2f}", f"{pnl.get('staff_collected', Decimal('0.00')):.2f}", f"{pnl.get('admin_collected', Decimal('0.00')):.2f}", f"{pnl.get('staff_expenses', Decimal('0.00')):.2f}", f"{pnl.get('owner_expenses', Decimal('0.00')):.2f}"],
         ])
         sec += 1
 
+    v_tag = f"_{target_villa.name.replace(' ', '_')}" if target_villa else ""
+    d_tag = f"{s:%Y%m%d}" if s == e else f"{s:%Y%m%d}_{e:%Y%m%d}"
+
+    return {
+        'user': user,
+        'today': today,
+        's': s,
+        'e': e,
+        'date_display': date_display,
+        'exported_by': exported_by,
+        'target_villa': target_villa,
+        'title': title,
+        'inc': inc,
+        'exp_tot': exp_tot,
+        'net': net,
+        'distributable': distributable,
+        'staff_collected': pnl.get('staff_collected', Decimal('0.00')),
+        'admin_collected': pnl.get('admin_collected', Decimal('0.00')),
+        'staff_expenses': pnl.get('staff_expenses', Decimal('0.00')),
+        'owner_expenses': pnl.get('owner_expenses', Decimal('0.00')),
+        'is_partner': is_partner,
+        'show_profit_share': show_profit_share,
+        'admin_label': admin_label,
+        'owner_cut': owner_cut,
+        'tot_partner': tot_partner,
+        'partner_breakdown_rows': partner_breakdown_rows,
+        'villa_rows': villa_rows,
+        'rows': rows,
+        'v_tag': v_tag,
+        'd_tag': d_tag,
+    }
+
+@login_required
+def export_financials_csv(request):
+    if request.GET.get('format') == 'pdf':
+        return export_financials_pdf(request)
+    data = _get_financial_export_data(request)
     from apps.audit import services as audit_services
     from apps.audit.models import Action
-    audit_services.log(user=user, action=Action.REPORT_EXPORTED, reason=f"Exported financial summary CSV for {s} to {e}" + (f" ({target_villa.name})" if target_villa else ""))
+    audit_services.log(user=data['user'], action=Action.REPORT_EXPORTED, reason=f"Exported financial summary CSV for {data['s']} to {data['e']}" + (f" ({data['target_villa'].name})" if data['target_villa'] else ""))
 
     response = HttpResponse(content_type='text/csv; charset=utf-8')
     response.write('\ufeff')
-    v_tag = f"_{target_villa.name.replace(' ', '_')}" if target_villa else ""
-    d_tag = f"{s:%Y%m%d}" if s == e else f"{s:%Y%m%d}_{e:%Y%m%d}"
-    response['Content-Disposition'] = f'attachment; filename="financial_summary{v_tag}_{d_tag}.csv"'
-    csv.writer(response).writerows(rows)
+    response['Content-Disposition'] = f'attachment; filename="financial_summary{data["v_tag"]}_{data["d_tag"]}.csv"'
+    csv.writer(response).writerows(data['rows'])
     return response
+
+@login_required
+def export_financials_pdf(request):
+    data = _get_financial_export_data(request)
+    from apps.audit import services as audit_services
+    from apps.audit.models import Action
+    audit_services.log(user=data['user'], action=Action.REPORT_EXPORTED, reason=f"Exported financial summary PDF for {data['s']} to {data['e']}" + (f" ({data['target_villa'].name})" if data['target_villa'] else ""))
+
+    from django.template.loader import render_to_string
+    from xhtml2pdf import pisa
+    html = render_to_string('reports/financial_summary_pdf.html', data)
+    response = HttpResponse(content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="financial_summary{data["v_tag"]}_{data["d_tag"]}.pdf"'
+    pisa_status = pisa.CreatePDF(html, dest=response)
+    if pisa_status.err:
+        return HttpResponse('Error generating PDF', status=500)
+    return response
+

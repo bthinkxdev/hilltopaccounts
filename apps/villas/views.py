@@ -71,8 +71,8 @@ def villa_list(request):
         ensure_fixed_expenses(villa_ids=villa_ids, year=period['year'], month=period['month'])
     covers = _first_photo_by(Photo.objects.filter(villa_id__in=villa_ids, partition__isnull=True), lambda photo: photo.villa_id)
     financial_ids = set(selectors.financial_villas(request.user).filter(pk__in=villa_ids).values_list('pk', flat=True))
-    if not financial_ids and is_staff:
-        financial_ids = set(villa_ids)
+    if is_staff:
+        financial_ids = financial_ids | set(villa_ids)
     pnl_by_villa = {}
     if financial_ids:
         pnl_by_villa = billing_selectors.profit_loss_by_villa(selectors.invoices_visible_to(request.user).filter(partition__villa__in=financial_ids), selectors.expenses_visible_to(request.user).filter(villa__in=financial_ids), period['period_start'], period['period_end'])
@@ -90,16 +90,24 @@ def villa_list(request):
     to_verify = {row['villa_id']: row['n'] for row in selectors.expenses_visible_to(request.user).filter(villa_id__in=financial_ids, status=Expense.Status.ACTIVE, paid_on__isnull=False, verified_at__isnull=True).order_by().values('villa_id').annotate(n=Count('pk'))}
     unconfirmed_cash = {row['invoice__partition__villa_id']: row['total'] for row in Payment.objects.filter(handovers__status=CashHandover.Status.SUBMITTED, invoice__partition__villa_id__in=financial_ids).order_by().values('invoice__partition__villa_id').annotate(total=Sum('amount'))}
     partner_shares_by_villa = {}
-    if request.user.is_owner:
+    is_partner = selectors.is_partner(request.user)
+    if request.user.is_owner or is_partner:
         from apps.businesses.models import PartnerVillaShare
         shares_by_v = {}
         for share in PartnerVillaShare.objects.filter(partner__is_active=True, villa_id__in=villa_ids).select_related('partner'):
             shares_by_v.setdefault(share.villa_id, []).append(share)
+        partner_obj = getattr(request.user, 'partner_profile', None) if is_partner else None
         for v_id, s_list in shares_by_v.items():
             tot_p = sum((s.percentage for s in s_list), Decimal('0.00'))
-            labels = [f"{s.partner.name} ({s.percentage}%)" for s in s_list]
+            labels = []
+            for s in s_list:
+                if is_partner and partner_obj and s.partner_id == partner_obj.id:
+                    labels.append(f"You ({s.percentage}%)")
+                else:
+                    labels.append(f"{s.partner.name} ({s.percentage}%)")
             if tot_p < Decimal('100.00'):
-                labels.append(f"You ({Decimal('100.00') - tot_p}%)")
+                admin_label = "Admin" if is_partner else "You"
+                labels.append(f"{admin_label} ({Decimal('100.00') - tot_p}%)")
             partner_shares_by_villa[v_id] = labels
 
     for villa in page_obj:
@@ -116,7 +124,7 @@ def villa_list(request):
         if villa.pnl:
             net = villa.pnl.get('net', Decimal('0.00'))
             distributable = max(Decimal('0.00'), net)
-            s_list = shares_by_v.get(villa.pk, []) if request.user.is_owner else []
+            s_list = shares_by_v.get(villa.pk, []) if (request.user.is_owner or is_partner) else []
             tot_p = sum((s.percentage for s in s_list), Decimal('0.00'))
             p_cut = (distributable * (tot_p / Decimal('100.00'))).quantize(Decimal('0.01'))
             o_pct = max(Decimal('0.00'), Decimal('100.00') - tot_p)
@@ -126,8 +134,6 @@ def villa_list(request):
             villa.owner_percentage = o_pct
     totals = None
     scoped_financial = selectors.financial_villas(request.user).filter(pk__in=base.values('pk'))
-    if not scoped_financial.exists() and is_staff:
-        scoped_financial = base
     if scoped_financial.exists():
         totals = billing_selectors.period_profit_loss(selectors.invoices_visible_to(request.user).filter(partition__villa__in=scoped_financial), selectors.expenses_visible_to(request.user).filter(villa__in=scoped_financial), period['period_start'], period['period_end'])
         if request.user.is_owner:
@@ -327,6 +333,26 @@ def villa_detail(request, pk):
         context['total_partner_pct'] = total_partner_pct if shares else Decimal('0.00')
         context['partner_count'] = len(shares)
         context['distributable_profit'] = distributable_profit
+
+        is_partner = selectors.is_partner(request.user)
+        context['is_partner'] = is_partner
+        if is_partner:
+            partner = getattr(request.user, 'partner_profile', None)
+            if partner:
+                my_s = next((s for s in shares if s.partner_id == partner.id), None)
+                if my_s:
+                    context['my_partner_share'] = {
+                        'name': my_s.partner.name,
+                        'percentage': my_s.percentage,
+                        'cut': my_s.cut,
+                    }
+                else:
+                    context['my_partner_share'] = {
+                        'name': partner.name,
+                        'percentage': Decimal('0.00'),
+                        'cut': Decimal('0.00'),
+                    }
+
         context['partner_share_cards'] = [
             {
                 'name': s.partner.name,

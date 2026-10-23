@@ -61,7 +61,7 @@
           <div class="tile__body">
             <div class="tile__title">{{ villa.name }}</div>
             <div class="tile__meta">{% if not nav_is_field_staff %}{{ villa.business.name }}{% if villa.staff_names %} · {% endif %}{% endif %}{% if villa.staff_names %}{{ villa.staff_names|join:", " }}{% endif %}</div>
-            {% if user.is_owner and villa.partner_share_labels %}
+            {% if villa.partner_share_labels %}
               <div class="tile__meta" style="color: var(--accent-primary, #3b82f6); font-size: 13px;">Profit Share: {{ villa.partner_share_labels|join:" · " }}</div>
             {% endif %}
             <div class="tile__pills">

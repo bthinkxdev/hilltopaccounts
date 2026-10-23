@@ -29,16 +29,52 @@ def staff_list(request):
 @login_required
 def staff_create(request):
     _owner_only(request.user)
+    from apps.businesses.models import Partner
+    from apps.villas.models import Villa
     if request.method == 'POST':
         form = StaffCreateForm(request.POST)
         if form.is_valid():
             data = form.cleaned_data
-            user = create_user(username=data['username'], email=data['email'], first_name=data['first_name'], last_name=data['last_name'], whatsapp_number=data['whatsapp_number'], created_by=request.user, password=data['password1'])
-            messages.success(request, f'Staff account “{user.username}” created.')
+            user = create_user(
+                username=data['username'], email=data['email'],
+                first_name=data['first_name'], last_name=data['last_name'],
+                whatsapp_number=data['whatsapp_number'], created_by=request.user,
+                password=data['password1']
+            )
+            if data.get('is_partner') and data.get('partner') and data.get('villa'):
+                from .services import assign_partner
+                assign_partner(user=user, villa=data['villa'], assigned_by=request.user, partner=data['partner'])
+                messages.success(request, f'Partner account “{user.username}” created and linked to {data["partner"].name} ({data["villa"].name}).')
+            else:
+                messages.success(request, f'Staff account “{user.username}” created.')
             return redirect('accounts:staff_detail', pk=user.pk)
     else:
         form = StaffCreateForm()
-    return render(request, 'components/form_page.html', {'form': form, 'title': 'Add Staff', 'submit_label': 'Create Account', 'cancel_url': reverse('accounts:staff_list')})
+    
+    import json
+    from apps.businesses.models import PartnerVillaShare
+    villas = list(Villa.objects.filter(is_archived=False, is_sold=False).order_by('name'))
+    partners = list(Partner.objects.filter(is_active=True).order_by('name'))
+    shares = list(PartnerVillaShare.objects.filter(partner__is_active=True).select_related('partner', 'partner__user'))
+    villa_partners_map = {}
+    for s in shares:
+        villa_partners_map.setdefault(str(s.villa_id), []).append({
+            'id': str(s.partner_id),
+            'name': s.partner.name,
+            'percentage': str(s.percentage),
+            'has_account': bool(s.partner.user_id),
+            'username': s.partner.user.username if s.partner.user else '',
+        })
+
+    return render(request, 'accounts/staff_create.html', {
+        'form': form,
+        'title': 'Add Staff / Partner',
+        'submit_label': 'Create Account',
+        'cancel_url': reverse('accounts:staff_list'),
+        'partners': partners,
+        'villas': villas,
+        'villa_partners_json': json.dumps(villa_partners_map),
+    })
 
 @login_required
 def staff_whatsapp_edit(request, pk):

@@ -263,18 +263,18 @@ def recurring_create(request, villa_pk):
     villa = _villa_for_fixed_expenses(request, villa_pk)
     back = reverse('villas:villa_detail', args=[villa.pk]) + '#fixed-expenses'
     if request.method == 'POST':
-        form = RecurringExpenseForm(request.POST)
+        form = RecurringExpenseForm(request.POST, user=request.user)
         if form.is_valid():
             data = form.cleaned_data
             category = get_or_create_category(name=data['name'])
             if RecurringExpense.objects.filter(villa=villa, category=category).exists():
                 form.add_error('name', f'{category.name} is already a fixed expense of this villa — edit it instead.')
             else:
-                create_recurring_expense(villa=villa, category=category, amount=data['amount'], due_day=data['due_day'], paid_by=data['paid_by'], auto_debit=data['auto_debit'], created_by=request.user)
+                create_recurring_expense(villa=villa, category=category, amount=data['amount'], due_day=data['due_day'], paid_by=data['paid_by'], auto_debit=data.get('auto_debit', False), created_by=request.user)
                 messages.success(request, f'Fixed expense “{category.name}” added to {villa.name}.')
                 return redirect(back)
     else:
-        form = RecurringExpenseForm()
+        form = RecurringExpenseForm(user=request.user)
     names = expense_selectors.used_expense_names(selectors.expenses_visible_to(request.user))
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Add fixed monthly expense — {villa.name}', 'cancel_url': back, 'expense_names': names, 'datalist_only': True})
 
@@ -284,7 +284,7 @@ def recurring_edit(request, pk):
     villa = _villa_for_fixed_expenses(request, recurring.villa_id)
     back = reverse('villas:villa_detail', args=[villa.pk]) + '#fixed-expenses'
     if request.method == 'POST':
-        form = RecurringExpenseForm(request.POST)
+        form = RecurringExpenseForm(request.POST, user=request.user)
         if form.is_valid():
             data = form.cleaned_data
             category = get_or_create_category(name=data['name'])
@@ -292,11 +292,11 @@ def recurring_edit(request, pk):
             if clash:
                 form.add_error('name', f'{category.name} is already a fixed expense of this villa.')
             else:
-                update_recurring_expense(recurring=recurring, updated_by=request.user, category=category, amount=data['amount'], due_day=data['due_day'], paid_by=data['paid_by'], auto_debit=data['auto_debit'])
+                update_recurring_expense(recurring=recurring, updated_by=request.user, category=category, amount=data['amount'], due_day=data['due_day'], paid_by=data['paid_by'], auto_debit=data.get('auto_debit', False))
                 messages.success(request, f'“{category.name}” updated — it applies from the next month generated.')
                 return redirect(back)
     else:
-        form = RecurringExpenseForm(initial={'name': recurring.category.name, 'amount': recurring.amount, 'due_day': recurring.due_day, 'paid_by': recurring.paid_by, 'auto_debit': recurring.auto_debit})
+        form = RecurringExpenseForm(user=request.user, initial={'name': recurring.category.name, 'amount': recurring.amount, 'due_day': recurring.due_day, 'paid_by': recurring.paid_by, 'auto_debit': recurring.auto_debit})
     names = expense_selectors.used_expense_names(selectors.expenses_visible_to(request.user))
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Edit fixed expense — {recurring.category.name}', 'cancel_url': back, 'expense_names': names, 'datalist_only': True})
 

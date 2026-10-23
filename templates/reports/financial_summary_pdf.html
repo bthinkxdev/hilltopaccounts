@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{{ title }}</title>
+<style>
+  @page { size: A4 portrait; margin: 1.2cm; @bottom-right { content: "Page " counter(page); font-size: 9px; color: #64748b; } }
+  body { font-family: Helvetica, Arial, sans-serif; color: #1e293b; font-size: 11px; line-height: 1.35; }
+  .title { font-size: 16px; font-weight: bold; text-transform: uppercase; }
+  .subtitle { font-size: 12px; font-weight: bold; color: #0284c7; margin-top: 3px; }
+  .meta-box { width: 100%; margin-bottom: 12px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 6px 10px; font-size: 10px; }
+  .sec-h { font-size: 10px; font-weight: bold; background: #e2e8f0; padding: 5px 8px; margin: 12px 0 3px; border-left: 3px solid #0284c7; text-transform: uppercase; }
+  table.tbl { width: 100%; margin-bottom: 10px; }
+  table.tbl th { background: #f1f5f9; font-weight: bold; font-size: 10px; text-align: left; padding: 5px 8px; border: 1px solid #cbd5e1; }
+  table.tbl td { padding: 4px 8px; border: 1px solid #e2e8f0; font-size: 10px; }
+  .r { text-align: right; }
+  .bold { font-weight: bold; background: #f8fafc; }
+  .profit { color: #166534; font-weight: bold; }
+</style>
+</head>
+<body>
+
+  <table style="width: 100%; border-bottom: 2px solid #0284c7; padding-bottom: 6px; margin-bottom: 12px;">
+    <tr>
+      <td><div class="title">Hilltop Accounting</div><div class="subtitle">{{ title }}</div></td>
+      <td class="r" style="font-size: 10px; color: #64748b; vertical-align: bottom;">Generated: {{ today|date:"d M Y" }}</td>
+    </tr>
+  </table>
+
+  <table class="meta-box">
+    <tr>
+      <td width="15%"><b>Period:</b></td><td width="35%">{{ date_display }}</td>
+      <td width="15%"><b>Exported By:</b></td><td width="35%">{{ exported_by }}</td>
+    </tr>
+    {% if target_villa %}<tr><td><b>Villa:</b></td><td colspan="3">{{ target_villa.name }}</td></tr>{% endif %}
+  </table>
+
+  <!-- 1.TOTAL INCOME, EXPENSE & PROFIT -->
+  <div class="sec-h">1. Total Income, Expense & Profit</div>
+  <table class="tbl">
+    <tr><th>Description</th><th class="r" width="30%">Amount (QAR)</th></tr>
+    <tr><td>Total Income</td><td class="r">{{ inc|floatformat:2 }}</td></tr>
+    <tr><td>Total Expenses</td><td class="r">{{ exp_tot|floatformat:2 }}</td></tr>
+    <tr class="bold"><td>Net Profit</td><td class="r profit">{{ net|floatformat:2 }}</td></tr>
+  </table>
+
+  <!-- 2 & 3.COLLECTION & EXPENSE DETAILS -->
+  <table style="width: 100%;">
+    <tr>
+      <td style="width: 49%; vertical-align: top;">
+        <div class="sec-h">2. Collection Details</div>
+        <table class="tbl">
+          <tr><th>Type</th><th class="r">Amount (QAR)</th></tr>
+          <tr><td>Staff Collected</td><td class="r">{{ staff_collected|floatformat:2 }}</td></tr>
+          <tr><td>Admin Collected</td><td class="r">{{ admin_collected|floatformat:2 }}</td></tr>
+          <tr class="bold"><td>Total Collected</td><td class="r">{{ inc|floatformat:2 }}</td></tr>
+        </table>
+      </td>
+      <td style="width: 2%;"></td>
+      <td style="width: 49%; vertical-align: top;">
+        <div class="sec-h">3. Expense Details</div>
+        <table class="tbl">
+          <tr><th>Type</th><th class="r">Amount (QAR)</th></tr>
+          <tr><td>Staff Expenses</td><td class="r">{{ staff_expenses|floatformat:2 }}</td></tr>
+          <tr><td>Admin Expenses</td><td class="r">{{ owner_expenses|floatformat:2 }}</td></tr>
+          <tr class="bold"><td>Total Expenses</td><td class="r">{{ exp_tot|floatformat:2 }}</td></tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- 4 & 5.PROFIT SHARE & PARTNER DETAILS -->
+  {% if show_profit_share %}
+  <div class="sec-h">4. Profit Share</div>
+  <table class="tbl">
+    <tr><th>Description</th><th class="r" width="30%">Amount (QAR)</th></tr>
+    <tr><td>Distributable Net Profit</td><td class="r">{{ distributable|floatformat:2 }}</td></tr>
+    <tr><td>{{ admin_label }}</td><td class="r">{{ owner_cut|floatformat:2 }}</td></tr>
+    <tr class="bold"><td>Total Partners Share</td><td class="r">{{ tot_partner|floatformat:2 }}</td></tr>
+  </table>
+
+  <div class="sec-h">5. Profit Share Details (Partners by Villa)</div>
+  <table class="tbl">
+    <tr><th width="35%">Partner Name</th><th>Assigned Villa</th></tr>
+    {% for row in partner_breakdown_rows %}
+    <tr><td><b>{{ row.0 }}</b></td><td>{{ row.1 }}</td></tr>
+    {% empty %}
+    <tr><td colspan="2" style="color: #64748b; font-style: italic;">No active partner shares ({% if is_partner %}100% Admin{% else %}100% Owner{% endif %})</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <!-- 6.VILLA FINANCIAL BREAKDOWN -->
+  {% if not target_villa and villa_rows %}
+  <div class="sec-h">6. Villa Financial Breakdown</div>
+  <table class="tbl">
+    <tr>
+      <th>Villa Name</th><th class="r">Income</th><th class="r">Expenses</th><th class="r">Net Profit</th>
+      <th class="r">Staff Coll.</th><th class="r">Admin Coll.</th><th class="r">Staff Exp.</th><th class="r">Admin Exp.</th>
+    </tr>
+    {% for v in villa_rows %}
+    <tr>
+      <td>{{ v.0 }}</td><td class="r">{{ v.1 }}</td><td class="r">{{ v.2 }}</td><td class="r">{{ v.3 }}</td>
+      <td class="r">{{ v.4 }}</td><td class="r">{{ v.5 }}</td><td class="r">{{ v.6 }}</td><td class="r">{{ v.7 }}</td>
+    </tr>
+    {% endfor %}
+    <tr class="bold">
+      <td>Total</td><td class="r">{{ inc|floatformat:2 }}</td><td class="r">{{ exp_tot|floatformat:2 }}</td><td class="r">{{ net|floatformat:2 }}</td>
+      <td class="r">{{ staff_collected|floatformat:2 }}</td><td class="r">{{ admin_collected|floatformat:2 }}</td>
+      <td class="r">{{ staff_expenses|floatformat:2 }}</td><td class="r">{{ owner_expenses|floatformat:2 }}</td>
+    </tr>
+  </table>
+  {% endif %}
+
+</body>
+</html>

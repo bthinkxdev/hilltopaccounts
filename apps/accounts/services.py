@@ -66,6 +66,13 @@ def assign_villa_staff(*, user, villa, assigned_by, can_add_partitions=False) ->
 def assign_accountant(*, user, assigned_by, business=None, villa=None) -> Assignment:
     return _create_assignment(user=user, role=Assignment.Role.ACCOUNTANT, business=business, villa=villa, assigned_by=assigned_by)
 
+def assign_partner(*, user, villa, assigned_by, partner=None, can_add_partitions=True) -> Assignment:
+    assignment = _create_assignment(user=user, role=Assignment.Role.PARTNER, business=None, villa=villa, assigned_by=assigned_by, can_add_partitions=can_add_partitions)
+    if partner is not None:
+        partner.user = user
+        partner.save(update_fields=['user'])
+    return assignment
+
 def remove_assignment(*, assignment: Assignment, removed_by, reason='') -> None:
     with transaction.atomic():
         old_value = {'assigned_user': assignment.user.username, 'role': assignment.role}

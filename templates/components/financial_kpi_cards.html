@@ -56,12 +56,12 @@ Reusable Financial KPI Cards: 4 Card Rows (Income/Expenses/Profit, Collections, 
 <div class="card card--tight">
   <div class="card__title">Expense Details — {{ period_label }}</div>
   <div class="grid--kpi">
-    <a class="kpi kpi--ic-receipt" href="{{ period_pnl_urls.staff_expenses }}" title="View Staff Spent Expenses">
-      <div class="kpi__label">Staff Spent Expenses &rarr;</div>
+    <a class="kpi kpi--ic-receipt" href="{{ period_pnl_urls.staff_expenses }}" title="View Staff Expenses">
+      <div class="kpi__label">Staff Expenses &rarr;</div>
       <div class="kpi__value kpi__value--warning">QAR {{ pnl.staff_expenses|floatformat:"2g" }}</div>
     </a>
-    <a class="kpi kpi--ic-receipt" href="{{ period_pnl_urls.admin_expenses }}" title="View Admin Spent Expenses">
-      <div class="kpi__label">Admin Spent Expenses &rarr;</div>
+    <a class="kpi kpi--ic-receipt" href="{{ period_pnl_urls.admin_expenses }}" title="View Admin Expenses">
+      <div class="kpi__label">Admin Expenses &rarr;</div>
       <div class="kpi__value kpi__value--danger">QAR {{ pnl.owner_expenses|floatformat:"2g" }}</div>
     </a>
     <a class="kpi kpi--ic-receipt" href="{{ period_pnl_urls.expenses }}" title="View All Expenses">
@@ -72,40 +72,57 @@ Reusable Financial KPI Cards: 4 Card Rows (Income/Expenses/Profit, Collections, 
 </div>
 
 {# row 4: profit share #}
-{% if user.is_owner %}
+{% if user.is_owner or is_partner %}
 <div class="card card--tight">
   <div class="card__title">Profit Share — {{ period_label }}</div>
   <div class="grid--kpi">
-    <a class="kpi kpi--ic-chart" href="{{ period_pnl_urls.owner_profit|default:period_pnl_urls.profit_share|default:'#' }}" title="View Owner Profit Breakdown">
-      <div class="kpi__label">{% if villa %}Owner Share ({{ owner_share_pct|floatformat:"1g" }}%){% else %}Owner Profit Share{% endif %} &rarr;</div>
-      <div class="kpi__value {% if owner_share_amount > 0 %}kpi__value--success{% endif %}">QAR {{ owner_share_amount|floatformat:"2g" }}</div>
-    </a>
-    <a class="kpi kpi--ic-user" href="{{ period_pnl_urls.profit_share|default:'#' }}" title="View Partner Shares">
-      <div class="kpi__label">
-        {% if villa and partner_count == 1 %}
-          {{ partner_share_cards.0.name }} ({{ partner_share_cards.0.percentage|floatformat:"1g" }}%)
-        {% elif villa and total_partner_pct %}
-          Partners Share ({{ total_partner_pct|floatformat:"1g" }}%)
-        {% elif partner_count > 0 %}
-          Total Partners Share ({{ partner_count }})
-        {% else %}
-          Total Partners Share
-        {% endif %} &rarr;
+    {% if is_partner and my_partner_share %}
+      <div class="kpi kpi--ic-chart" title="Your Profit Share">
+        <div class="kpi__label">Your Share ({{ my_partner_share.percentage|floatformat:"1g" }}%)</div>
+        <div class="kpi__value {% if my_partner_share.cut > 0 %}kpi__value--success{% else %}kpi__value--accent{% endif %}">QAR {{ my_partner_share.cut|floatformat:"2g" }}</div>
       </div>
-      <div class="kpi__value {% if total_partner_cut > 0 %}kpi__value--accent{% endif %}">
-        {% if total_partner_cut > 0 %}
-          QAR {{ total_partner_cut|floatformat:"2g" }}
-        {% else %}
-          <span style="font-size: 15px; color: var(--text-tertiary);">No Partners (100% Owner)</span>
-        {% endif %}
+      <div class="kpi kpi--ic-user" title="Total Partners Share">
+        <div class="kpi__label">Total Partners Share ({{ total_partner_pct|default:my_partner_share.percentage|floatformat:"1g" }}%)</div>
+        <div class="kpi__value {% if total_partner_cut > 0 %}kpi__value--accent{% endif %}">QAR {{ total_partner_cut|default:my_partner_share.cut|floatformat:"2g" }}</div>
       </div>
-    </a>
-    <a class="kpi kpi--ic-wallet" href="{{ period_pnl_urls.profit|default:period_pnl_urls.profit_share|default:'#' }}" title="View Distributable Net Profit">
-      <div class="kpi__label">Distributable Net Profit &rarr;</div>
-      <div class="kpi__value {% if distributable_profit > 0 or pnl.net > 0 %}kpi__value--success{% elif pnl.net < 0 %}kpi__value--danger{% endif %}">
-        QAR {{ distributable_profit|default:pnl.net|floatformat:"2g" }}
+      <div class="kpi kpi--ic-wallet" title="Distributable Net Profit">
+        <div class="kpi__label">Distributable Net Profit</div>
+        <div class="kpi__value {% if distributable_profit > 0 or pnl.net > 0 %}kpi__value--success{% elif pnl.net < 0 %}kpi__value--danger{% endif %}">
+          QAR {{ distributable_profit|default:pnl.net|floatformat:"2g" }}
+        </div>
       </div>
-    </a>
+    {% else %}
+      <a class="kpi kpi--ic-chart" href="{{ period_pnl_urls.owner_profit|default:period_pnl_urls.profit_share|default:'#' }}" title="View Owner Profit Breakdown">
+        <div class="kpi__label">{% if is_partner %}{% if villa %}Admin Share ({{ owner_share_pct|floatformat:"1g" }}%){% else %}Admin Profit Share{% endif %}{% else %}{% if villa %}Owner Share ({{ owner_share_pct|floatformat:"1g" }}%){% else %}Owner Profit Share{% endif %}{% endif %} &rarr;</div>
+        <div class="kpi__value {% if owner_share_amount > 0 %}kpi__value--success{% endif %}">QAR {{ owner_share_amount|floatformat:"2g" }}</div>
+      </a>
+      <a class="kpi kpi--ic-user" href="{{ period_pnl_urls.profit_share|default:'#' }}" title="View Partner Shares">
+        <div class="kpi__label">
+          {% if villa and partner_count == 1 %}
+            {{ partner_share_cards.0.name }} ({{ partner_share_cards.0.percentage|floatformat:"1g" }}%)
+          {% elif villa and total_partner_pct %}
+            Partners Share ({{ total_partner_pct|floatformat:"1g" }}%)
+          {% elif partner_count > 0 %}
+            Total Partners Share ({{ partner_count }})
+          {% else %}
+            Total Partners Share
+          {% endif %} &rarr;
+        </div>
+        <div class="kpi__value {% if total_partner_cut > 0 %}kpi__value--accent{% endif %}">
+          {% if total_partner_cut > 0 %}
+            QAR {{ total_partner_cut|floatformat:"2g" }}
+          {% else %}
+            <span style="font-size: 15px; color: var(--text-tertiary);">No Partners (100% Owner)</span>
+          {% endif %}
+        </div>
+      </a>
+      <a class="kpi kpi--ic-wallet" href="{{ period_pnl_urls.profit|default:period_pnl_urls.profit_share|default:'#' }}" title="View Distributable Net Profit">
+        <div class="kpi__label">Distributable Net Profit &rarr;</div>
+        <div class="kpi__value {% if distributable_profit > 0 or pnl.net > 0 %}kpi__value--success{% elif pnl.net < 0 %}kpi__value--danger{% endif %}">
+          QAR {{ distributable_profit|default:pnl.net|floatformat:"2g" }}
+        </div>
+      </a>
+    {% endif %}
   </div>
 </div>
 {% endif %}

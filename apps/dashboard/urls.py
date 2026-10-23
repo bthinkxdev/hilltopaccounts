@@ -5,4 +5,5 @@ urlpatterns = [
     path('', views.HomeView.as_view(), name='home'),
     path('search/', views.global_search, name='search'),
     path('export/csv/', views.export_financials_csv, name='export_financials_csv'),
+    path('export/pdf/', views.export_financials_pdf, name='export_financials_pdf'),
 ]
