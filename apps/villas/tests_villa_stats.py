@@ -523,7 +523,7 @@ class ExpenseAndStaffTests(VillaStatsBase):
         page = self.client.get(reverse('cash:handover_list'))
         self.assertEqual((page.context['to_confirm_amount'], page.context['cash_with_staff']), (0, ZERO))
         self.assertEqual(page.context['owner_cash'], {'direct': RENT, 'from_staff': RENT, 'total': RENT * 2})
-        self.assertContains(page, 'Cash with owner')
+        self.assertNotContains(page, 'Cash with owner')  # the card is commented out in the template for now
 
     def test_accountability_lists_every_cash_collector_not_only_villa_staff(self):
         collect_rent(partition=self.p1, year=THIS_MONTH.year, month=THIS_MONTH.month, method='cash', collected_by=self.manager)

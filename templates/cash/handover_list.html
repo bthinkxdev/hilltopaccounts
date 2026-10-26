@@ -12,8 +12,9 @@
 
   {% if can_view_accountability %}
   <div class="card">
-    <div class="card__title">{% if is_owner %}Cash overview{% else %}To confirm{% endif %}</div>
+    <div class="card__title">To confirm</div>
     <div class="grid--kpi">
+      {% comment %}
       {% if is_owner %}
       <div class="kpi" title="Cash you collected yourself plus the handovers you confirmed">
         <div class="kpi__label">Cash with owner</div>
@@ -21,6 +22,7 @@
         <div class="kpi__sub">{{ owner_cash.direct }} collected by you + {{ owner_cash.from_staff }} handed over</div>
       </div>
       {% endif %}
+      {% endcomment %}
       <a class="kpi" href="?status=submitted">
         <div class="kpi__label">Awaiting your confirmation</div>
         <div class="kpi__value {% if to_confirm_count %}kpi__value--warning{% endif %}">QAR {{ to_confirm_amount }}</div>
