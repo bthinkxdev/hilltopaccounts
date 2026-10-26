@@ -124,7 +124,7 @@ def villa_list(request):
         villa.vacant_total = villa.partition_total - villa.occupied_total
         villa.pnl = pnl_by_villa.get(villa.pk, billing_selectors.EMPTY_PROFIT_LOSS) if villa.pk in financial_ids else None
     totals = None
-    scoped_financial = selectors.financial_villas(request.user).filter(pk__in=base.values('pk'))
+    scoped_financial = (selectors.villas_visible_to(request.user) if is_staff else selectors.financial_villas(request.user)).filter(pk__in=base.values('pk'))
     if scoped_financial.exists():
         totals = billing_selectors.period_profit_loss(selectors.invoices_visible_to(request.user).filter(partition__villa__in=scoped_financial), selectors.expenses_visible_to(request.user).filter(villa__in=scoped_financial), period['period_start'], period['period_end'], deposits=selectors.deposits_visible_to(request.user).filter(tenant__partition__villa__in=scoped_financial))
     keep = [(name, value) for name, value in (('q', q), ('business', business_id or ''), ('staff', staff_id), ('status', status if status != 'active' else '')) if value]
@@ -267,14 +267,13 @@ def villa_detail(request, pk):
         context['activity'] = AuditLog.objects.filter(villa=villa).select_related('user').order_by('-timestamp')[:8]
         v_url_qs = f"villa={villa.pk}&period={period['period']}&year={period['year']}&month={period['month']}"
         context['period_pnl_urls'] = {
-            'income': f"{reverse('billing:payment_list')}?tab=income&{v_url_qs}",
+            'income': f"{reverse('billing:payment_list')}?tab=collected&{v_url_qs}",
             'expenses': f"{reverse('expenses:list')}?{v_url_qs}",
             'profit': f"{reverse('businesses:partner_list')}?tab=all&{v_url_qs}" if request.user.is_owner else '#',
             'owner_profit': f"{reverse('businesses:partner_list')}?tab=owner&{v_url_qs}" if request.user.is_owner else '#',
             'profit_share': f"{reverse('businesses:partner_list')}?tab=partners&{v_url_qs}" if request.user.is_owner else '#',
-            # Monthly view: these cards sit on the rent card (rent only); yearly view: they are part of income.
-            'staff_collections': f"{reverse('billing:payment_list')}?tab={'collected' if period['period'] == 'month' else 'income'}&collector=staff&{v_url_qs}",
-            'admin_collections': f"{reverse('billing:payment_list')}?tab={'collected' if period['period'] == 'month' else 'income'}&collector=admin&{v_url_qs}",
+            'staff_collections': f"{reverse('billing:payment_list')}?tab=collected&collector=staff&{v_url_qs}",
+            'admin_collections': f"{reverse('billing:payment_list')}?tab=collected&collector=admin&{v_url_qs}",
             'staff_expenses': f"{reverse('expenses:list')}?paid_by=staff&{v_url_qs}",
             'admin_expenses': f"{reverse('expenses:list')}?paid_by=owner&{v_url_qs}",
         }

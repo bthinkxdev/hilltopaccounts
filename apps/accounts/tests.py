@@ -103,13 +103,15 @@ class DashboardAccessTests(TestCase):
         self.assertContains(response, 'Villa 1')
         self.assertNotContains(response, 'Villa 2')
 
-    def test_staff_dashboard_never_receives_financial_kpis_in_context(self):
+    def test_staff_dashboard_shows_only_their_villas_figures(self):
+        """Staff see income / expenses / profit of their own villas (as on their villa pages), never the
+        business-wide summary or partner profit shares."""
         self.client.force_login(self.staff)
         response = self.client.get(reverse('dashboard:home'))
         self.assertFalse(response.context['can_view_financials'])
         self.assertNotIn('expected_revenue', response.context)
         self.assertNotContains(response, 'Financial summary')
-        self.assertNotContains(response, 'Net Profit')
+        self.assertNotContains(response, 'Profit Share')
 
     def test_owner_dashboard_shows_financial_kpis(self):
         self.client.force_login(self.owner)

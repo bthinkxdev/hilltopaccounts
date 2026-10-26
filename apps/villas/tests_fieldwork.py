@@ -195,11 +195,12 @@ class RentCollectionTests(FieldworkBase):
         self.assertEqual([v.pk for v in filtered], [self.villa.pk])
         filtered = self.client.get(reverse('villas:villa_list'), {**self.period, 'staff': self.other_staff.pk}).context['page_obj']
         self.assertEqual([v.pk for v in filtered], [self.other_villa.pk])
-        # A staff member has no staff filter and sees no money or other staff names.
+        # A staff member has no staff filter, no other staff names, and totals of their own villa only.
         self.login('staff')
         page = self.client.get(reverse('villas:villa_list'), self.period).context
         self.assertEqual(page['staff_choices'], [])
-        self.assertIsNone(page['totals'])
+        self.assertEqual([v.pk for v in page['page_obj']], [self.villa.pk])
+        self.assertEqual(page['totals']['income'], page['page_obj'][0].pnl['income'])
 
     def test_business_manager_sees_only_their_businesss_staff(self):
         self.login('manager')
@@ -212,9 +213,14 @@ class RentCollectionTests(FieldworkBase):
 
 class FixedExpenseAndHandoverRuleTests(FieldworkBase):
 
-    def test_staff_cannot_define_fixed_expenses_and_owner_can_revise_a_month(self):
+    def test_staff_define_their_villas_fixed_expenses_and_revise_a_month(self):
         self.login('staff')
-        self.assertEqual(self.client.post(reverse('expenses:recurring_create', args=[self.villa.pk]), {'name': 'Wifi', 'amount': '1', 'due_day': 1, 'paid_by': 'staff'}).status_code, 403)
+        # Assigned staff may set up their villa's fixed expenses; they sit on the staff side, never auto-debit.
+        self.assertEqual(self.client.post(reverse('expenses:recurring_create', args=[self.villa.pk]), {'name': 'Gas cylinder', 'amount': '90', 'auto_debit': 'on'}).status_code, 302)
+        gas = RecurringExpense.objects.get(category__name='Gas cylinder')
+        self.assertEqual((gas.paid_by, gas.auto_debit), ('staff', False))
+        self.login('other_staff')
+        self.assertEqual(self.client.post(reverse('expenses:recurring_create', args=[self.villa.pk]), {'name': 'Water', 'amount': '1'}).status_code, 404)
         self.set_up_fixed_expenses()
         self.generate_month('staff')
         kharama = Expense.objects.get(recurring__category__name='Kharama')
@@ -382,7 +388,8 @@ class FixedExpenseChecklistTests(FieldworkBase):
         rows, totals = self._rows(YEAR, MONTH, 'staff')
         self.assertEqual({n for n, r in rows.items() if r['status'] == 'to_verify'}, {'Kharama', 'Wifi', 'Maintenance'})
         self.assertEqual(rows['Villa service']['status'] in ('unpaid', 'overdue', 'due_today'), True)
-        self.assertFalse(rows['Villa service']['expense'].can_pay)
+        self.assertTrue(rows['Villa service']['expense'].can_pay)  # staff may pay it from cash; only auto-debit / villa rent are owner-only
+        self.assertFalse(rows['Villa owner rent']['expense'].can_pay)
         self.assertEqual((totals['unpaid'], totals['to_verify_count']), (Decimal('300.00'), 3))
 
         # The owner verifies one tap at a time and pays the villa service; the card flags clear.

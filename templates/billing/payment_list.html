@@ -6,12 +6,9 @@
       <h1 style="margin: 0; font-size: 26px; font-weight: 700;">Collections</h1>
       <p style="color: var(--text-secondary); margin: 4px 0 0 0; font-size: 13px;">
         Showing {{ period_label }}
-        {% if tab == 'income' %}
+        {% if tab == 'collected' %}
           &bull; Collected for {{ period_label }}{% if collector == 'staff' %} by staff{% elif collector == 'admin' %} by admin{% elif active_collector_user %} by {{ active_collector_user.get_full_name|default:active_collector_user.username }}{% endif %}: <strong style="color: var(--success); font-weight: 700;">QAR {{ received_total|floatformat:"2g" }}</strong>
-          &bull; rent for {{ period_label }} plus advance collected in it; the date shows when each was collected
-        {% elif tab == 'received' %}
-          &bull; Collected on dates in {{ period_label }}{% if collector == 'staff' %} by staff{% elif collector == 'admin' %} by admin{% elif active_collector_user %} by {{ active_collector_user.get_full_name|default:active_collector_user.username }}{% endif %}: <strong style="color: var(--success); font-weight: 700;">QAR {{ received_total|floatformat:"2g" }}</strong>
-          &bull; collection record — each amount counts as income of the month it is for
+          &bull; each amount counts in {{ period_label }}; the date shows when it was collected
         {% elif collector == 'staff' %}
           &bull; Staff Collections: <strong style="color: var(--success); font-weight: 700;">QAR {{ portfolio_rent_collected|floatformat:"2g" }}</strong>
           &bull; Filter: <span class="pill pill--success" style="font-size: 11px; padding: 2px 7px;">Staff Collected</span>
@@ -21,13 +18,10 @@
         {% elif active_collector_user %}
           &bull; Collected by {{ active_collector_user.get_full_name|default:active_collector_user.username }}: <strong style="color: var(--success); font-weight: 700;">QAR {{ portfolio_rent_collected|floatformat:"2g" }}</strong>
           &bull; Filter: <span class="pill pill--neutral" style="font-size: 11px; padding: 2px 7px;">{{ active_collector_user.get_full_name|default:active_collector_user.username }}</span>
-        {% elif tab == 'collected' %}
-          &bull; Total Collected: <strong style="color: var(--text-primary); font-size: 14px; font-weight: 700;">QAR {{ portfolio_rent_collected|floatformat:"2g" }}</strong>
-          &bull; Advance Received: <strong style="color: var(--text-primary);">QAR {{ portfolio_deposit_received|floatformat:"2g" }}</strong>
         {% else %}
           &bull; Rent Collected: <strong style="color: var(--text-primary);">QAR {{ portfolio_rent_collected|floatformat:"2g" }}</strong> of <strong>QAR {{ portfolio_rent_expected|floatformat:"2g" }}</strong> &bull; Advance Received: <strong style="color: var(--text-primary);">QAR {{ portfolio_deposit_received|floatformat:"2g" }}</strong> &bull; Advance Pending: <strong style="color: var(--warning);">QAR {{ portfolio_deposit_pending|floatformat:"2g" }}</strong>
         {% endif %}
-        {% if portfolio_arrears and tab != 'collected' and tab != 'income' and tab != 'received' %}
+        {% if portfolio_arrears and tab != 'collected' %}
           &bull; Earlier months unpaid: <strong style="color: var(--danger);">QAR {{ portfolio_arrears|floatformat:"2g" }}</strong>
         {% endif %}
       </p>
@@ -37,25 +31,17 @@
 
   <!-- segmented tabs (All / Collected / Pending) -->
   <div class="overview-tabs" style="margin-bottom: var(--space-3);">
-    <a class="overview-tab{% if tab == 'all' %} overview-tab--active{% endif %}" href="?tab=all{% if year %}&year={{ year }}{% endif %}{% if month %}&month={{ month }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if collector %}&collector={{ collector }}{% endif %}{% if villa_id %}&villa={{ villa_id }}{% endif %}">
+    <a class="overview-tab{% if tab == 'all' %} overview-tab--active{% endif %}" href="?tab=all&period={{ period|default:'month' }}{% if year %}&year={{ year }}{% endif %}{% if month %}&month={{ month }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if collector %}&collector={{ collector }}{% endif %}{% if villa_id %}&villa={{ villa_id }}{% endif %}">
       <span>All</span>
       <span class="overview-tab__badge">{{ tab_counts.all }}</span>
     </a>
-    <a class="overview-tab{% if tab == 'collected' %} overview-tab--active{% endif %}" href="?tab=collected{% if year %}&year={{ year }}{% endif %}{% if month %}&month={{ month }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if collector %}&collector={{ collector }}{% endif %}{% if villa_id %}&villa={{ villa_id }}{% endif %}">
+    <a class="overview-tab{% if tab == 'collected' %} overview-tab--active{% endif %}" href="?tab=collected&period={{ period|default:'month' }}{% if year %}&year={{ year }}{% endif %}{% if month %}&month={{ month }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if collector %}&collector={{ collector }}{% endif %}{% if villa_id %}&villa={{ villa_id }}{% endif %}">
       <span>Collected</span>
       <span class="overview-tab__badge">{{ tab_counts.collected }}</span>
     </a>
-    <a class="overview-tab{% if tab == 'pending' %} overview-tab--active{% endif %}" href="?tab=pending{% if year %}&year={{ year }}{% endif %}{% if month %}&month={{ month }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if collector %}&collector={{ collector }}{% endif %}{% if villa_id %}&villa={{ villa_id }}{% endif %}">
+    <a class="overview-tab{% if tab == 'pending' %} overview-tab--active{% endif %}" href="?tab=pending&period={{ period|default:'month' }}{% if year %}&year={{ year }}{% endif %}{% if month %}&month={{ month }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if collector %}&collector={{ collector }}{% endif %}{% if villa_id %}&villa={{ villa_id }}{% endif %}">
       <span>Pending</span>
       <span class="overview-tab__badge overview-tab__badge--warning">{{ tab_counts.pending }}</span>
-    </a>
-    <a class="overview-tab{% if tab == 'income' %} overview-tab--active{% endif %}" href="?tab=income&period={{ period|default:'month' }}{% if year %}&year={{ year }}{% endif %}{% if month %}&month={{ month }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if collector %}&collector={{ collector }}{% endif %}{% if villa_id %}&villa={{ villa_id }}{% endif %}" title="Payments that are income of this period: rent for these months, with the date each was collected">
-      <span>Collected for {% if period == 'year' %}{{ year }}{% else %}Month{% endif %}</span>
-      <span class="overview-tab__badge">{{ tab_counts.income }}</span>
-    </a>
-    <a class="overview-tab{% if tab == 'received' %} overview-tab--active{% endif %}" href="?tab=received&period={{ period|default:'month' }}{% if year %}&year={{ year }}{% endif %}{% if month %}&month={{ month }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if collector %}&collector={{ collector }}{% endif %}{% if villa_id %}&villa={{ villa_id }}{% endif %}" title="Collection record: everything collected on dates in this period, for any month">
-      <span>Collection Record</span>
-      <span class="overview-tab__badge">{{ tab_counts.received }}</span>
     </a>
   </div>
 
@@ -95,7 +81,7 @@
     {% endif %}
   </form>
 
-  {% if tab == 'received' or tab == 'income' %}
+  {% if tab == 'collected' %}
   <div class="collections-card collections-desktop-table">
     <div class="collections-table-wrap">
       <table class="collections-table">
@@ -135,7 +121,7 @@
               <td style="text-align: right; padding-right: 20px; font-weight: 600; font-variant-numeric: tabular-nums;">QAR {{ p.amount|floatformat:"2g" }}</td>
             </tr>
           {% empty %}
-            <tr><td colspan="6" style="text-align: center; padding: var(--space-6); color: var(--text-secondary);">{% if tab == 'income' %}Nothing collected yet for {{ period_label }}.{% else %}Nothing collected on dates in {{ period_label }}.{% endif %}</td></tr>
+            <tr><td colspan="6" style="text-align: center; padding: var(--space-6); color: var(--text-secondary);">Nothing collected yet for {{ period_label }}.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -159,14 +145,13 @@
         </div>
       </div>
     {% empty %}
-      <div class="collections-card" style="text-align: center; padding: var(--space-6); color: var(--text-secondary);">{% if tab == 'income' %}Nothing collected yet for {{ period_label }}.{% else %}Nothing collected on dates in {{ period_label }}.{% endif %}</div>
+      <div class="collections-card" style="text-align: center; padding: var(--space-6); color: var(--text-secondary);">Nothing collected yet for {{ period_label }}.</div>
     {% endfor %}
   </div>
   {% elif not is_month %}
   <div class="collections-card" style="text-align: center; padding: var(--space-6); color: var(--text-secondary);">
-    Rent is collected month by month — pick a month to see what is collected and pending, or open
-    <a href="?tab=income&period=year&year={{ year }}{% if villa_id %}&villa={{ villa_id }}{% endif %}">Collected for {{ year }}</a> /
-    <a href="?tab=received&period=year&year={{ year }}{% if villa_id %}&villa={{ villa_id }}{% endif %}">Collection Record</a>.
+    Rent is collected month by month — pick a month to see what is pending, or open
+    <a href="?tab=collected&period=year&year={{ year }}{% if villa_id %}&villa={{ villa_id }}{% endif %}">everything collected for {{ year }}</a>.
   </div>
   {% else %}
   <!-- desktop table -->

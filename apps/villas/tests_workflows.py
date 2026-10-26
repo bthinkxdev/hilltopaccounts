@@ -83,10 +83,11 @@ class OwnerVillaAccountingWorkflow(TestCase):
         business = create_business(name='B', created_by=self.owner)
         villa = create_villa(business=business, name='V', created_by=self.owner)
         self.client.login(username='owner', password=PASSWORD)
-        r = self.client.post(reverse('expenses:create'), {'villa': villa.pk, 'name': 'Wi-Fi', 'amount': '-5', 'date': '2026-02-05', 'due_date': '2026-02-01', 'mark_paid': 'on'})
+        r = self.client.post(reverse('expenses:create'), {'villa': villa.pk, 'name': 'Wi-Fi', 'amount': '-5', 'date': '2026-02-05', 'mark_paid': 'on'})
         self.assertEqual(r.status_code, 200)
         form = r.context['form']
-        self.assertEqual(set(form.errors), {'amount', 'due_date', 'payment_method'})
+        self.assertEqual(set(form.errors), {'amount', 'payment_method'})
+        self.assertNotIn('paid_by', form.fields)  # the payer is whoever records the payment
         self.assertFalse(Expense.objects.exists())
 
     def test_due_buckets_on_expense_list(self):
@@ -94,8 +95,10 @@ class OwnerVillaAccountingWorkflow(TestCase):
         villa = create_villa(business=business, name='V', created_by=self.owner)
         self.client.login(username='owner', password=PASSWORD)
         today = date.today()
+        from apps.expenses.services import create_expense, get_or_create_category
+        # Due dates come from fixed expenses (their due day); the one-off form no longer asks for one.
         for name, offset in (('Rent', -3), ('Water', 0), ('Wifi', 5)):
-            self.client.post(reverse('expenses:create'), {'villa': villa.pk, 'name': name, 'amount': '100.00', 'date': (today - timedelta(days=10)).isoformat(), 'due_date': (today + timedelta(days=offset)).isoformat()})
+            create_expense(villa=villa, category=get_or_create_category(name=name), amount=Decimal('100.00'), date=today.replace(day=1), due_date=today + timedelta(days=offset), created_by=self.owner)
         r = self.client.get(reverse('expenses:list'))
         summary = r.context['summary']
         self.assertEqual([summary[k]['count'] for k in ('overdue', 'today', 'upcoming', 'unpaid', 'paid')], [1, 1, 1, 3, 0])
@@ -110,7 +113,7 @@ class StaffVillaScopeWorkflow(TestCase):
         self.villa = create_villa(business=self.business, name='Villa A', created_by=self.owner)
         self.other_villa = create_villa(business=self.other_business, name='Villa B', created_by=self.owner)
         self.staff = User.objects.create_user('staff', password=PASSWORD)
-        assign_villa_staff(user=self.staff, villa=self.villa, assigned_by=self.owner)
+        assign_villa_staff(user=self.staff, villa=self.villa, assigned_by=self.owner, can_add_partitions=True)
         category = ExpenseCategory.objects.create(name='Gas')
         from apps.expenses.services import create_expense
         self.foreign_expense = create_expense(villa=self.other_villa, category=category, amount=Decimal('999.00'), date=date(2026, 2, 1), created_by=self.owner)
@@ -121,25 +124,27 @@ class StaffVillaScopeWorkflow(TestCase):
         partition = Partition.objects.get(villa=self.villa)
         self.assertRedirects(partition_r, reverse('villas:partition_detail', args=[partition.pk]))
         self.client.post(reverse('tenancy:create', args=[partition.pk]), {'name': 'Tenant X', 'move_in_date': date.today().isoformat(), 'monthly_rent': '1000.00'})
-        self.client.post(reverse('billing:invoice_generate', args=[partition.pk]), {'billing_period_start': (date.today().replace(day=1)).isoformat(), 'billing_period_end': date.today().replace(day=28).isoformat(), 'issue_date': date.today().replace(day=1).isoformat(), 'due_date': date.today().replace(day=28).isoformat()})
-        invoice = Invoice.objects.get(partition=partition)
+        this_month = date.today().replace(day=1)
+        r = self.client.post(reverse('billing:rent_collect', args=[partition.pk]), {'year': this_month.year, 'month': this_month.month, 'method': 'cash', 'amount': '1000.00'})
+        self.assertEqual(r.status_code, 302)
+        payment = Payment.objects.get(invoice__partition=partition)
+        self.assertEqual((payment.collected_by, payment.amount), (self.staff, Decimal('1000.00')))
 
-        r = self.client.post(reverse('expenses:create_for_villa', args=[self.villa.pk]), {'villa': self.villa.pk, 'partition': partition.pk, 'name': 'Cleaner salary', 'amount': '300.00', 'date': '2026-02-03', 'due_date': '2026-02-28'})
-        self.assertRedirects(r, reverse('villas:villa_detail', args=[self.villa.pk]))
-        self.assertEqual(Expense.objects.get(villa=self.villa).created_by, self.staff)
+        r = self.client.post(reverse('expenses:create_for_villa', args=[self.villa.pk]), {'villa': self.villa.pk, 'partition': partition.pk, 'name': 'Cleaner salary', 'amount': '300.00', 'date': this_month.isoformat(), 'mark_paid': 'on', 'payment_method': 'cash'})
+        self.assertRedirects(r, reverse('villas:partition_detail', args=[partition.pk]))
+        expense = Expense.objects.get(villa=self.villa)
+        self.assertEqual((expense.created_by, expense.paid_by, expense.paid_by_user, expense.awaiting_verification), (self.staff, 'staff', self.staff, True))
 
-        r = self.client.post(reverse('billing:payment_record', args=[invoice.pk]), {'amount': '1000.00', 'method': 'cash', 'collected_at': '2026-02-05'})
-        self.assertRedirects(r, reverse('billing:invoice_detail', args=[invoice.pk]))
-        payment = Payment.objects.get(invoice=invoice)
-        r = self.client.post(reverse('cash:handover_submit'), {'payments': [payment.pk]})
+        r = self.client.post(reverse('cash:handover_submit'), {'payments': [payment.pk], 'expenses': [expense.pk]})
         handover = CashHandover.objects.get(staff=self.staff)
         self.assertRedirects(r, reverse('cash:handover_detail', args=[handover.pk]))
+        self.assertEqual(handover.declared_amount, Decimal('700.00'))
 
-        r = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]), {'period': 'month', 'year': 2026, 'month': 2})
+        r = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]), {'period': 'month', 'year': this_month.year, 'month': this_month.month})
         self.assertEqual(r.status_code, 200)
-        self.assertNotIn('pnl', r.context)  # staff never see profit/loss
+        self.assertEqual((r.context['pnl']['income'], r.context['pnl']['expenses']), (Decimal('1000.00'), Decimal('300.00')))  # staff see their villa's figures
         self.assertNotContains(r, 'Financial summary')
-        self.assertNotContains(r, 'Activity')
+        self.assertNotContains(r, 'Profit Sharing Breakdown')
         self.assertContains(r, 'Cleaner salary')
 
     def test_staff_cannot_reach_or_leak_another_villas_data(self):
@@ -244,7 +249,7 @@ class VillaListPeriodAndPhotoTests(TestCase):
         r = self.client.get(reverse('villas:villa_list'), {'period': 'year', 'year': 2026})
         self.assertEqual(r.context['totals']['net'], Decimal('3300.00'))
 
-    def test_manager_sees_only_own_business_figures_and_staff_see_none(self):
+    def test_manager_and_staff_see_only_their_own_villas_figures(self):
         self.client.login(username='manager', password=PASSWORD)
         r = self.client.get(reverse('villas:villa_list'), {'period': 'month', 'year': 2026, 'month': 2})
         self.assertEqual([v.name for v in r.context['page_obj']], ['Villa A'])
@@ -252,9 +257,8 @@ class VillaListPeriodAndPhotoTests(TestCase):
         self.client.logout()
         self.client.login(username='staff', password=PASSWORD)
         r = self.client.get(reverse('villas:villa_list'), {'period': 'month', 'year': 2026, 'month': 2})
-        self.assertIsNone(r.context['totals'])
-        self.assertTrue(all(v.pnl is None for v in r.context['page_obj']))
-        self.assertNotContains(r, 'Income')
+        self.assertEqual([(v.name, v.pnl['net']) for v in r.context['page_obj']], [('Villa A', Decimal('2300.00'))])
+        self.assertEqual(r.context['totals']['net'], Decimal('2300.00'))  # their villa only — never Villa B
 
     def test_partition_page_has_its_own_profit_and_loss_and_expense_shortcut(self):
         self.client.login(username='owner', password=PASSWORD)

@@ -96,11 +96,11 @@ Reusable Financial KPI Cards: 4 Card Rows (Income/Expenses/Profit, Collections, 
     {% if is_partner and my_partner_share %}
       <div class="kpi kpi--ic-chart" title="Your Profit Share">
         <div class="kpi__label">Your Share ({{ my_partner_share.percentage|floatformat:"1g" }}%)</div>
-        <div class="kpi__value {% if my_partner_share.cut > 0 %}kpi__value--success{% else %}kpi__value--accent{% endif %}">QAR {{ my_partner_share.cut|floatformat:"2g" }}</div>
+        <div class="kpi__value {% if my_partner_share.cut > 0 %}kpi__value--success{% elif my_partner_share.cut < 0 %}kpi__value--danger{% else %}kpi__value--accent{% endif %}">QAR {{ my_partner_share.cut|floatformat:"2g" }}</div>
       </div>
       <div class="kpi kpi--ic-user" title="Total Partners Share">
         <div class="kpi__label">Total Partners Share ({{ total_partner_pct|default:my_partner_share.percentage|floatformat:"1g" }}%)</div>
-        <div class="kpi__value {% if total_partner_cut > 0 %}kpi__value--accent{% endif %}">QAR {{ total_partner_cut|default:my_partner_share.cut|floatformat:"2g" }}</div>
+        <div class="kpi__value {% if total_partner_cut > 0 %}kpi__value--accent{% elif total_partner_cut < 0 %}kpi__value--danger{% endif %}">QAR {{ total_partner_cut|default:my_partner_share.cut|floatformat:"2g" }}</div>
       </div>
       <div class="kpi kpi--ic-wallet" title="Net profit = owner share + partners share">
         <div class="kpi__label">Net Profit (Owner + Partners)</div>
@@ -112,7 +112,7 @@ Reusable Financial KPI Cards: 4 Card Rows (Income/Expenses/Profit, Collections, 
       <a class="kpi kpi--ic-chart" href="{{ period_pnl_urls.owner_profit|default:period_pnl_urls.profit_share|default:'#' }}" title="View Owner Profit Breakdown">
         <div class="kpi__label">{% if is_partner %}{% if villa %}Admin Share ({{ owner_share_pct|floatformat:"1g" }}%){% else %}Admin Profit Share{% endif %}{% else %}{% if villa %}Owner Share ({{ owner_share_pct|floatformat:"1g" }}%){% else %}Owner Profit Share{% endif %}{% endif %} &rarr;</div>
         <div class="kpi__value {% if owner_share_amount > 0 %}kpi__value--success{% elif owner_share_amount < 0 %}kpi__value--danger{% endif %}">QAR {{ owner_share_amount|floatformat:"2g" }}</div>
-        {% if owner_share_amount < 0 %}<div class="list-row__meta">owner carries the loss</div>{% endif %}
+        {% if owner_share_amount < 0 %}<div class="list-row__meta">owner's share of the loss</div>{% endif %}
       </a>
       <a class="kpi kpi--ic-user" href="{{ period_pnl_urls.profit_share|default:'#' }}" title="View Partner Shares">
         <div class="kpi__label">
@@ -126,8 +126,8 @@ Reusable Financial KPI Cards: 4 Card Rows (Income/Expenses/Profit, Collections, 
             Total Partners Share
           {% endif %} &rarr;
         </div>
-        <div class="kpi__value {% if total_partner_cut > 0 %}kpi__value--accent{% endif %}">
-          {% if total_partner_cut > 0 %}
+        <div class="kpi__value {% if total_partner_cut > 0 %}kpi__value--accent{% elif total_partner_cut < 0 %}kpi__value--danger{% endif %}">
+          {% if partner_count %}
             QAR {{ total_partner_cut|floatformat:"2g" }}
           {% else %}
             <span style="font-size: 15px; color: var(--text-tertiary);">No Partners (100% Owner)</span>

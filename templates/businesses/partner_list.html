@@ -74,7 +74,7 @@
               <a class="list-row__title" href="{% url 'villas:villa_detail' b.villa_pk %}?period={{ period }}&year={{ year }}&month={{ month }}" style="font-weight: 600;">{{ b.villa_name }}</a>
               <div class="list-row__meta">
                 Villa Net Profit: <b>QAR {{ b.net|floatformat:"2g" }}</b> · Expenses: <b>QAR {{ b.expenses|floatformat:"2g" }}</b> · Owner Retained: <b>{{ b.pct|floatformat:"0g" }}%</b>
-                {% if b.partner_cut > 0 %} · Partners: {{ b.partner_names }} (QAR {{ b.partner_cut|floatformat:"2g" }}){% else %} · No partners (100% owner){% endif %}
+                {% if b.partner_pct %} · Partners: {{ b.partner_names }} (QAR {{ b.partner_cut|floatformat:"2g" }}){% else %} · No partners (100% owner){% endif %}
               </div>
             </div>
             <div class="partner-row__side">
@@ -128,7 +128,7 @@
               <div style="font-weight: 700; color: {% if partner.total_payout >= 0 %}var(--success, #22c55e){% else %}var(--danger, #ef4444){% endif %}; font-size: 15px;">
                 QAR {{ partner.total_payout|floatformat:"2g" }}
               </div>
-              <div class="list-row__meta" style="font-size: 12px;">Payout for {{ period_label }}</div>
+              <div class="list-row__meta" style="font-size: 12px;">{% if partner.total_payout < 0 %}Share of loss{% else %}Share of profit{% endif %} for {{ period_label }}</div>
             </div>
             <div class="partner-row__actions">
               {% if partner.total_payout > 0 %}
@@ -139,6 +139,8 @@
                 {% else %}
                   <span class="pill pill--warning">Pending</span>
                 {% endif %}
+              {% elif partner.total_payout < 0 %}
+                <span class="pill pill--danger" title="Offset against this partner's future profit shares">Loss share</span>
               {% endif %}
               <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_edit' partner.pk %}">Edit</a>
             </div>

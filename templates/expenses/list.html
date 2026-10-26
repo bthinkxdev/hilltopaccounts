@@ -47,6 +47,7 @@
       <input type="hidden" name="period" value="{{ period }}">
       <input type="hidden" name="year" value="{{ year }}">
       {% if period == "month" %}<input type="hidden" name="month" value="{{ month }}">{% endif %}
+      {% if request.GET.payable == '1' %}<input type="hidden" name="payable" value="1">{% endif %}
       <select name="villa" onchange="this.form.submit()">
         <option value="">All villas</option>
         {% for villa in villas %}

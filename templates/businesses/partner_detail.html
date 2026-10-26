@@ -30,13 +30,26 @@
     {% include "components/period_picker.html" %}
   </div>
 
+  <div class="card card--tight" style="margin-bottom: var(--space-3);">
+    <div class="card__title">Partner account — all time</div>
+    <div class="grid--kpi">
+      <div class="kpi"><div class="kpi__label">Share of profit &amp; loss so far</div><div class="kpi__value {% if account.earned < 0 %}kpi__value--danger{% endif %}">QAR {{ account.earned|floatformat:"2g" }}</div></div>
+      <div class="kpi"><div class="kpi__label">Paid to partner</div><div class="kpi__value">QAR {{ account.paid|floatformat:"2g" }}</div></div>
+      <div class="kpi">
+        <div class="kpi__label">{% if account.balance < 0 %}Partner's loss to offset{% else %}Still owed to partner{% endif %}</div>
+        <div class="kpi__value {% if account.balance > 0 %}kpi__value--warning{% elif account.balance < 0 %}kpi__value--danger{% endif %}">QAR {{ account.balance|floatformat:"2g" }}</div>
+        {% if account.balance < 0 %}<div class="list-row__meta">comes off their future profit shares</div>{% endif %}
+      </div>
+    </div>
+  </div>
+
   <div class="grid--kpi grid--kpi-3" style="margin-bottom: var(--space-4);">
     <div class="kpi">
       <div class="kpi__label">Assigned villas</div>
       <div class="kpi__value">{{ shares|length }}</div>
     </div>
     <div class="kpi">
-      <div class="kpi__label">Total payout</div>
+      <div class="kpi__label">Share for {{ period_label }}</div>
       <div class="kpi__value {% if total_payout >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">
         QAR {{ total_payout|floatformat:"2g" }}
       </div>
@@ -80,7 +93,7 @@
             </div>
             <div class="partner-row__side">
               <div class="partner-row__amount">
-                <div style="font-weight: 700; font-size: 15px; color: {% if share.cut > 0 %}var(--success, #22c55e){% else %}var(--text-secondary){% endif %};">
+                <div style="font-weight: 700; font-size: 15px; color: {% if share.cut > 0 %}var(--success, #22c55e){% elif share.cut < 0 %}var(--danger, #ef4444){% else %}var(--text-secondary){% endif %};">
                   QAR {{ share.cut|floatformat:"2g" }}
                 </div>
                 <div class="list-row__meta" style="font-size: 12px;">Partner cut · You: QAR {{ share.owner_cut|floatformat:"2g" }}{% if share.owner_cut < 0 %} (loss){% endif %}</div>
@@ -95,6 +108,8 @@
                   {% if period == 'month' %}<a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?villa={{ share.villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.remaining }}">Pay QAR {{ share.remaining|floatformat:"2g" }}</a>{% endif %}
                 {% elif share.cut > 0 %}
                   {% if period == 'month' %}<a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?villa={{ share.villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.cut }}">Pay</a>{% else %}<span class="pill pill--warning" style="font-size: 11px;">Due — pay by month</span>{% endif %}
+                {% elif share.cut < 0 %}
+                  <span class="pill pill--danger" style="font-size: 11px;">Loss share</span>
                 {% else %}
                   <span class="pill pill--neutral" style="font-size: 11px;">No Profit</span>
                 {% endif %}

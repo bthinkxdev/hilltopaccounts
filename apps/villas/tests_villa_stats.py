@@ -95,13 +95,15 @@ class MonthIsolationTests(VillaStatsBase):
         self.collect(self.p2, LAST_MONTH)  # collected today, but it is last month's income
         ctx = self.page(THIS_MONTH)
         r = self.client.get(ctx['period_pnl_urls']['income'])
-        self.assertEqual((r.context['tab'], r.context['received_total']), ('income', ctx['pnl']['income']))
+        self.assertEqual((r.context['tab'], r.context['received_total']), ('collected', ctx['pnl']['income']))
         self.assertEqual([row['partition'].pk for row in r.context['received_payments']], [self.p1.pk])
         self.assertContains(r, TODAY.strftime('%d %b %Y'))
-        # The collection record still shows everything physically collected today.
-        record = self.client.get(reverse('billing:payment_list'), {'tab': 'received', 'year': THIS_MONTH.year, 'month': THIS_MONTH.month})
-        self.assertEqual(record.context['received_total'], RENT * 2)
-        self.assertContains(record, 'Arrears')
+        # Last month's rent, although collected today, is listed under last month.
+        last = self.client.get(reverse('billing:payment_list'), {'tab': 'collected', 'year': LAST_MONTH.year, 'month': LAST_MONTH.month})
+        self.assertEqual([row['partition'].pk for row in last.context['received_payments']], [self.p2.pk])
+        self.assertContains(last, TODAY.strftime('%d %b %Y'))
+        # The removed tabs fall back to the default instead of erroring.
+        self.assertEqual(self.client.get(reverse('billing:payment_list'), {'tab': 'received'}).context['tab'], 'all')
 
     def test_collector_links_match_their_cards(self):
         self.login('staff')
@@ -123,7 +125,7 @@ class MonthIsolationTests(VillaStatsBase):
         from django.utils import timezone
         self.login('owner')
         self.collect(self.p1, LAST_MONTH)  # collected today, counted in last month
-        r = self.client.get(reverse('billing:payment_list'), {'tab': 'income', 'year': LAST_MONTH.year, 'month': LAST_MONTH.month})
+        r = self.client.get(reverse('billing:payment_list'), {'tab': 'collected', 'year': LAST_MONTH.year, 'month': LAST_MONTH.month})
         recorded = timezone.localtime(Payment.objects.get().created_at)
         self.assertContains(r, recorded.strftime('%I:%M %p').lstrip('0'))
         self.assertContains(r, f"Collected for {LAST_MONTH.strftime('%B %Y')}")
@@ -304,8 +306,8 @@ class PartnerPayoutTests(VillaStatsBase):
 
 
 class ProfitSplitTests(VillaStatsBase):
-    """Partners get their % of each month's profit (a loss month pays nothing); the owner keeps the rest and carries
-    every loss, so owner + partners always equals the net profit."""
+    """Everything goes by the shares: each villa's profit OR loss is split by its partners' %, the owner keeps the
+    rest, and owner + partners always equals the net. Partners only share in their own villas."""
 
     def setUp(self):
         super().setUp()
@@ -342,20 +344,24 @@ class ProfitSplitTests(VillaStatsBase):
         self.assertEqual({s.villa.name: s.cut for s in detail['shares']}, {'Villa': Decimal('1150.00'), 'Villa B': Decimal('500.00')})
         ctx = self.client.get(reverse('dashboard:home'), {'year': THIS_MONTH.year, 'month': THIS_MONTH.month}).context
         cuts = {c['name']: c['cut'] for c in ctx['partner_share_cards']}
-        self.assertEqual(cuts, {'Partner A': Decimal('1650.00')})  # Partner C gets nothing: villa C made a loss
-        self.assertEqual(ctx['owner_share_amount'], Decimal('2300.00') + Decimal('1000.00') - Decimal('5000.00') - Decimal('1650.00'))
+        self.assertEqual(cuts, {'Partner A': Decimal('1650.00'), 'Partner C': Decimal('-2000.00')})  # C carries 40% of villa C's loss
+        self.assertEqual(ctx['owner_share_amount'], Decimal('-1700.00') - (Decimal('1650.00') - Decimal('2000.00')))
+        self.assertEqual(ctx['owner_share_amount'] + ctx['total_partner_cut'], ctx['distributable_profit'])
 
-    def test_year_view_sums_monthly_shares_and_compares_with_the_years_payouts(self):
-        collect_rent(partition=self.p1, year=THIS_MONTH.year, month=THIS_MONTH.month, method='bank_transfer', collected_by=self.owner)  # this month +2300
+    def test_a_loss_month_is_shared_and_offset_in_the_partner_account(self):
         if LAST_MONTH.year != THIS_MONTH.year:
             self.skipTest('needs two months in the same year')
         self.expense(self.villa, '1300.00', LAST_MONTH)  # last month −1300
+        last = self.page(LAST_MONTH)
+        self.assertEqual((last['total_partner_cut'], last['owner_share_amount']), (Decimal('-650.00'), Decimal('-650.00')))
+        self.assertEqual(last['villa_partner_shares'][0].cut, Decimal('-650.00'))
+        collect_rent(partition=self.p1, year=THIS_MONTH.year, month=THIS_MONTH.month, method='bank_transfer', collected_by=self.owner)  # this month +2300
+        year = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]), {'period': 'year', 'year': THIS_MONTH.year}).context
+        self.assertEqual((year['pnl']['net'], year['total_partner_cut'], year['owner_share_amount']), (Decimal('1000.00'), Decimal('500.00'), Decimal('500.00')))
+        # The partner is paid this month's 1,150; their account shows last month's loss share offset against it.
         PartnerPayout.objects.create(partner=self.partner, villa=self.villa, period_year=THIS_MONTH.year, period_month=THIS_MONTH.month, amount=Decimal('1150.00'), paid_on=TODAY, created_by=self.owner)
-        ctx = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]), {'period': 'year', 'year': THIS_MONTH.year}).context
-        self.assertEqual(ctx['pnl']['net'], Decimal('1000.00'))
-        self.assertEqual((ctx['total_partner_cut'], ctx['owner_share_amount']), (Decimal('1150.00'), Decimal('-150.00')))  # loss month not carried over
-        self.assertTrue(ctx['villa_partner_shares'][0].is_fully_paid)
-        self.assertFalse(ctx['has_unpaid_partners'])
+        account = self.client.get(reverse('businesses:partner_detail', args=[self.partner.pk]), {'year': THIS_MONTH.year, 'month': THIS_MONTH.month}).context['account']
+        self.assertEqual((account['earned'], account['paid'], account['balance']), (Decimal('500.00'), Decimal('1150.00'), Decimal('-650.00')))
 
     def test_shares_add_up_exactly_with_rounding(self):
         self.share.delete()
@@ -430,6 +436,87 @@ class CollectionsPageTests(VillaStatsBase):
         self.assertContains(r, 'Rent is collected month by month')
 
 
+class ExpenseAndStaffTests(VillaStatsBase):
+    """No 'paid by' choice anywhere: the payer is whoever records the payment (owner side for Owner / Business
+    Manager, staff side — out of collected cash — for everyone else)."""
+
+    def add_expense(self, username, name, paid=False):
+        self.login(username)
+        data = {'villa': self.villa.pk, 'name': name, 'amount': '100.00', 'date': THIS_MONTH.isoformat()}
+        if paid:
+            data.update(mark_paid='on', payment_method='cash')
+        r = self.client.post(reverse('expenses:create'), data)
+        self.assertEqual(r.status_code, 302, getattr(r, 'context', None) and r.context['form'].errors)
+        from apps.expenses.models import Expense
+        return Expense.objects.get(category__name=name)
+
+    def test_payer_is_the_person_recording_it(self):
+        self.login('owner')
+        self.assertNotIn('paid_by', self.client.get(reverse('expenses:create')).context['form'].fields)
+        cases = [('owner', 'A', False, ('owner', None, False)), ('manager', 'B', False, ('owner', None, False)), ('staff', 'C', False, ('staff', None, False)),
+                 ('owner', 'D', True, ('owner', self.owner, False)), ('manager', 'E', True, ('owner', self.manager, False)), ('staff', 'F', True, ('staff', self.staff, True))]
+        for username, name, paid, (side, payer, to_verify) in cases:
+            e = self.add_expense(username, name, paid)
+            self.assertEqual((e.paid_by, e.paid_by_user, e.awaiting_verification), (side, payer, to_verify), name)
+        # Staff paying an owner-side bill later makes it theirs (from their cash), awaiting verification.
+        self.login('staff')
+        from apps.expenses.models import Expense
+        a = Expense.objects.get(category__name='A')
+        self.client.post(reverse('expenses:quick_paid', args=[a.pk]))
+        a.refresh_from_db()
+        self.assertEqual((a.paid_by, a.paid_by_user, a.awaiting_verification), ('staff', self.staff, True))
+
+    def test_fixed_expense_side_follows_who_sets_it_up(self):
+        from apps.expenses.models import RecurringExpense
+        self.login('staff')
+        self.assertNotIn('paid_by', self.client.get(reverse('expenses:recurring_create', args=[self.villa.pk])).context['form'].fields)
+        self.client.post(reverse('expenses:recurring_create', args=[self.villa.pk]), {'name': 'Gas', 'amount': '90', 'auto_debit': 'on'})
+        self.login('manager')
+        self.client.post(reverse('expenses:recurring_create', args=[self.villa.pk]), {'name': 'Villa rent', 'amount': '9000', 'auto_debit': 'on'})
+        sides = {r.category.name: (r.paid_by, r.auto_debit) for r in RecurringExpense.objects.select_related('category')}
+        self.assertEqual(sides, {'Gas': ('staff', False), 'Villa rent': ('owner', True)})
+
+    def test_staff_bills_due_are_the_bills_staff_may_pay(self):
+        self.add_expense('owner', 'Electricity')          # owner-created, but staff may pay it
+        self.add_expense('staff', 'Cleaning')             # staff-created
+        self.add_expense('owner', 'Villa rent')           # landlord rent: owner only
+        self.login('staff')
+        ctx = self.client.get(reverse('dashboard:home')).context
+        self.assertEqual((ctx['staff_bills_count'], ctx['staff_bills_due']), (2, Decimal('200.00')))
+        self.assertIsNotNone(ctx['period_pnl'])
+
+    def test_dashboard_expense_alerts_open_the_matching_all_time_list(self):
+        from apps.expenses.services import create_expense, get_or_create_category
+        old_month = (LAST_MONTH - timedelta(days=1)).replace(day=1)
+        create_expense(villa=self.villa, category=get_or_create_category(name='Old bill'), amount=Decimal('70.00'), date=old_month, due_date=old_month, created_by=self.owner)
+        self.add_expense('owner', 'Villa rent')  # unpaid, but owner-only
+        self.login('owner')
+        alert = [a for a in self.client.get(reverse('dashboard:home')).context['needs_attention'] if a['label'] == 'Overdue expenses'][0]
+        listing = self.client.get(alert['url'])
+        self.assertEqual((listing.context['period'], [e.category.name for e in listing.context['page_obj']]), ('all', ['Old bill']))
+        self.assertContains(listing, 'All time')
+        self.login('staff')
+        bills = [a for a in self.client.get(reverse('dashboard:home')).context['needs_attention'] if a['label'].startswith('Staff bills due')][0]
+        listing = self.client.get(bills['url'])
+        self.assertEqual((bills['count'], [e.category.name for e in listing.context['page_obj']]), (1, ['Old bill']))
+
+    def test_accountability_lists_every_cash_collector_not_only_villa_staff(self):
+        collect_rent(partition=self.p1, year=THIS_MONTH.year, month=THIS_MONTH.month, method='cash', collected_by=self.manager)
+        self.login('owner')
+        rows = {r['staff'].username: r for r in self.client.get(reverse('cash:staff_accountability')).context['rows']}
+        self.assertEqual((rows['manager']['collected'], rows['manager']['holding']), (RENT, RENT))
+        self.assertIn('staff', rows)
+
+    def test_rent_charge_is_changed_only_through_the_tenant(self):
+        from apps.billing.forms import ChargeForm
+        self.assertFalse(ChargeForm(partition=self.p1).fields['charge_type'].queryset.filter(name__iexact='Rent').exists())
+        rent = Charge.objects.get(partition=self.p1, charge_type__name='Rent')
+        self.login('owner')
+        self.client.post(reverse('billing:charge_cancel', args=[rent.pk]), {'reason': 'x'})
+        rent.refresh_from_db()
+        self.assertTrue(rent.is_active)
+
+
 class ChangedPagesRenderTests(VillaStatsBase):
 
     def test_every_changed_page_renders(self):
@@ -445,8 +532,8 @@ class ChangedPagesRenderTests(VillaStatsBase):
             (reverse('villas:villa_list'), month),
             (reverse('villas:villa_detail', args=[self.villa.pk]), {'period': 'year', 'year': THIS_MONTH.year}),
             (reverse('villas:partition_detail', args=[self.p1.pk]), month),
-            (reverse('billing:payment_list'), {**month, 'tab': 'income'}),
-            (reverse('billing:payment_list'), {**month, 'tab': 'received', 'collector': 'staff'}),
+            (reverse('billing:payment_list'), {**month, 'tab': 'collected'}),
+            (reverse('billing:payment_list'), {**month, 'tab': 'collected', 'collector': 'staff'}),
             (reverse('billing:payment_list'), {**month, 'tab': 'pending'}),
             (reverse('tenancy:detail', args=[tenant.pk]), {}),
             (reverse('tenancy:edit', args=[tenant.pk]), {}),

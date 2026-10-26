@@ -276,7 +276,7 @@ partner_edit = partner_form
 def partner_detail(request, pk):
     if not request.user.is_owner:
         raise PermissionDenied('Only the owner can view partner details.')
-    from .selectors import EMPTY_VILLA_SPLIT, profit_split
+    from .selectors import EMPTY_VILLA_SPLIT, partner_balance, profit_split
     partner = get_object_or_404(Partner, pk=pk)
     period = period_context(request, allow_future=True)
     is_month = period['period'] == 'month'
@@ -329,6 +329,7 @@ def partner_detail(request, pk):
 
     return render(request, 'businesses/partner_detail.html', {
         'partner': partner, 'shares': shares,
+        'account': partner_balance(partner, invoices=invoices, expenses=expenses, deposits=deposits),
         'total_payout': total_payout,
         'period_paid_amount': period_paid_amount,
         'remaining_payout': remaining_payout,

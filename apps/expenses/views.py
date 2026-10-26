@@ -42,6 +42,10 @@ def expense_list(request):
             pass
 
     period = period_context(request, today, allow_future=True)
+    if request.GET.get('period') == 'all':
+        # All time: e.g. the dashboard's "Overdue expenses" count covers every month, so its list must too.
+        period.update(period='all', period_label='All time', period_start=date(2000, 1, 1), period_end=date(today.year + 10, 12, 31))
+    period['allow_all_period'] = True
     start, end = period['period_start'], period['period_end']
 
     visible = selectors.expenses_visible_to(request.user)
@@ -58,6 +62,10 @@ def expense_list(request):
     paid_by = request.GET.get('paid_by', '')
     if paid_by in (PaidBy.STAFF, PaidBy.OWNER):
         qs = qs.filter(paid_by=paid_by)
+    payable = request.GET.get('payable') == '1'
+    if payable:
+        # Bills staff may pay from collected cash (the dashboard's "Staff bills due"): not auto-debits, not villa rent.
+        qs = qs.exclude(recurring__auto_debit=True).exclude(category__name__iregex=selectors.LANDLORD_RENT_REGEX)
 
     summary_base = visible.filter(date__gte=start, date__lte=end)
     if villa_id.isdigit():
@@ -74,7 +82,7 @@ def expense_list(request):
         expense.can_edit = expense.can_manage and expense.status == 'active' and expense.paid_on is None and not (is_field_staff and expense.paid_by == PaidBy.OWNER)
 
     villas = selectors.villas_visible_to(request.user).filter(is_archived=False, is_sold=False).select_related('business')
-    has_filters = bool(villa_id.isdigit() or (due in dict(DueBucket.CHOICES)) or ('status' in request.GET and status != Expense.Status.ACTIVE) or paid_by)
+    has_filters = bool(villa_id.isdigit() or (due in dict(DueBucket.CHOICES)) or ('status' in request.GET and status != Expense.Status.ACTIVE) or paid_by or payable)
 
     keep = []
     if villa_id.isdigit():
@@ -85,6 +93,8 @@ def expense_list(request):
         keep.append(('status', status))
     if paid_by:
         keep.append(('paid_by', paid_by))
+    if payable:
+        keep.append(('payable', '1'))
 
     context = {
         'page_obj': page_obj,

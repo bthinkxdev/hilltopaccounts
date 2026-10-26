@@ -52,13 +52,13 @@ class HomeView(LoginRequiredMixin, TemplateView):
             ctx['pnl'] = ctx['period_pnl']
             qs = f"period={ctx['period']}&year={ctx['year']}&month={ctx['month']}"
             ctx['period_pnl_urls'] = {
-                'income': f"{reverse('billing:payment_list')}?tab=income&{qs}",
+                'income': f"{reverse('billing:payment_list')}?tab=collected&{qs}",
                 'expenses': f"{reverse('expenses:list')}?{qs}",
                 'profit': f"{reverse('businesses:partner_list')}?tab=all&{qs}" if user.is_owner else '#',
                 'owner_profit': f"{reverse('businesses:partner_list')}?tab=owner&{qs}" if user.is_owner else '#',
                 'profit_share': f"{reverse('businesses:partner_list')}?tab=partners&{qs}" if user.is_owner else '#',
-                'staff_collections': f"{reverse('billing:payment_list')}?tab=income&collector=staff&{qs}",
-                'admin_collections': f"{reverse('billing:payment_list')}?tab=income&collector=admin&{qs}",
+                'staff_collections': f"{reverse('billing:payment_list')}?tab=collected&collector=staff&{qs}",
+                'admin_collections': f"{reverse('billing:payment_list')}?tab=collected&collector=admin&{qs}",
                 'staff_expenses': f"{reverse('expenses:list')}?paid_by=staff&{qs}",
                 'admin_expenses': f"{reverse('expenses:list')}?paid_by=owner&{qs}",
             }
@@ -69,8 +69,8 @@ class HomeView(LoginRequiredMixin, TemplateView):
             partner_map = {}
             for s in active_shares:
                 cut = split['by_share'].get(s.pk, Decimal('0.00'))
-                if cut <= 0:
-                    continue
+                if cut == 0:
+                    continue  # a loss share is shown too (negative)
                 entry = partner_map.setdefault(s.partner_id, {'name': s.partner.name, 'cut': Decimal('0.00'), 'url': (reverse('businesses:partner_detail', args=[s.partner.pk]) + f"?period={ctx['period']}&year={ctx['year']}&month={ctx['month']}") if user.is_owner else '#'})
                 entry['cut'] += cut
             net = split['net']
@@ -144,13 +144,13 @@ class HomeView(LoginRequiredMixin, TemplateView):
             ctx['staff_bills_count'] = staff_bills_count
             ctx['my_expenses_paid'] = cash_selectors.total_staff_paid_expenses(user)
             if staff_bills_count > 0:
-                needs_attention.append({'label': 'Staff bills due (Utilities / Maintenance)', 'count': staff_bills_count, 'meta': f'QAR {staff_bills_due} to pay from cash', 'url': reverse('expenses:list') + '?due=unpaid&status=active&period=year&year=' + str(date.today().year)})
+                needs_attention.append({'label': 'Staff bills due (Utilities / Maintenance)', 'count': staff_bills_count, 'meta': f'QAR {staff_bills_due} to pay from cash', 'url': reverse('expenses:list') + '?due=unpaid&status=active&period=all&payable=1'})
         else:
             expense_summary = expenses_selectors.due_summary(selectors.expenses_visible_to(user))
             buckets = (('overdue', 'Overdue expenses'), ('today', 'Expenses due today'), ('verify', 'Expenses to verify'))
             for bucket, label in buckets:
                 if expense_summary[bucket]['count']:
-                    needs_attention.append({'label': label, 'count': expense_summary[bucket]['count'], 'meta': f"QAR {expense_summary[bucket]['total']} to pay", 'url': reverse('expenses:list') + f'?due={bucket}&status=active'})
+                    needs_attention.append({'label': label, 'count': expense_summary[bucket]['count'], 'meta': f"QAR {expense_summary[bucket]['total']} to pay", 'url': reverse('expenses:list') + f'?due={bucket}&status=active&period=all'})
         if ctx['vacant_count'] > 0:
             needs_attention.append({'label': 'Vacant partitions', 'count': ctx['vacant_count'], 'meta': 'No tenant assigned', 'url': reverse('villas:partition_list') + '?occupancy=vacant'})
         my_unclaimed = cash_selectors.unclaimed_cash_payments(user) if not user.is_owner else cash_selectors.unclaimed_cash_payments(user).none()

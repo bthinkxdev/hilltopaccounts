@@ -65,7 +65,9 @@
           <span>Profit Sharing Breakdown (100%) — {{ period_label }}</span>
           <div style="display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;">
             <span class="pill pill--neutral">Villa Net: QAR {{ pnl.net|floatformat:"2g" }}</span>
-            {% if total_partner_cut <= 0 %}
+            {% if total_partner_cut < 0 %}
+              <span class="pill pill--danger" style="font-size: 11px;">Loss — shared by %</span>
+            {% elif total_partner_cut == 0 %}
               <span class="pill pill--neutral" style="font-size: 11px;">No Profit to Distribute</span>
             {% elif period == 'year' %}
               <span class="pill pill--neutral" style="font-size: 11px;">Paid month by month — open a month to pay</span>
@@ -93,7 +95,7 @@
                 <div style="font-weight: 700; font-size: 15px; color: {% if villa_owner_share.cut > 0 %}var(--success, #22c55e){% elif villa_owner_share.cut < 0 %}var(--danger, #ef4444){% else %}var(--text-secondary){% endif %};">
                   QAR {{ villa_owner_share.cut|floatformat:"2g" }}
                 </div>
-                <div class="list-row__meta">{% if villa_owner_share.cut < 0 %}carries the loss{% else %}{{ villa_owner_share.percentage }}% of profit{% endif %}</div>
+                <div class="list-row__meta">{{ villa_owner_share.percentage }}% of {% if villa_owner_share.cut < 0 %}loss{% else %}profit{% endif %}</div>
               </div>
               <div class="partner-row__actions">
                 <span class="pill pill--neutral" style="font-size: 11px;">{% if user.is_owner %}You{% else %}Admin{% endif %}</span>
@@ -113,10 +115,10 @@
             </div>
             <div class="partner-row__side">
               <div class="partner-row__amount">
-                <div style="font-weight: 600; font-size: 15px; color: {% if share.cut > 0 %}var(--success, #22c55e){% else %}var(--text-secondary){% endif %};">
+                <div style="font-weight: 600; font-size: 15px; color: {% if share.cut > 0 %}var(--success, #22c55e){% elif share.cut < 0 %}var(--danger, #ef4444){% else %}var(--text-secondary){% endif %};">
                   QAR {{ share.cut|floatformat:"2g" }}
                 </div>
-                <div class="list-row__meta">{{ share.percentage }}% of profit</div>
+                <div class="list-row__meta">{{ share.percentage }}% of {% if share.cut < 0 %}loss{% else %}profit{% endif %}</div>
               </div>
               <div class="partner-row__actions">
                 {% if share.is_fully_paid %}
@@ -140,6 +142,8 @@
                   {% else %}
                     <span class="pill pill--warning" style="font-size: 11px;">Pending Payout</span>
                   {% endif %}
+                {% elif share.cut < 0 %}
+                  <span class="pill pill--danger" style="font-size: 11px;" title="Offset against this partner's future profit shares">Loss share</span>
                 {% else %}
                   <span class="pill pill--neutral" style="font-size: 11px;">No Profit</span>
                 {% endif %}

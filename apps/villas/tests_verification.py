@@ -67,7 +67,7 @@ class ExpenseVerificationFlowTests(VerificationBase):
         self.login('owner')
         listing = self.client.get(reverse('expenses:list'), {'due': 'verify'})
         self.assertEqual([e.pk for e in listing.context['page_obj']], [expense.pk])
-        self.assertContains(listing, 'Verify received')
+        self.assertContains(listing, 'Verify expenses')
         self.assertEqual(self.client.get(reverse('expenses:verify', args=[expense.pk])).status_code, 405)  # never a GET
         self.assertEqual(self.client.post(reverse('expenses:verify', args=[expense.pk])).status_code, 302)
         expense.refresh_from_db()
@@ -151,12 +151,20 @@ class VillaMoneyViewTests(VerificationBase):
         cash = cash_selectors.villa_cash_position(self.villa)
         self.assertEqual((cash['received_by_owner'], cash['awaiting_confirmation'], cash['holding']), (Decimal('850.00'), Decimal('0.00'), Decimal('0.00')))
 
-    def test_staff_see_the_cash_card_but_never_profit(self):
+    def test_staff_see_their_villas_figures_but_never_partner_shares(self):
         self.rent_cash('1000.00')
+        from apps.businesses.models import Partner, PartnerVillaShare
+        PartnerVillaShare.objects.create(partner=Partner.objects.create(name='Silent Partner', created_by=self.owner), villa=self.villa, percentage=Decimal('30.00'))
         self.login('staff')
         r = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]))
         self.assertIn('cash', r.context)
-        self.assertNotIn('pnl', r.context)
+        self.assertIn('pnl', r.context)  # income / expenses / profit of their own villa
+        self.assertNotContains(r, 'Silent Partner')
+        self.assertNotContains(r, 'Profit Sharing Breakdown')
+        home = self.client.get(reverse('dashboard:home'))
+        self.assertIsNotNone(home.context['period_pnl'])  # same figures on their dashboard, their villas only
+        self.assertNotContains(home, 'Financial summary')
+        self.assertNotContains(home, 'Silent Partner')
         self.assertNotContains(r, 'Income, expenses')
 
     def test_villa_page_has_no_section_tab_bar(self):

@@ -159,7 +159,7 @@ def payment_list(request):
     today = date.today()
 
     tab = request.GET.get('tab', 'all')
-    if tab not in ('all', 'collected', 'pending', 'income', 'received'):
+    if tab not in ('all', 'collected', 'pending'):
         tab = 'all'
 
     q = request.GET.get('q', '').strip()
@@ -422,11 +422,9 @@ def payment_list(request):
 
     start, end = period['period_start'], period['period_end']
     visible_deposits = selectors.deposits_visible_to(request.user)
-    # Income: rent FOR this period's months + advance collected in it — the same rule as the Total Income card.
-    income_records = collection_rows(billing_selectors.income_payments(selectors.invoices_visible_to(request.user), start, end), billing_selectors.income_deposits(visible_deposits, start, end))
-    # Collection record: everything physically collected on dates inside the period, whatever it was for.
-    received_records = collection_rows(selectors.payments_visible_to(request.user).filter(is_cancelled=False, invoice__is_cancelled=False, collected_at__gte=start, collected_at__lte=end), visible_deposits.filter(collected_at__gte=start, collected_at__lte=end))
-    received_payments = income_records if tab == 'income' else received_records
+    # The Collected list: every payment that counts for this period (rent FOR its months + advance collected in it —
+    # the same rule as the Total Income card), each showing when it was collected and by whom.
+    received_payments = collection_rows(billing_selectors.income_payments(selectors.invoices_visible_to(request.user), start, end), billing_selectors.income_deposits(visible_deposits, start, end))
     received_total = sum((r['amount'] for r in received_payments), Decimal('0.00'))
 
     has_filters = bool(q or active_collector or villa_id)
@@ -444,10 +442,8 @@ def payment_list(request):
         'tab': tab,
         'tab_counts': {
             'all': total_all_count,
-            'collected': total_collected_count,
+            'collected': len(received_payments),
             'pending': total_pending_count,
-            'income': len(income_records),
-            'received': len(received_records),
         },
         'received_payments': received_payments,
         'received_total': received_total,
