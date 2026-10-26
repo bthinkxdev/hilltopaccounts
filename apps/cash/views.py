@@ -22,8 +22,20 @@ def handover_list(request):
     if status:
         qs = qs.filter(status=status)
     page_obj = paginate_queryset(request, qs.order_by('-submitted_at'))
-    my_unclaimed = [] if request.user.is_owner else list(selectors.unclaimed_cash_payments(request.user)) + list(selectors.unclaimed_cash_deposits(request.user))
-    return render(request, 'cash/handover_list.html', {'page_obj': page_obj, 'status': status, 'status_choices': CashHandover.Status.choices, 'my_outstanding_cash': selectors.outstanding_cash_for(request.user), 'my_pending_amount': selectors.pending_handover_amount(request.user), 'my_unclaimed_payments': my_unclaimed, 'my_expenses_paid': selectors.total_staff_paid_expenses(request.user), 'can_view_accountability': accounts_selectors.can_view_financial_kpis(request.user), 'breadcrumbs': [('Cash Handover', None)]})
+    is_owner = request.user.is_owner
+    my_unclaimed = [] if is_owner else list(selectors.unclaimed_cash_payments(request.user)) + list(selectors.unclaimed_cash_deposits(request.user))
+    can_confirm = accounts_selectors.can_view_financial_kpis(request.user)
+    context = {'page_obj': page_obj, 'status': status, 'status_choices': CashHandover.Status.choices, 'is_owner': is_owner, 'can_view_accountability': can_confirm, 'breadcrumbs': [('Cash Handover', None)]}
+    if not is_owner:
+        # The owner's own collections are already owner funds, so "my cash" only applies to everyone else.
+        context.update(my_outstanding_cash=selectors.outstanding_cash_for(request.user), my_pending_amount=selectors.pending_handover_amount(request.user), my_unclaimed_payments=my_unclaimed, my_expenses_paid=selectors.total_staff_paid_expenses(request.user))
+    if is_owner:
+        context['owner_cash'] = selectors.cash_with_owner()
+    if can_confirm:
+        # What this person has to act on: handovers other people submitted, and the cash still with staff.
+        waiting = accounts_selectors.cash_handovers_visible_to(request.user).filter(status=CashHandover.Status.SUBMITTED).exclude(staff=request.user)
+        context.update(to_confirm_amount=waiting.aggregate(t=Sum('declared_amount'))['t'] or 0, to_confirm_count=waiting.count(), cash_with_staff=sum((r['holding'] for r in selectors.staff_accountability(request.user, date.today().year, date.today().month)), 0))
+    return render(request, 'cash/handover_list.html', context)
 
 @login_required
 def handover_detail(request, pk):

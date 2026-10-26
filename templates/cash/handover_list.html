@@ -6,10 +6,36 @@
     <div class="quick-actions">
       {% if can_view_accountability %}<a class="btn btn--ghost" href="{% url 'cash:staff_accountability' %}">Staff accountability</a>{% endif %}
       {# Only field staff submit handovers to owner; hidden for owner #}
-      {% if not user.is_owner and my_unclaimed_payments %}<a class="btn btn--primary" href="{% url 'cash:handover_submit' %}">Submit Handover</a>{% endif %}
+      {% if not is_owner and my_unclaimed_payments %}<a class="btn btn--primary" href="{% url 'cash:handover_submit' %}">Submit Handover</a>{% endif %}
     </div>
   </div>
 
+  {% if can_view_accountability %}
+  <div class="card">
+    <div class="card__title">{% if is_owner %}Cash overview{% else %}To confirm{% endif %}</div>
+    <div class="grid--kpi">
+      {% if is_owner %}
+      <div class="kpi" title="Cash you collected yourself plus the handovers you confirmed">
+        <div class="kpi__label">Cash with owner</div>
+        <div class="kpi__value kpi__value--success">QAR {{ owner_cash.total }}</div>
+        <div class="kpi__sub">{{ owner_cash.direct }} collected by you + {{ owner_cash.from_staff }} handed over</div>
+      </div>
+      {% endif %}
+      <a class="kpi" href="?status=submitted">
+        <div class="kpi__label">Awaiting your confirmation</div>
+        <div class="kpi__value {% if to_confirm_count %}kpi__value--warning{% endif %}">QAR {{ to_confirm_amount }}</div>
+        <div class="kpi__sub">{{ to_confirm_count }} handover{{ to_confirm_count|pluralize }}</div>
+      </a>
+      <a class="kpi" href="{% url 'cash:staff_accountability' %}">
+        <div class="kpi__label">Cash still with staff</div>
+        <div class="kpi__value {% if cash_with_staff > 0 %}kpi__value--warning{% endif %}">QAR {{ cash_with_staff }}</div>
+        <div class="kpi__sub">not yet handed over</div>
+      </a>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not is_owner %}
   <div class="card">
     <div class="card__title">My cash</div>
     <div class="grid--kpi">
@@ -18,10 +44,11 @@
         <div class="kpi__value {% if my_outstanding_cash < 0 %}kpi__value--danger{% elif my_outstanding_cash > 0 %}kpi__value--warning{% endif %}">QAR {% if my_outstanding_cash < 0 %}{{ my_outstanding_cash|cut:"-" }}{% else %}{{ my_outstanding_cash }}{% endif %}</div>
       </div>
       <div class="kpi"><div class="kpi__label">Expenses I paid from cash</div><div class="kpi__value">QAR {{ my_expenses_paid }}</div></div>
-      <div class="kpi"><div class="kpi__label">Pending confirmation</div><div class="kpi__value">QAR {{ my_pending_amount }}</div></div>
+      <div class="kpi"><div class="kpi__label">Pending confirmation</div><div class="kpi__value">QAR {{ my_pending_amount }}</div><div class="kpi__sub">my handovers the owner hasn't confirmed</div></div>
       <div class="kpi"><div class="kpi__label">Ready to hand over</div><div class="kpi__value">{{ my_unclaimed_payments|length }} collection{{ my_unclaimed_payments|length|pluralize }}</div></div>
     </div>
   </div>
+  {% endif %}
 
   <form class="filter-bar" method="get">
     <select name="status" onchange="this.form.submit()">

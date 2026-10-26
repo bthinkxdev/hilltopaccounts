@@ -500,6 +500,31 @@ class ExpenseAndStaffTests(VillaStatsBase):
         listing = self.client.get(bills['url'])
         self.assertEqual((bills['count'], [e.category.name for e in listing.context['page_obj']]), (1, ['Old bill']))
 
+    def test_handover_page_cards_per_role(self):
+        [payment] = collect_rent(partition=self.p1, year=THIS_MONTH.year, month=THIS_MONTH.month, method='cash', collected_by=self.staff)
+        self.login('staff')
+        page = self.client.get(reverse('cash:handover_list'))
+        self.assertEqual((page.context['my_outstanding_cash'], page.context['my_pending_amount']), (RENT, ZERO))
+        self.assertContains(page, 'Ready to hand over')
+        self.assertNotContains(page, 'Awaiting your confirmation')  # staff have nothing to confirm
+        handover = submit_cash_handover(staff=self.staff, payments=[payment], submitted_by=self.staff)
+        page = self.client.get(reverse('cash:handover_list'))
+        self.assertEqual(page.context['my_pending_amount'], RENT)  # the staff member's own pending card updates
+        # The owner never submits handovers: no "My cash" / "Ready to hand over", but what is waiting for them.
+        self.login('owner')
+        page = self.client.get(reverse('cash:handover_list'))
+        self.assertNotContains(page, 'Ready to hand over')
+        self.assertNotContains(page, 'My cash')
+        self.assertEqual((page.context['to_confirm_amount'], page.context['to_confirm_count'], page.context['cash_with_staff']), (RENT, 1, RENT))
+        self.assertContains(page, 'Awaiting your confirmation')
+        self.assertEqual(page.context['owner_cash']['total'], ZERO)  # nothing in the owner's hands yet
+        collect_rent(partition=self.p2, year=THIS_MONTH.year, month=THIS_MONTH.month, method='cash', collected_by=self.owner)
+        confirm_cash_handover(handover=handover, confirmed_amount=RENT, confirmed_by=self.owner)
+        page = self.client.get(reverse('cash:handover_list'))
+        self.assertEqual((page.context['to_confirm_amount'], page.context['cash_with_staff']), (0, ZERO))
+        self.assertEqual(page.context['owner_cash'], {'direct': RENT, 'from_staff': RENT, 'total': RENT * 2})
+        self.assertContains(page, 'Cash with owner')
+
     def test_accountability_lists_every_cash_collector_not_only_villa_staff(self):
         collect_rent(partition=self.p1, year=THIS_MONTH.year, month=THIS_MONTH.month, method='cash', collected_by=self.manager)
         self.login('owner')

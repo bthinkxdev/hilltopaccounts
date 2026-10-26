@@ -87,6 +87,21 @@ def staff_accountability(viewer, year, month) -> list[dict]:
     return rows
 
 
+def cash_with_owner(villas=None) -> dict:
+    """Cash that is in the owner's hands: cash the owner collected directly, plus what the owner confirmed receiving
+    from staff handovers. Staff-paid expenses are already netted off those handovers."""
+    zero = Decimal('0.00')
+    payments = Payment.objects.filter(method=Payment.Method.CASH, is_cancelled=False, collected_by__is_owner=True)
+    deposits = _cash_deposits().filter(collected_by__is_owner=True)
+    handovers = CashHandover.objects.filter(status=CashHandover.Status.CONFIRMED)
+    if villas is not None:
+        payments = payments.filter(invoice__partition__villa__in=villas)
+        deposits = deposits.filter(tenant__partition__villa__in=villas)
+        handovers = handovers.filter(Q(payments__invoice__partition__villa__in=villas) | Q(deposits__tenant__partition__villa__in=villas)).distinct()
+    direct = (payments.aggregate(t=Sum('amount'))['t'] or zero) + (deposits.aggregate(t=Sum('amount'))['t'] or zero)
+    from_staff = handovers.aggregate(t=Sum('confirmed_amount'))['t'] or zero
+    return {'direct': direct, 'from_staff': from_staff, 'total': direct + from_staff}
+
 def unhanded_staff_cash_for_month(villa, year: int, month: int) -> Decimal:
     """Cash staff collected that is income of this villa for one month (its rent, or advance collected in it) and
     that the owner has not yet confirmed receiving.
