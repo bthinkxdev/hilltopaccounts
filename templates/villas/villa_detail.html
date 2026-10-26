@@ -65,18 +65,20 @@
           <span>Profit Sharing Breakdown (100%) — {{ period_label }}</span>
           <div style="display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;">
             <span class="pill pill--neutral">Villa Net: QAR {{ pnl.net|floatformat:"2g" }}</span>
-            {% if pnl.net <= 0 %}
+            {% if total_partner_cut <= 0 %}
               <span class="pill pill--neutral" style="font-size: 11px;">No Profit to Distribute</span>
-            {% elif cash.holding > 0 %}
-              <span class="pill pill--warning" style="font-size: 11px;" title="Staff is currently holding QAR {{ cash.holding|floatformat:'2g' }} in cash">Handover Pending (QAR {{ cash.holding|floatformat:"2g" }})</span>
+            {% elif period == 'year' %}
+              <span class="pill pill--neutral" style="font-size: 11px;">Paid month by month — open a month to pay</span>
+            {% elif month_unhanded_cash > 0 %}
+              <span class="pill pill--warning" style="font-size: 11px;" title="Staff still hold QAR {{ month_unhanded_cash|floatformat:'2g' }} of {{ period_label }} rent in cash">Handover Pending (QAR {{ month_unhanded_cash|floatformat:"2g" }})</span>
             {% elif has_unpaid_partners and user.is_owner %}
               <a class="btn btn--primary btn--sm" href="{% url 'businesses:villa_partner_payout_batch' villa.pk %}?year={{ year }}&month={{ month }}">Pay All Partners</a>
             {% endif %}
           </div>
         </div>
-        {% if cash.holding > 0 %}
+        {% if month_unhanded_cash > 0 %}
           <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid var(--warning, #f59e0b); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); margin-top: var(--space-2); margin-bottom: var(--space-2); font-size: 12px; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);">
-            <span>Staff is currently holding <b>QAR {{ cash.holding|floatformat:"2g" }}</b> in cash. Profit cannot be shared until all cash is handed over by staff.</span>
+            <span>Staff still hold <b>QAR {{ month_unhanded_cash|floatformat:"2g" }}</b> of {{ period_label }} rent in cash. This month's profit can be shared once it is handed over.</span>
             {% if user.is_owner %}<a href="{% url 'cash:handover_list' %}" class="btn btn--ghost btn--sm" style="white-space: nowrap;">Handovers &rarr;</a>{% endif %}
           </div>
         {% endif %}
@@ -88,10 +90,10 @@
             </div>
             <div class="partner-row__side">
               <div class="partner-row__amount">
-                <div style="font-weight: 700; font-size: 15px; color: {% if villa_owner_share.cut > 0 %}var(--success, #22c55e){% else %}var(--text-secondary){% endif %};">
+                <div style="font-weight: 700; font-size: 15px; color: {% if villa_owner_share.cut > 0 %}var(--success, #22c55e){% elif villa_owner_share.cut < 0 %}var(--danger, #ef4444){% else %}var(--text-secondary){% endif %};">
                   QAR {{ villa_owner_share.cut|floatformat:"2g" }}
                 </div>
-                <div class="list-row__meta">{{ villa_owner_share.percentage }}% of profit</div>
+                <div class="list-row__meta">{% if villa_owner_share.cut < 0 %}carries the loss{% else %}{{ villa_owner_share.percentage }}% of profit{% endif %}</div>
               </div>
               <div class="partner-row__actions">
                 <span class="pill pill--neutral" style="font-size: 11px;">{% if user.is_owner %}You{% else %}Admin{% endif %}</span>
@@ -121,17 +123,17 @@
                   <span class="pill pill--success">Paid ({{ share.payout.get_payment_method_display }})</span>
                 {% elif share.is_partial %}
                   <span class="pill pill--warning" title="Paid QAR {{ share.paid_amount|floatformat:'2g' }}">Paid {{ share.paid_amount|floatformat:"2g" }} · Due {{ share.remaining|floatformat:"2g" }}</span>
-                  {% if user.is_owner %}
-                    {% if cash.holding > 0 %}
-                      <span class="pill pill--neutral" style="font-size: 11px;" title="Staff holding QAR {{ cash.holding|floatformat:'2g' }} cash. Handover required before payout.">Handover Required</span>
+                  {% if user.is_owner and period == 'month' %}
+                    {% if month_unhanded_cash > 0 %}
+                      <span class="pill pill--neutral" style="font-size: 11px;" title="Staff hold QAR {{ month_unhanded_cash|floatformat:'2g' }} of this month's cash. Handover required before payout.">Handover Required</span>
                     {% else %}
                       <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' share.partner.pk %}?villa={{ villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.remaining }}&from=villa">Pay QAR {{ share.remaining|floatformat:"2g" }}</a>
                     {% endif %}
                   {% endif %}
-                {% elif pnl.net > 0 and share.cut > 0 %}
-                  {% if user.is_owner %}
-                    {% if cash.holding > 0 %}
-                      <span class="pill pill--neutral" style="font-size: 11px;" title="Staff holding QAR {{ cash.holding|floatformat:'2g' }} cash. Handover required before payout.">Handover Required</span>
+                {% elif share.cut > 0 %}
+                  {% if user.is_owner and period == 'month' %}
+                    {% if month_unhanded_cash > 0 %}
+                      <span class="pill pill--neutral" style="font-size: 11px;" title="Staff hold QAR {{ month_unhanded_cash|floatformat:'2g' }} of this month's cash. Handover required before payout.">Handover Required</span>
                     {% else %}
                       <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' share.partner.pk %}?villa={{ villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.cut }}&from=villa">Pay</a>
                     {% endif %}
@@ -151,15 +153,16 @@
   {% endif %}
 
   <div class="card card--tight">
-    <div class="card__title">Cash — collected, spent, handed over</div>
+    <div class="card__title">Cash — collected, spent, handed over (all time)</div>
     <div class="grid--kpi grid--kpi-compact">
-      <div class="kpi"><div class="kpi__label">Rent cash collected</div><div class="kpi__value">{{ cash.collected|floatformat:"2g" }}</div></div>
+      <div class="kpi"><div class="kpi__label">Cash collected (rent + advance)</div><div class="kpi__value">{{ cash.collected|floatformat:"2g" }}</div></div>
       <div class="kpi"><div class="kpi__label">Cash paid by staff</div><div class="kpi__value kpi__value--danger">{{ cash.spent_by_staff|floatformat:"2g" }}</div></div>
       <div class="kpi"><div class="kpi__label">Received by owner</div><div class="kpi__value kpi__value--success">{{ cash.received_by_owner|floatformat:"2g" }}</div></div>
     </div>
     <div class="stat-line">
       <span>Still with staff <b>{{ cash.holding|floatformat:"2g" }}</b></span>
       {% if cash.awaiting_confirmation %}<span>Handed over, awaiting owner <b>{{ cash.awaiting_confirmation|floatformat:"2g" }}</b></span>{% endif %}
+      {% if cash.short_in_handovers %}<span style="color: var(--danger);">Short in confirmed handovers <b>{{ cash.short_in_handovers|floatformat:"2g" }}</b> (still with staff)</span>{% endif %}
       <a href="{% url 'cash:handover_list' %}">Handovers &rarr;</a>
     </div>
   </div>
@@ -190,11 +193,11 @@
               <div class="tile__meta">
                 {% if partition.status == 'archived' %}Archived
                 {% elif partition.tenant %}
-                  <strong style="color: var(--text-primary);">Tenant: {{ partition.tenant.name }}</strong> · {{ partition.tenant.monthly_rent|floatformat:"0g" }}/mo
+                  <strong style="color: var(--text-primary);">Tenant: {{ partition.tenant.name }}</strong> · {{ partition.rent_schedule.current|default:partition.tenant.monthly_rent|floatformat:"0g" }}/mo{% if partition.rent_schedule.upcoming %} · {{ partition.rent_schedule.upcoming|floatformat:"0g" }} from {{ partition.rent_schedule.upcoming_from|date:"M Y" }}{% endif %}
                   <div style="margin-top: 3px; display: flex; align-items: center; justify-content: space-between;">
                     <span>
-                      Deposit: QAR {{ partition.tenant.deposit|floatformat:"0g" }}
                       {% if partition.tenant.deposit > 0 %}
+                        Advance: QAR {{ partition.tenant.deposit|floatformat:"0g" }}
                         {% if partition.tenant.deposit_status == 'received' %}
                           <span class="pill pill--success" style="font-size: 10px; padding: 1px 6px;">Received</span>
                         {% elif partition.tenant.deposit_status == 'partially_paid' %}
@@ -202,6 +205,8 @@
                         {% else %}
                           <span class="pill pill--neutral" style="font-size: 10px; padding: 1px 6px;">Pending</span>
                         {% endif %}
+                      {% else %}
+                        No advance
                       {% endif %}
                     </span>
                     {% if can_manage %}
@@ -254,12 +259,20 @@
             <div class="list-row__main">
               <a class="list-row__title" href="{% url 'villas:partition_detail' row.partition.pk %}?period=month&year={{ year }}&month={{ month }}">{{ row.partition.name }}</a>
               <div class="list-row__meta">{{ row.tenant.name }} · {{ row.due|floatformat:"2g" }}{% if row.paid and row.status != "collected" %} · paid {{ row.paid|floatformat:"2g" }}{% endif %}{% if row.prior_unpaid_total and row.prior_unpaid_total > 0 %} · <span style="color:var(--danger, #ef4444); font-weight:600;">Past overdue: QAR {{ row.prior_unpaid_total|floatformat:"2g" }}</span>{% endif %}</div>
+              {% for p in row.payments %}
+                {% with name=p.collected_by.get_full_name|default:p.collected_by.username %}
+                <div class="list-row__meta">Collected QAR {{ p.amount|floatformat:"2g" }} on {{ p.collected_at|date:"d M Y" }} by {% if p.collected_by.is_owner %}{% if name != "Admin" %}{{ name }} (Admin, {% else %}Admin ({% endif %}{% else %}{{ name }} (Staff, {% endif %}{{ p.get_method_display }})</div>
+                {% endwith %}
+              {% endfor %}
             </div>
             {% if row.status == "collected" %}<span class="pill pill--success">Collected</span>
             {% elif row.status == "partial" %}<span class="pill pill--warning">{{ row.balance|floatformat:"2g" }} left</span>
             {% elif row.status == "overdue" %}<span class="pill pill--danger">Overdue</span>
             {% else %}<span class="pill pill--neutral">Pending</span>{% endif %}
-            {% if row.status != "collected" and can_manage %}
+            {% if not row.is_current %}
+              <span class="pill pill--neutral">Moved out</span>
+              {% if row.status != "collected" and can_manage and row.invoice %}<a class="btn btn--ghost btn--sm" href="{% url 'billing:payment_record' row.invoice.pk %}">Record payment</a>{% endif %}
+            {% elif row.status != "collected" and can_manage %}
               <button class="btn btn--primary btn--sm" type="button"
                 data-action-url="{% url 'billing:rent_collect' row.partition.pk %}"
                 data-partition="{{ row.partition.name }}"

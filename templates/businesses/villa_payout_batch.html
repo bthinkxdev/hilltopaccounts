@@ -47,7 +47,7 @@
     <div class="empty-state" style="border: 1px solid rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.05);">
       <div class="empty-state__title" style="color: var(--warning, #f59e0b);">Profit Sharing Blocked — Handover Required</div>
       <p>
-        Staff is currently holding <b>QAR {{ cash_holding|floatformat:"2g" }}</b> in unhanded cash collected for <b>{{ villa.name }}</b>.
+        Staff still hold <b>QAR {{ cash_holding|floatformat:"2g" }}</b> of <b>{{ villa.name }}</b> rent for {{ month_label }} in cash.
         Cash collected by staff must be handed over and confirmed before profit can be distributed to partners.
       </p>
       <div style="display: flex; gap: var(--space-2); justify-content: center; margin-top: var(--space-3); flex-wrap: wrap;">

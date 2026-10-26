@@ -44,6 +44,13 @@ class RecurringExpense(models.Model):
             models.CheckConstraint(check=models.Q(auto_debit=False) | models.Q(paid_by='owner'), name='recurring_auto_debit_is_owner_paid'),
         ]
 
+    @property
+    def first_period(self):
+        """First month this fixed expense applies to: the month it was set up. Earlier months are never touched."""
+        from django.utils import timezone
+        created = timezone.localdate(self.created_at) if self.created_at else timezone.localdate()
+        return created.replace(day=1)
+
     def __str__(self):
         return f'{self.category} — {self.villa.name} ({self.amount}/mo)'
 

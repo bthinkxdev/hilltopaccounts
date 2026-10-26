@@ -560,6 +560,7 @@ h1, h2, h3, p {
 .pill--warning { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
 .pill--danger  { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
 .pill--neutral { background: var(--fill); color: var(--text-secondary); }
+.pill--accent  { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 
 .field {
   margin-bottom: var(--space-4);

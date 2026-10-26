@@ -9,14 +9,13 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.forms.models import model_to_dict
 from django.urls import reverse
 from apps.accounts import selectors
-from apps.billing.models import Charge
 from apps.billing import selectors as billing_selectors
 from apps.shared.exceptions import DomainError
 from apps.shared.pagination import paginate_queryset
 from apps.villas.models import Partition
-from .forms import MoveOutForm, TenantForm, DepositEditForm
+from .forms import DepositCollectForm, MoveOutForm, TenantForm
 from .models import Tenant
-from .services import create_tenant, move_out_tenant, update_tenant
+from .services import collect_deposit, create_tenant, move_out_tenant, update_tenant
 
 @login_required
 def tenant_list(request):
@@ -37,6 +36,9 @@ def tenant_list(request):
 def tenant_detail(request, pk):
     today = date.today()
     tenant = get_object_or_404(selectors.tenants_visible_to(request.user), pk=pk)
+    if tenant.status == Tenant.Status.ACTIVE and not tenant.partition.villa.is_sold:
+        from apps.billing.services import ensure_rent_invoices
+        ensure_rent_invoices(villa_ids=[tenant.partition.villa_id])
     invoices = selectors.invoices_visible_to(request.user).filter(tenant=tenant).order_by('-issue_date')
     for invoice in invoices:
         invoice.computed_status = billing_selectors.invoice_status(invoice)
@@ -52,6 +54,8 @@ def tenant_detail(request, pk):
         'invoices': invoices,
         'outstanding_balance': balance,
         'unbilled_balance': unbilled,
+        'deposit_collections': list(tenant.deposit_collections.select_related('collected_by')),
+        'rent': billing_selectors.rent_schedule(partition, today) if tenant.status == Tenant.Status.ACTIVE else None,
         'can_manage': (request.user.is_owner or selectors.is_business_manager_of(request.user, partition.villa.business) or selectors.is_villa_staff_of(request.user, partition.villa)) and not partition.villa.is_sold,
         'breadcrumbs': prefix + [
             (partition.villa.name, reverse('villas:villa_detail', args=[partition.villa.pk])),
@@ -69,21 +73,23 @@ def tenant_edit(request, pk):
     if not (request.user.is_owner or selectors.can_manage_villa(request.user, partition.villa)):
         raise PermissionDenied('You cannot edit this tenant.')
     if request.method == 'POST':
-        form = TenantForm(request.POST, lock_rent=False)
+        form = TenantForm(request.POST, editing=True)
         if form.is_valid():
             try:
                 update_tenant(tenant=tenant, updated_by=request.user, **form.cleaned_data)
-                Charge.objects.filter(partition=partition, charge_type__name='Rent', is_active=True).update(amount=form.cleaned_data['monthly_rent'])
                 if partition.rent is None:
                     partition.rent = form.cleaned_data['monthly_rent']
                     partition.save(update_fields=['rent'])
             except DomainError as exc:
                 form.add_error(None, str(exc))
             else:
-                messages.success(request, f'{tenant.name} updated.')
+                if tenant.rent_effective_from:
+                    messages.success(request, f'{tenant.name} updated. New rent QAR {tenant.monthly_rent} applies from {tenant.rent_effective_from:%B %Y}; earlier months keep their rent.')
+                else:
+                    messages.success(request, f'{tenant.name} updated.')
                 return redirect('tenancy:detail', pk=tenant.pk)
     else:
-        form = TenantForm(initial=model_to_dict(tenant), lock_rent=False)
+        form = TenantForm(initial=model_to_dict(tenant), editing=True)
 
     prefix = [('Villas', reverse('villas:villa_list'))] if selectors.is_field_staff(request.user) else [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk]))]
     breadcrumbs = prefix + [
@@ -158,26 +164,37 @@ def tenant_deposit_edit(request, pk):
     if not (request.user.is_owner or selectors.can_manage_villa(request.user, partition.villa)):
         raise PermissionDenied('You cannot edit deposit details for this tenant.')
 
+    default_back = reverse('villas:villa_detail', args=[partition.villa_id])
     if request.method == 'POST':
-        form = DepositEditForm(request.POST)
+        form = DepositCollectForm(request.POST, tenant=tenant)
         if form.is_valid():
-            update_tenant(tenant=tenant, updated_by=request.user, **form.cleaned_data)
-            messages.success(request, f'Deposit updated for {tenant.name}.')
+            data = form.cleaned_data
+            try:
+                if data['deposit'] != tenant.deposit:
+                    update_tenant(tenant=tenant, updated_by=request.user, deposit=data['deposit'])
+                if data['amount'] > 0:
+                    collect_deposit(tenant=tenant, amount=data['amount'], method=data['method'], collected_by=request.user, collected_at=data['collected_at'])
+            except DomainError as exc:
+                messages.error(request, str(exc))
+            else:
+                tenant.refresh_from_db()
+                messages.success(request, f'Advance for {tenant.name}: QAR {tenant.deposit_paid} received, QAR {tenant.deposit_pending} pending.' if tenant.deposit else f'{tenant.name}: no advance.')
         else:
             for error_list in form.errors.values():
                 for error in error_list:
                     messages.error(request, error)
-        next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or reverse('villas:villa_detail', args=[partition.villa_id])
-        return redirect(next_url)
+        return redirect(_safe_back(request, request.POST.get('next'), default_back))
 
-    form = DepositEditForm(initial={'deposit': tenant.deposit, 'deposit_paid': tenant.deposit_paid})
-    is_fully_paid = tenant.deposit > 0 and tenant.deposit_paid >= tenant.deposit
+    form = DepositCollectForm(tenant=tenant, initial={'deposit': tenant.deposit, 'amount': tenant.deposit_pending, 'collected_at': date.today()})
     return render(request, 'components/form_page.html', {
         'form': form,
-        'title': f'Edit Deposit — {partition.name} ({tenant.name})',
-        'submit_label': 'Save Deposit',
-        'cancel_url': request.GET.get('next') or reverse('villas:villa_detail', args=[partition.villa_id]),
-        'deposit_edit_page': True,
-        'is_fully_paid': is_fully_paid,
+        'title': f'Advance — {partition.name} ({tenant.name}): QAR {tenant.deposit_paid} received, QAR {tenant.deposit_pending} pending',
+        'submit_label': 'Save Advance',
+        'cancel_url': _safe_back(request, request.GET.get('next'), default_back),
     })
+
+
+def _safe_back(request, target, default):
+    from django.utils.http import url_has_allowed_host_and_scheme
+    return target if target and url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()}, require_https=request.is_secure()) else default
 

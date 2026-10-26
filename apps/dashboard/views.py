@@ -27,6 +27,8 @@ class HomeView(LoginRequiredMixin, TemplateView):
         villas = selectors.villas_visible_to(user).filter(is_archived=False, business__is_archived=False, is_sold=False).select_related('business')
         partitions = selectors.partitions_visible_to(user).filter(status='active', villa__is_archived=False, villa__business__is_archived=False, villa__is_sold=False)
         staff_view = selectors.is_field_staff(user)
+        from apps.billing.services import ensure_rent_invoices
+        ensure_rent_invoices(villa_ids=selectors.villas_visible_to(user).filter(is_sold=False).values_list('pk', flat=True))
         ctx['staff_view'] = staff_view
         ctx['businesses'] = businesses
         ctx['villas'] = villas
@@ -41,67 +43,45 @@ class HomeView(LoginRequiredMixin, TemplateView):
         ctx.update(period_context(self.request))
         ctx['keep'] = []
         financial = selectors.financial_villas(user)
-        if not financial.exists() and selectors.is_partner(user):
+        if not financial.exists() and (selectors.is_partner(user) or staff_view):
+            # Staff see income, expenses and profit of their own villas — the same figures as their villa pages.
             financial = selectors.villas_visible_to(user)
-        ctx['period_pnl'] = billing_selectors.period_profit_loss(selectors.invoices_visible_to(user).filter(partition__villa__in=financial), selectors.expenses_visible_to(user).filter(villa__in=financial), ctx['period_start'], ctx['period_end']) if financial.exists() else None
+        financial_deposits = selectors.deposits_visible_to(user).filter(tenant__partition__villa__in=financial)
+        ctx['period_pnl'] = billing_selectors.period_profit_loss(selectors.invoices_visible_to(user).filter(partition__villa__in=financial), selectors.expenses_visible_to(user).filter(villa__in=financial), ctx['period_start'], ctx['period_end'], deposits=financial_deposits) if financial.exists() else None
         if ctx['period_pnl']:
             ctx['pnl'] = ctx['period_pnl']
+            qs = f"period={ctx['period']}&year={ctx['year']}&month={ctx['month']}"
             ctx['period_pnl_urls'] = {
-                'income': f"{reverse('billing:payment_list')}?tab=collected&year={ctx['year']}&month={ctx['month']}",
-                'expenses': f"{reverse('expenses:list')}?year={ctx['year']}&month={ctx['month']}",
-                'profit': f"{reverse('businesses:partner_list')}?tab=all&year={ctx['year']}&month={ctx['month']}" if user.is_owner else '#',
-                'owner_profit': f"{reverse('businesses:partner_list')}?tab=owner&year={ctx['year']}&month={ctx['month']}" if user.is_owner else '#',
-                'profit_share': f"{reverse('businesses:partner_list')}?tab=partners&year={ctx['year']}&month={ctx['month']}" if user.is_owner else '#',
-                'staff_collections': f"{reverse('billing:payment_list')}?tab=collected&collector=staff&year={ctx['year']}&month={ctx['month']}",
-                'admin_collections': f"{reverse('billing:payment_list')}?tab=collected&collector=admin&year={ctx['year']}&month={ctx['month']}",
-                'staff_expenses': f"{reverse('expenses:list')}?paid_by=staff&year={ctx['year']}&month={ctx['month']}",
-                'admin_expenses': f"{reverse('expenses:list')}?paid_by=owner&year={ctx['year']}&month={ctx['month']}",
+                'income': f"{reverse('billing:payment_list')}?tab=income&{qs}",
+                'expenses': f"{reverse('expenses:list')}?{qs}",
+                'profit': f"{reverse('businesses:partner_list')}?tab=all&{qs}" if user.is_owner else '#',
+                'owner_profit': f"{reverse('businesses:partner_list')}?tab=owner&{qs}" if user.is_owner else '#',
+                'profit_share': f"{reverse('businesses:partner_list')}?tab=partners&{qs}" if user.is_owner else '#',
+                'staff_collections': f"{reverse('billing:payment_list')}?tab=income&collector=staff&{qs}",
+                'admin_collections': f"{reverse('billing:payment_list')}?tab=income&collector=admin&{qs}",
+                'staff_expenses': f"{reverse('expenses:list')}?paid_by=staff&{qs}",
+                'admin_expenses': f"{reverse('expenses:list')}?paid_by=owner&{qs}",
             }
-            net_profit = ctx['period_pnl'].get('net', Decimal('0.00'))
-            distributable = max(Decimal('0.00'), net_profit)
             from apps.businesses.models import PartnerVillaShare
+            from apps.businesses.selectors import profit_split
             active_shares = list(PartnerVillaShare.objects.filter(villa__in=financial, partner__is_active=True).select_related('partner'))
-            partner_share_cards = []
+            split = profit_split(invoices=selectors.invoices_visible_to(user).filter(partition__villa__in=financial), expenses=selectors.expenses_visible_to(user).filter(villa__in=financial), deposits=financial_deposits, start=ctx['period_start'], end=ctx['period_end'], shares=active_shares)
             partner_map = {}
-            if active_shares and distributable > 0:
-                pnl_by_v = billing_selectors.profit_loss_by_villa(
-                    selectors.invoices_visible_to(user).filter(partition__villa__in=financial),
-                    selectors.expenses_visible_to(user).filter(villa__in=financial),
-                    ctx['period_start'], ctx['period_end']
-                )
-                tot_partner_cut = Decimal('0.00')
-                for s in active_shares:
-                    v_net = pnl_by_v.get(s.villa_id, {}).get('net', Decimal('0.00'))
-                    if v_net > 0:
-                        c = (v_net * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
-                        tot_partner_cut += c
-                        if s.partner_id not in partner_map:
-                            partner_map[s.partner_id] = {
-                                'name': s.partner.name,
-                                'cut': c,
-                                'url': (reverse('businesses:partner_detail', args=[s.partner.pk]) + f"?year={ctx['year']}&month={ctx['month']}") if user.is_owner else '#'
-                            }
-                        else:
-                            partner_map[s.partner_id]['cut'] += c
-                for p_data in partner_map.values():
-                    p_data['percentage'] = ((p_data['cut'] / distributable) * Decimal('100.0')).quantize(Decimal('0.1')) if distributable > 0 else Decimal('0.0')
-                partner_share_cards = list(partner_map.values())
-                owner_cut = max(Decimal('0.00'), distributable - tot_partner_cut)
-                owner_pct = ((owner_cut / distributable) * Decimal('100.0')).quantize(Decimal('0.1')) if distributable > 0 else Decimal('100.0')
-                partner_count = len(partner_map)
-            else:
-                tot_partner_cut = Decimal('0.00')
-                owner_cut = distributable
-                owner_pct = Decimal('100.00')
-                partner_share_cards = []
-                partner_count = 0
-
-            ctx['owner_share_amount'] = owner_cut
-            ctx['owner_share_pct'] = owner_pct
-            ctx['partner_share_cards'] = partner_share_cards
-            ctx['total_partner_cut'] = tot_partner_cut
-            ctx['partner_count'] = partner_count
-            ctx['distributable_profit'] = distributable
+            for s in active_shares:
+                cut = split['by_share'].get(s.pk, Decimal('0.00'))
+                if cut <= 0:
+                    continue
+                entry = partner_map.setdefault(s.partner_id, {'name': s.partner.name, 'cut': Decimal('0.00'), 'url': (reverse('businesses:partner_detail', args=[s.partner.pk]) + f"?period={ctx['period']}&year={ctx['year']}&month={ctx['month']}") if user.is_owner else '#'})
+                entry['cut'] += cut
+            net = split['net']
+            for p_data in partner_map.values():
+                p_data['percentage'] = ((p_data['cut'] / net) * Decimal('100.0')).quantize(Decimal('0.1')) if net > 0 else Decimal('0.0')
+            ctx['owner_share_amount'] = split['owner_share']
+            ctx['owner_share_pct'] = ((split['owner_share'] / net) * Decimal('100.0')).quantize(Decimal('0.1')) if net > 0 else Decimal('100.0')
+            ctx['partner_share_cards'] = list(partner_map.values())
+            ctx['total_partner_cut'] = split['partner_cut']
+            ctx['partner_count'] = len(partner_map)
+            ctx['distributable_profit'] = net
 
             is_partner = selectors.is_partner(user)
             ctx['is_partner'] = is_partner
@@ -133,14 +113,19 @@ class HomeView(LoginRequiredMixin, TemplateView):
             ctx['outstanding'] = billing_selectors.outstanding_amount(invoices)
             ctx['collection_rate'] = billing_selectors.collection_rate(invoices)
             ctx['total_expenses'] = expenses_selectors.valid_expense_total(expenses)
-            ctx['net_profit'] = billing_selectors.profit(invoices, expenses)
+            ctx['net_profit'] = billing_selectors.profit(invoices, expenses, deposits=selectors.deposits_visible_to(user))
+            ctx['advance_collected'] = selectors.deposits_visible_to(user).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
             overdue = billing_selectors.overdue_invoices(invoices)
             if overdue:
                 overdue_total = sum((billing_selectors.invoice_outstanding(i) for i in overdue), start=0)
-                needs_attention.append({'label': 'Overdue invoices', 'count': len(overdue), 'meta': f'QAR {overdue_total} outstanding', 'url': reverse('billing:invoice_list') + '?status=overdue'})
+                needs_attention.append({'label': 'Overdue rent', 'count': len(overdue), 'meta': f'QAR {overdue_total} outstanding', 'url': reverse('billing:payment_list') + '?tab=pending#arrears'})
             pending_handovers = selectors.cash_handovers_visible_to(user).filter(status=CashHandover.Status.SUBMITTED)
             if pending_handovers.exists():
                 needs_attention.append({'label': 'Pending cash handovers', 'count': pending_handovers.count(), 'meta': 'Awaiting your confirmation', 'url': reverse('cash:handover_list') + '?status=submitted'})
+            if user.is_owner:
+                from apps.businesses.selectors import partner_shares_due_after_payout
+                for item in partner_shares_due_after_payout():
+                    needs_attention.append({'label': f"Partner share grew — {item['villa'].name}, {date(item['year'], item['month'], 1):%B %Y}", 'count': 1, 'meta': f"QAR {item['remaining']} more due to partners (profit rose after they were paid)", 'url': f"{reverse('villas:villa_detail', args=[item['villa'].pk])}?period=month&year={item['year']}&month={item['month']}"})
         if staff_view:
             invoices = selectors.invoices_visible_to(user)
             pending_rent = billing_selectors.outstanding_amount(invoices)
@@ -148,16 +133,18 @@ class HomeView(LoginRequiredMixin, TemplateView):
             overdue_rent = billing_selectors.overdue_invoices(invoices)
             if overdue_rent:
                 overdue_total = sum((billing_selectors.invoice_outstanding(i) for i in overdue_rent), start=Decimal('0.00'))
-                needs_attention.append({'label': 'Overdue tenant rent', 'count': len(overdue_rent), 'meta': f'QAR {overdue_total} to collect', 'url': reverse('billing:invoice_list') + '?status=overdue'})
+                needs_attention.append({'label': 'Overdue tenant rent', 'count': len(overdue_rent), 'meta': f'QAR {overdue_total} to collect', 'url': reverse('billing:payment_list') + '?tab=pending#arrears'})
 
-            staff_bills = selectors.expenses_visible_to(user).filter(status='active', paid_by='staff', paid_on__isnull=True)
+            # Bills this staff member may pay from collected cash: everything unpaid in their villas except owner
+            # auto-debits and the villa (landlord) rent — the same rule as the Pay button.
+            staff_bills = selectors.expenses_visible_to(user).filter(status='active', paid_on__isnull=True).exclude(recurring__auto_debit=True).exclude(category__name__iregex=selectors.LANDLORD_RENT_REGEX)
             staff_bills_due = staff_bills.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
             staff_bills_count = staff_bills.count()
             ctx['staff_bills_due'] = staff_bills_due
             ctx['staff_bills_count'] = staff_bills_count
             ctx['my_expenses_paid'] = cash_selectors.total_staff_paid_expenses(user)
             if staff_bills_count > 0:
-                needs_attention.append({'label': 'Staff bills due (Utilities / Maintenance)', 'count': staff_bills_count, 'meta': f'QAR {staff_bills_due} to pay from cash', 'url': reverse('expenses:list') + '?due=unpaid&status=active'})
+                needs_attention.append({'label': 'Staff bills due (Utilities / Maintenance)', 'count': staff_bills_count, 'meta': f'QAR {staff_bills_due} to pay from cash', 'url': reverse('expenses:list') + '?due=unpaid&status=active&period=year&year=' + str(date.today().year)})
         else:
             expense_summary = expenses_selectors.due_summary(selectors.expenses_visible_to(user))
             buckets = (('overdue', 'Overdue expenses'), ('today', 'Expenses due today'), ('verify', 'Expenses to verify'))
@@ -168,15 +155,16 @@ class HomeView(LoginRequiredMixin, TemplateView):
             needs_attention.append({'label': 'Vacant partitions', 'count': ctx['vacant_count'], 'meta': 'No tenant assigned', 'url': reverse('villas:partition_list') + '?occupancy=vacant'})
         my_unclaimed = cash_selectors.unclaimed_cash_payments(user) if not user.is_owner else cash_selectors.unclaimed_cash_payments(user).none()
         dashboard_url = reverse('dashboard:home')
-        if my_unclaimed.exists():
-            needs_attention.append({'label': 'Your cash ready to hand over', 'count': my_unclaimed.count(), 'meta': f'QAR {cash_selectors.outstanding_cash_for(user)} to submit', 'url': f"{reverse('cash:handover_submit')}?next={dashboard_url}"})
+        my_unclaimed_count = my_unclaimed.count() + (0 if user.is_owner else cash_selectors.unclaimed_cash_deposits(user).count())
+        if my_unclaimed_count:
+            needs_attention.append({'label': 'Your cash ready to hand over', 'count': my_unclaimed_count, 'meta': f'QAR {cash_selectors.outstanding_cash_for(user)} to submit', 'url': f"{reverse('cash:handover_submit')}?next={dashboard_url}"})
             quick_actions.append({'label': 'Submit Cash Handover', 'url': f"{reverse('cash:handover_submit')}?next={dashboard_url}"})
         if selectors.manageable_villas(user).filter(is_archived=False, business__is_archived=False, is_sold=False).exists():
             quick_actions.append({'label': '+ Add Expense', 'url': f"{reverse('expenses:create')}?next={dashboard_url}"})
         if user.is_owner:
             quick_actions.insert(0, {'label': '+ Add Business', 'url': f"{reverse('businesses:create')}?next={dashboard_url}"})
         if villas.exists():
-            quick_actions.append({'label': 'Record Collection', 'url': reverse('billing:invoice_list')})
+            quick_actions.append({'label': 'Record Collection', 'url': reverse('billing:payment_list') + '?tab=pending'})
         ctx['needs_attention'] = needs_attention
         ctx['quick_actions'] = quick_actions
         outstanding_cash = cash_selectors.outstanding_cash_for(user)
@@ -227,11 +215,10 @@ def _get_financial_export_data(request):
 
     inv = selectors.invoices_visible_to(user).filter(partition__villa__in=villas)
     exp = selectors.expenses_visible_to(user).filter(villa__in=villas)
-    pnl = billing_selectors.period_profit_loss(inv, exp, s, e) if villas.exists() else {}
+    dep = selectors.deposits_visible_to(user).filter(tenant__partition__villa__in=villas)
+    pnl = billing_selectors.period_profit_loss(inv, exp, s, e, deposits=dep) if villas.exists() else {}
 
     inc, exp_tot, net = pnl.get('income', Decimal('0.00')), pnl.get('expenses', Decimal('0.00')), pnl.get('net', Decimal('0.00'))
-    distributable = max(Decimal('0.00'), net)
-
     date_display = f"{s.strftime('%d %b %Y')}" if s == e else f"{s.strftime('%d %b %Y')} to {e.strftime('%d %b %Y')}"
     exported_by = user.get_full_name() or user.username
     title = f"Hilltop Accounting — Financial Summary Report ({target_villa.name})" if target_villa else "Hilltop Accounting — Financial Summary Report"
@@ -248,6 +235,8 @@ def _get_financial_export_data(request):
         [],
         [f'{sec}. TOTAL INCOME, EXPENSE & PROFIT', 'Amount (QAR)'],
         ['Total Income', f"{inc:.2f}"],
+        ['  of which Rent', f"{pnl.get('rent_income', Decimal('0.00')):.2f}"],
+        ['  of which Advance', f"{pnl.get('advance_income', Decimal('0.00')):.2f}"],
         ['Total Expenses', f"{exp_tot:.2f}"],
         ['Net Profit', f"{net:.2f}"],
     ])
@@ -280,15 +269,14 @@ def _get_financial_export_data(request):
 
     if show_profit_share:
         from apps.businesses.models import PartnerVillaShare
-        shares = PartnerVillaShare.objects.filter(villa__in=villas, partner__is_active=True).select_related('partner', 'villa')
-        pnl_by_v = billing_selectors.profit_loss_by_villa(inv, exp, s, e) if shares and distributable > 0 else {}
-        
+        from apps.businesses.selectors import profit_split
+        shares = list(PartnerVillaShare.objects.filter(villa__in=villas, partner__is_active=True).select_related('partner', 'villa'))
+        split = profit_split(invoices=inv, expenses=exp, deposits=dep, start=s, end=e, shares=shares)
+        tot_partner = split['partner_cut']
+
         partner_villas_map = {}
         for sh in shares:
-            v_pnl = pnl_by_v.get(sh.villa_id, {})
-            v_net = v_pnl.get('net', Decimal('0.00'))
-            cut = (v_net * (sh.percentage / Decimal('100.00'))).quantize(Decimal('0.01')) if v_net > 0 else Decimal('0.00')
-            tot_partner += cut
+            cut = split['by_share'].get(sh.pk, Decimal('0.00'))
             cut_str = f"{cut:.2f}".rstrip('0').rstrip('.') if '.' in f"{cut:.2f}" and f"{cut:.2f}".endswith('.00') else f"{cut:.2f}"
             pct_str = f"{sh.percentage:.2f}".rstrip('0').rstrip('.') if '.' in f"{sh.percentage:.2f}" and f"{sh.percentage:.2f}".endswith('.00') else f"{sh.percentage:.2f}"
             partner_villas_map.setdefault(sh.partner.name, []).append(f"{sh.villa.name}={cut_str}({pct_str}%)")
@@ -298,12 +286,12 @@ def _get_financial_export_data(request):
             for p_name, v_list in partner_villas_map.items()
         ]
 
-        owner_cut = max(Decimal('0.00'), distributable - tot_partner)
+        owner_cut = split['owner_share']  # owner keeps the rest and carries any loss: owner + partners = net
 
         rows.extend([
             [],
             [f'{sec}. PROFIT SHARE', 'Amount (QAR)'],
-            ['Distributable Net Profit', f"{distributable:.2f}"],
+            ['Net Profit (Owner + Partners)', f"{split['net']:.2f}"],
             [admin_label, f"{owner_cut:.2f}"],
             ['Total Partners Share', f"{tot_partner:.2f}"],
         ])
@@ -322,18 +310,17 @@ def _get_financial_export_data(request):
 
     villa_rows = []
     if not target_villa:
-        from apps.billing.models import Payment
         from apps.expenses.models import Expense
 
-        live_inv = inv.filter(is_cancelled=False)
-        pay_rows = Payment.objects.filter(invoice__in=live_inv, is_cancelled=False, collected_at__gte=s, collected_at__lte=e).values('invoice__partition__villa_id', 'collected_by__is_owner').annotate(total=Sum('amount'))
+        pay_rows = billing_selectors.income_payments(inv, s, e).values('invoice__partition__villa_id', 'collected_by__is_owner').annotate(total=Sum('amount'))
         exp_rows = exp.filter(status=Expense.Status.ACTIVE, date__gte=s, date__lte=e).values('villa_id', 'paid_by').annotate(total=Sum('amount'))
 
         villa_map = {
             v.id: {'name': v.name, 'income': Decimal('0.00'), 'expenses': Decimal('0.00'), 'staff_c': Decimal('0.00'), 'admin_c': Decimal('0.00'), 'staff_e': Decimal('0.00'), 'admin_e': Decimal('0.00')}
             for v in villas
         }
-        for r in pay_rows:
+        dep_rows = billing_selectors.income_deposits(dep, s, e).values('tenant__partition__villa_id', 'collected_by__is_owner').annotate(total=Sum('amount'))
+        for r in list(pay_rows) + [{'invoice__partition__villa_id': d['tenant__partition__villa_id'], 'collected_by__is_owner': d['collected_by__is_owner'], 'total': d['total']} for d in dep_rows]:
             vid = r['invoice__partition__villa_id']
             if vid in villa_map:
                 amt = r['total'] or Decimal('0.00')
@@ -390,7 +377,7 @@ def _get_financial_export_data(request):
         'inc': inc,
         'exp_tot': exp_tot,
         'net': net,
-        'distributable': distributable,
+        'distributable': net,
         'staff_collected': pnl.get('staff_collected', Decimal('0.00')),
         'admin_collected': pnl.get('admin_collected', Decimal('0.00')),
         'staff_expenses': pnl.get('staff_expenses', Decimal('0.00')),

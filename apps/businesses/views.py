@@ -44,11 +44,12 @@ def business_detail(request, pk):
     villas = selectors.villas_visible_to(request.user).filter(business=business, is_archived=False, is_sold=False)
     period = period_context(request)
     financial = selectors.financial_villas(request.user).filter(business=business, is_sold=False)
-    context = {'period_pnl': billing_selectors.period_profit_loss(selectors.invoices_visible_to(request.user).filter(partition__villa__in=financial), selectors.expenses_visible_to(request.user).filter(villa__in=financial), period['period_start'], period['period_end']) if financial.exists() else None, 'keep': [], **period, 'business': business, 'villas': villas, 'can_view_financials': selectors.can_view_financial_kpis(request.user), 'breadcrumbs': [('Businesses', reverse('businesses:list')), (business.name, None)]}
+    context = {'period_pnl': billing_selectors.period_profit_loss(selectors.invoices_visible_to(request.user).filter(partition__villa__in=financial), selectors.expenses_visible_to(request.user).filter(villa__in=financial), period['period_start'], period['period_end'], deposits=selectors.deposits_visible_to(request.user).filter(tenant__partition__villa__in=financial)) if financial.exists() else None, 'keep': [], **period, 'business': business, 'villas': villas, 'can_view_financials': selectors.can_view_financial_kpis(request.user), 'breadcrumbs': [('Businesses', reverse('businesses:list')), (business.name, None)]}
     if context['can_view_financials']:
         invoices = selectors.invoices_visible_to(request.user).filter(partition__villa__business=business, partition__villa__is_sold=False)
         expenses = selectors.expenses_visible_to(request.user).filter(business=business).filter(models.Q(villa__isnull=True) | models.Q(villa__is_sold=False))
-        context.update(expected_revenue=billing_selectors.expected_revenue(invoices), collected=billing_selectors.collected_amount(invoices), outstanding=billing_selectors.outstanding_amount(invoices), total_expenses=expenses_selectors.valid_expense_total(expenses), net_profit=billing_selectors.profit(invoices, expenses))
+        deposits = selectors.deposits_visible_to(request.user).filter(tenant__partition__villa__business=business, tenant__partition__villa__is_sold=False)
+        context.update(expected_revenue=billing_selectors.expected_revenue(invoices), collected=billing_selectors.collected_amount(invoices), outstanding=billing_selectors.outstanding_amount(invoices), total_expenses=expenses_selectors.valid_expense_total(expenses), net_profit=billing_selectors.profit(invoices, expenses, deposits=deposits))
     return render(request, 'businesses/detail.html', context)
 
 @login_required
@@ -107,7 +108,7 @@ def partner_list(request):
     if q:
         qs = qs.filter(name__icontains=q)
 
-    period = period_context(request)
+    period = period_context(request, allow_future=True)
     all_villas = list(selectors.villas_visible_to(request.user).filter(is_archived=False, is_sold=False).order_by('name'))
     all_partners = list(Partner.objects.all().order_by('name'))
 
@@ -132,84 +133,64 @@ def partner_list(request):
             if not filter_villa:
                 villas = [v for v in villas if v.pk in partner_villa_ids]
 
-    pnl = billing_selectors.profit_loss_by_villa(
-        selectors.invoices_visible_to(request.user).filter(partition__villa__in=villas),
-        selectors.expenses_visible_to(request.user).filter(villa__in=villas),
-        period['period_start'], period['period_end']
-    )
-    total_net = sum((pnl.get(v.pk, {}).get('net', Decimal('0.00')) for v in villas), Decimal('0.00'))
-    distributable_net = max(Decimal('0.00'), total_net)
-
     from apps.businesses.models import PartnerVillaShare
+    from .selectors import EMPTY_VILLA_SPLIT, payouts_for_villas, profit_split
+    invoices = selectors.invoices_visible_to(request.user).filter(partition__villa__in=villas)
+    expenses = selectors.expenses_visible_to(request.user).filter(villa__in=villas)
+    pnl = billing_selectors.profit_loss_by_villa(invoices, expenses, period['period_start'], period['period_end'], deposits=selectors.deposits_visible_to(request.user).filter(tenant__partition__villa__in=villas))
     all_active_shares = list(PartnerVillaShare.objects.filter(villa__in=villas, partner__is_active=True).select_related('partner'))
+    split = profit_split(invoices=invoices, expenses=expenses, deposits=selectors.deposits_visible_to(request.user).filter(tenant__partition__villa__in=villas), start=period['period_start'], end=period['period_end'], shares=all_active_shares)
+    total_net = split['net']
     if filter_partner:
-        target_shares = [s for s in all_active_shares if s.partner_id == filter_partner.pk]
-        total_partner_payout_all = sum(
-            (max(Decimal('0.00'), pnl.get(s.villa_id, {}).get('net', Decimal('0.00'))) * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
-            for s in target_shares
-        ) or Decimal('0.00')
+        total_partner_payout_all = sum((split['by_share'].get(s.pk, Decimal('0.00')) for s in all_active_shares if s.partner_id == filter_partner.pk), Decimal('0.00'))
     else:
-        total_partner_payout_all = sum(
-            (max(Decimal('0.00'), pnl.get(s.villa_id, {}).get('net', Decimal('0.00'))) * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
-            for s in all_active_shares
-        ) or Decimal('0.00')
+        total_partner_payout_all = split['partner_cut']
 
     owner_villa_breakdown = []
     for v in villas:
-        v_net = pnl.get(v.pk, {}).get('net', Decimal('0.00'))
-        if v_net > 0:
-            v_all_shares = [s for s in all_active_shares if s.villa_id == v.pk]
-            v_total_partner_pct = sum((s.percentage for s in v_all_shares), Decimal('0.00'))
-            v_owner_pct = max(Decimal('0.00'), Decimal('100.00') - v_total_partner_pct)
-            v_owner_cut = (v_net * (v_owner_pct / Decimal('100.00'))).quantize(Decimal('0.01'))
+        v_split = split['villas'].get(v.pk, EMPTY_VILLA_SPLIT)
+        if v_split['net'] == 0 and not pnl.get(v.pk):
+            continue
+        v_all_shares = [s for s in all_active_shares if s.villa_id == v.pk]
+        v_total_partner_pct = sum((s.percentage for s in v_all_shares), Decimal('0.00'))
+        if filter_partner:
+            v_partner_shares = [s for s in v_all_shares if s.partner_id == filter_partner.pk]
+            v_partner_pct = sum((s.percentage for s in v_partner_shares), Decimal('0.00'))
+            v_partner_cut = sum((split['by_share'].get(s.pk, Decimal('0.00')) for s in v_partner_shares), Decimal('0.00'))
+            v_partner_names = f"{filter_partner.name} ({v_partner_pct}%)" if v_partner_shares else "None"
+        else:
+            v_partner_pct = v_total_partner_pct
+            v_partner_cut = v_split['partner_cut']
+            v_partner_names = ", ".join([f"{s.partner.name} ({s.percentage}%)" for s in v_all_shares]) if v_all_shares else "None (100% Owner)"
+        owner_villa_breakdown.append({
+            'villa_pk': v.pk,
+            'villa_name': v.name,
+            'pct': max(Decimal('0.00'), Decimal('100.00') - v_total_partner_pct),
+            'cut': v_split['owner_share'],  # the owner keeps the rest and carries a loss-making villa's loss
+            'net': v_split['net'],
+            'expenses': pnl.get(v.pk, {}).get('expenses', Decimal('0.00')),
+            'partner_cut': v_partner_cut,
+            'partner_pct': v_partner_pct,
+            'partner_names': v_partner_names,
+        })
 
-            if filter_partner:
-                v_partner_shares = [s for s in v_all_shares if s.partner_id == filter_partner.pk]
-                v_partner_pct = sum((s.percentage for s in v_partner_shares), Decimal('0.00'))
-                v_partner_cut = (v_net * (v_partner_pct / Decimal('100.00'))).quantize(Decimal('0.01'))
-                v_partner_names = f"{filter_partner.name} ({v_partner_pct}%)" if v_partner_shares else "None"
-            else:
-                v_partner_pct = v_total_partner_pct
-                v_partner_cut = (v_net * (v_partner_pct / Decimal('100.00'))).quantize(Decimal('0.01'))
-                v_partner_names = ", ".join([f"{s.partner.name} ({s.percentage}%)" for s in v_all_shares]) if v_all_shares else "None (100% Owner)"
-
-            owner_villa_breakdown.append({
-                'villa_pk': v.pk,
-                'villa_name': v.name,
-                'pct': v_owner_pct,
-                'cut': v_owner_cut,
-                'net': v_net,
-                'expenses': pnl.get(v.pk, {}).get('expenses', Decimal('0.00')),
-                'partner_cut': v_partner_cut,
-                'partner_pct': v_partner_pct,
-                'partner_names': v_partner_names,
-            })
-
-    total_owner_cut = sum((b['cut'] for b in owner_villa_breakdown), Decimal('0.00'))
-    owner_pct = ((total_owner_cut / distributable_net) * Decimal('100.0')).quantize(Decimal('0.1')) if distributable_net > 0 else Decimal('100.0')
+    total_owner_cut = split['owner_share']
+    owner_pct = ((total_owner_cut / total_net) * Decimal('100.0')).quantize(Decimal('0.1')) if total_net > 0 else Decimal('100.0')
 
     page_obj = paginate_queryset(request, qs)
     partner_ids = [p.pk for p in page_obj]
-    paid_by_partner = {
-        item['partner_id']: (item['total'] or Decimal('0.00'))
-        for item in PartnerPayout.objects.filter(
-            partner_id__in=partner_ids,
-            period_year=period['year'],
-            period_month=period['month'],
-        ).values('partner_id').annotate(total=models.Sum('amount'))
-    }
+    paid_by_partner = {}
+    for payout in payouts_for_villas(villas, period['year'], period['month'] if period['period'] == 'month' else None, partner_ids=partner_ids):
+        paid_by_partner[payout.partner_id] = paid_by_partner.get(payout.partner_id, Decimal('0.00')) + payout.amount
     for p in page_obj:
         p.shares = [s for s in p.villa_shares.all() if s.villa_id in [v.pk for v in villas]]
         p.shares_label = [f"{s.villa.name} ({s.percentage}%)" for s in p.shares]
         p.shares_details = []
         for s in p.shares:
-            v_net = max(Decimal('0.00'), pnl.get(s.villa_id, {}).get('net', Decimal('0.00')))
-            cut = (v_net * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
-            p.shares_details.append(f"{s.villa.name} ({s.percentage}% of QAR {v_net:.2f} = QAR {cut:.2f})")
-        p.total_payout = sum(
-            (max(Decimal('0.00'), pnl.get(s.villa_id, {}).get('net', Decimal('0.00'))) * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
-            for s in p.shares
-        ) or Decimal('0.00')
+            v_net = split['villas'].get(s.villa_id, EMPTY_VILLA_SPLIT)['net']
+            cut = split['by_share'].get(s.pk, Decimal('0.00')) if p.is_active else Decimal('0.00')
+            p.shares_details.append(f"{s.villa.name} ({s.percentage}% of profit, net QAR {v_net:.2f} = QAR {cut:.2f})")
+        p.total_payout = sum((split['by_share'].get(s.pk, Decimal('0.00')) for s in p.shares), Decimal('0.00')) if p.is_active else Decimal('0.00')
         p.paid_amount = paid_by_partner.get(p.pk, Decimal('0.00'))
         if p.total_payout > 0:
             if p.paid_amount >= p.total_payout:
@@ -295,41 +276,41 @@ partner_edit = partner_form
 def partner_detail(request, pk):
     if not request.user.is_owner:
         raise PermissionDenied('Only the owner can view partner details.')
+    from .selectors import EMPTY_VILLA_SPLIT, profit_split
     partner = get_object_or_404(Partner, pk=pk)
-    period = period_context(request)
-    villas = selectors.villas_visible_to(request.user).filter(is_archived=False, is_sold=False)
-    pnl = billing_selectors.profit_loss_by_villa(
-        selectors.invoices_visible_to(request.user).filter(partition__villa__in=villas),
-        selectors.expenses_visible_to(request.user).filter(villa__in=villas),
-        period['period_start'], period['period_end']
-    )
+    period = period_context(request, allow_future=True)
+    is_month = period['period'] == 'month'
     shares = list(partner.villa_shares.select_related('villa').order_by('villa__name'))
     villa_ids = [s.villa_id for s in shares]
+    villas = selectors.villas_visible_to(request.user).filter(pk__in=villa_ids)
+    invoices = selectors.invoices_visible_to(request.user).filter(partition__villa__in=villas)
+    expenses = selectors.expenses_visible_to(request.user).filter(villa__in=villas)
+    deposits = selectors.deposits_visible_to(request.user).filter(tenant__partition__villa__in=villas)
+    pnl = billing_selectors.profit_loss_by_villa(invoices, expenses, period['period_start'], period['period_end'], deposits=deposits)
     all_shares_for_villas = list(
         PartnerVillaShare.objects.filter(
             villa_id__in=villa_ids, partner__is_active=True
         ).select_related('partner')
     )
+    split = profit_split(invoices=invoices, expenses=expenses, deposits=deposits, start=period['period_start'], end=period['period_end'], shares=all_shares_for_villas)
     payout_history = list(partner.payouts.select_related('villa').order_by('-paid_on', '-created_at'))
-    period_payouts = [p for p in payout_history if p.period_year == period['year'] and p.period_month == period['month']]
+    period_payouts = [p for p in payout_history if p.period_year == period['year'] and (not is_month or p.period_month == period['month'])]
     period_paid_amount = sum((p.amount for p in period_payouts), Decimal('0.00'))
-    existing_payouts_for_period = {p.villa_id: p for p in period_payouts if p.villa_id}
-    unassigned_payout = next((p for p in period_payouts if not p.villa_id), None)
 
     for s in shares:
         v = pnl.get(s.villa_id, billing_selectors.EMPTY_PROFIT_LOSS)
         s.villa_income, s.villa_expenses, s.villa_net = v['income'], v['expenses'], v['net']
-        distributable_net = max(Decimal('0.00'), s.villa_net)
-        s.cut = (distributable_net * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
+        # An inactive partner earns nothing; their percentage goes back to the owner.
+        s.cut = split['by_share'].get(s.pk, Decimal('0.00')) if partner.is_active else Decimal('0.00')
         s.co_partners = [ps for ps in all_shares_for_villas if ps.villa_id == s.villa_id and ps.partner_id != partner.pk]
         for cp in s.co_partners:
-            cp.cut = (distributable_net * (cp.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
+            cp.cut = split['by_share'].get(cp.pk, Decimal('0.00'))
         total_villa_partner_pct = sum((ps.percentage for ps in all_shares_for_villas if ps.villa_id == s.villa_id), Decimal('0.00'))
         s.owner_percentage = max(Decimal('0.00'), Decimal('100.00') - total_villa_partner_pct)
-        s.owner_cut = (distributable_net * (s.owner_percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
+        s.owner_cut = split['villas'].get(s.villa_id, EMPTY_VILLA_SPLIT)['owner_share']
         s.villa_payouts = [p for p in period_payouts if p.villa_id == s.villa_id]
-        if not s.villa_payouts and (len(shares) == 1 or unassigned_payout):
-            s.villa_payouts = period_payouts
+        if len(shares) == 1:
+            s.villa_payouts += [p for p in period_payouts if p.villa_id is None]
         s.paid_amount = sum((p.amount for p in s.villa_payouts), Decimal('0.00'))
         s.remaining = max(Decimal('0.00'), s.cut - s.paid_amount)
         s.is_fully_paid = (s.paid_amount >= s.cut and s.cut > 0)
@@ -339,7 +320,8 @@ def partner_detail(request, pk):
     from apps.cash import selectors as cash_selectors
     for s in shares:
         s.cash_pos = cash_selectors.villa_cash_position(s.villa)
-        s.has_unhanded_cash = (s.cash_pos['holding'] > 0)
+        s.month_unhanded_cash = cash_selectors.unhanded_staff_cash_for_month(s.villa, period['year'], period['month']) if is_month else Decimal('0.00')
+        s.has_unhanded_cash = s.month_unhanded_cash > 0
 
     total_payout = sum((s.cut for s in shares), Decimal('0.00'))
     remaining_payout = max(Decimal('0.00'), total_payout - period_paid_amount)
@@ -463,11 +445,15 @@ def partner_payout_create(request, partner_pk):
         except Exception:
             initial_amount = None
 
+    if not villa:
+        messages.error(request, f'{partner.name} has shares in more than one villa — record the payout from the villa it is for.')
+        return redirect(f"{reverse('businesses:partner_detail', args=[partner.pk])}?period=month&year={year}&month={month}")
+
     if villa:
         from apps.cash import selectors as cash_selectors
-        cash_pos = cash_selectors.villa_cash_position(villa)
-        if cash_pos['holding'] > 0:
-            messages.error(request, f'Profit cannot be shared: Staff is currently holding QAR {cash_pos["holding"]:.2f} in cash for {villa.name}. All cash must be handed over by staff first.')
+        unhanded = cash_selectors.unhanded_staff_cash_for_month(villa, year, month)
+        if unhanded > 0:
+            messages.error(request, f'Profit cannot be shared yet: staff still hold QAR {unhanded:.2f} of {villa.name} rent for {year}-{month:02d} in cash. It must be handed over first.')
             back_url = (
                 f"{reverse('villas:villa_detail', args=[villa.pk])}?period=month&year={year}&month={month}"
                 if request.GET.get('from') == 'villa' or request.POST.get('from') == 'villa'
@@ -554,15 +540,13 @@ def villa_partner_payout_batch(request, villa_pk):
     end = date(year, month, calendar.monthrange(year, month)[1])
     invoices = selectors.invoices_visible_to(request.user).filter(partition__villa=villa)
     expenses = selectors.expenses_visible_to(request.user).filter(villa=villa)
-    pnl = billing_selectors.period_profit_loss(invoices, expenses, start, end)
+    pnl = billing_selectors.period_profit_loss(invoices, expenses, start, end, deposits=selectors.deposits_visible_to(request.user).filter(tenant__partition__villa=villa))
     net_profit = pnl.get('net', Decimal('0.00'))
     distributable_profit = max(Decimal('0.00'), net_profit)
 
     shares = list(PartnerVillaShare.objects.filter(villa=villa, partner__is_active=True).select_related('partner'))
-    payouts_qs = list(PartnerPayout.objects.filter(
-        models.Q(villa=villa) | models.Q(villa__isnull=True),
-        period_year=year, period_month=month
-    ).order_by('paid_on', 'created_at'))
+    from .selectors import villa_period_payouts
+    payouts_qs = villa_period_payouts(villa, year, month)
 
     for s in shares:
         s.cut = (distributable_profit * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
@@ -578,12 +562,12 @@ def villa_partner_payout_batch(request, villa_pk):
 
     from apps.cash import selectors as cash_selectors
     cash_pos = cash_selectors.villa_cash_position(villa)
-    cash_holding = cash_pos['holding']
+    cash_holding = cash_selectors.unhanded_staff_cash_for_month(villa, year, month)
     cash_awaiting = cash_pos['awaiting_confirmation']
 
     if request.method == 'POST':
         if cash_holding > 0:
-            messages.error(request, f'Profit cannot be shared: Staff is currently holding QAR {cash_holding:.2f} in cash for {villa.name}. All cash must be handed over by staff first.')
+            messages.error(request, f'Profit cannot be shared yet: staff still hold QAR {cash_holding:.2f} of {villa.name} rent for {year}-{month:02d} in cash. It must be handed over first.')
             return redirect(f"{reverse('villas:villa_detail', args=[villa.pk])}?period=month&year={year}&month={month}")
         if distributable_profit <= 0:
             messages.error(request, 'Cannot record partner payouts when villa net profit is zero or negative.')

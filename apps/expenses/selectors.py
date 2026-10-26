@@ -114,7 +114,8 @@ def fixed_expense_checklist(villa, year: int, month: int, today=None):
     generated = {e.recurring_id: e for e in Expense.objects.filter(villa=villa, period=period, recurring__isnull=False).select_related('category', 'recurring', 'paid_by_user')}
     templates = {t.pk: t for t in RecurringExpense.objects.filter(villa=villa).filter(pk__in=list(generated)).select_related('category')}
     for template in RecurringExpense.objects.filter(villa=villa, is_active=True).select_related('category'):
-        templates[template.pk] = template
+        if template.first_period <= period:
+            templates[template.pk] = template
     zero = Decimal('0.00')
     rows, totals = [], {'total': zero, 'paid': zero, 'unpaid': zero, 'unpaid_count': 0, 'missing_count': 0, 'to_verify_count': 0}
     last_day = calendar.monthrange(year, month)[1]
@@ -158,8 +159,9 @@ def fixed_pending_by_villa(villa_ids, year: int, month: int) -> dict:
     from .models import RecurringExpense
     period = date_type(year, month, 1)
     wanted = {}
-    for villa_id, pk in RecurringExpense.objects.filter(villa_id__in=villa_ids, is_active=True).values_list('villa_id', 'pk'):
-        wanted.setdefault(villa_id, set()).add(pk)
+    for template in RecurringExpense.objects.filter(villa_id__in=villa_ids, is_active=True).only('pk', 'villa_id', 'created_at'):
+        if template.first_period <= period:
+            wanted.setdefault(template.villa_id, set()).add(template.pk)
     settled = {}
     for villa_id, recurring_id in Expense.objects.filter(villa_id__in=villa_ids, period=period, recurring__isnull=False).filter(Q(paid_on__isnull=False) | ~Q(status=Expense.Status.ACTIVE)).values_list('villa_id', 'recurring_id'):
         settled.setdefault(villa_id, set()).add(recurring_id)

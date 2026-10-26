@@ -1,6 +1,6 @@
 import calendar
 import re
-from datetime import date as date_type
+from datetime import date as date_type, timedelta
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -71,6 +71,9 @@ def create_expense(*, villa, category, amount, date, created_by, partition=None,
     if not selectors.can_manage_villa(created_by, villa):
         raise PermissionDenied('You cannot add expenses to this villa.')
     with transaction.atomic():
+        # Nobody picks "paid by": an unpaid expense sits with the side of whoever recorded it, and moves to whoever
+        # actually pays it (owner side for the Owner / Business Manager, staff side — from collected cash — otherwise).
+        fields.setdefault('paid_by', PaidBy.OWNER if _is_admin(created_by, villa.business) else PaidBy.STAFF)
         expense = Expense(business=villa.business, villa=villa, partition=partition, category=category, amount=amount, date=date, created_by=created_by, **fields)
         if expense.paid_on is not None:
             if not can_pay_expense(created_by, expense):
@@ -210,10 +213,15 @@ def _require_fixed_expense_admin(user, villa):
     if not (user.is_owner or selectors.is_business_manager_of(user, villa.business) or selectors.is_villa_staff_of(user, villa)):
         raise PermissionDenied('Only the Owner, Business Manager, or assigned Villa Staff can set a villa\'s fixed expenses.')
 
-def create_recurring_expense(*, villa, category, amount, due_day, created_by, paid_by=PaidBy.OWNER, auto_debit=False) -> RecurringExpense:
+def create_recurring_expense(*, villa, category, amount, due_day, created_by, paid_by=None, auto_debit=False) -> RecurringExpense:
     if villa.is_sold:
         raise DomainError(f'Cannot add fixed expenses to sold villa “{villa.name}”.')
     _require_fixed_expense_admin(created_by, villa)
+    admin = _is_admin(created_by, villa.business)
+    auto_debit = bool(auto_debit) and admin
+    if paid_by is None:
+        # Who normally pays it follows who sets it up; an auto-debit is always the owner account.
+        paid_by = PaidBy.OWNER if (admin or auto_debit) else PaidBy.STAFF
     with transaction.atomic():
         recurring = RecurringExpense(villa=villa, category=category, amount=amount, due_day=due_day, paid_by=paid_by, auto_debit=auto_debit, created_by=created_by)
         recurring.full_clean()
@@ -221,9 +229,29 @@ def create_recurring_expense(*, villa, category, amount, due_day, created_by, pa
         audit_services.log(user=created_by, action=Action.EXPENSE_CREATED, obj=recurring, business=villa.business, villa=villa, new_value=_recurring_snapshot(recurring), reason='fixed monthly expense set up')
     return recurring
 
+def _freeze_past_months(recurring: RecurringExpense) -> None:
+    """Generate every past month (from its first month up to last month) with the current terms, so a later change
+    of amount or payer can only affect this month onwards."""
+    from apps.accounts.services import get_system_user
+    this_month = date_type.today().replace(day=1)
+    have = set(Expense.objects.filter(recurring=recurring).values_list('period', flat=True))
+    period, system_user = recurring.first_period, None
+    while period < this_month:
+        if period not in have:
+            system_user = system_user or get_system_user()
+            _create_fixed_expense(recurring, period, system_user)
+        period = (period + timedelta(days=32)).replace(day=1)
+
 def update_recurring_expense(*, recurring: RecurringExpense, updated_by, **fields) -> RecurringExpense:
-    """Changes apply from the next generated month; already-generated expenses are left as they were."""
+    """Changes apply from the current month; past months keep the terms they had."""
     _require_fixed_expense_admin(updated_by, recurring.villa)
+    if 'auto_debit' in fields:
+        if not _is_admin(updated_by, recurring.villa.business):
+            fields.pop('auto_debit')  # only the owner side can debit the owner account
+        elif fields['auto_debit']:
+            fields['paid_by'] = PaidBy.OWNER
+    if recurring.is_active and any(f in fields and fields[f] != getattr(recurring, f) for f in ('amount', 'paid_by')):
+        _freeze_past_months(recurring)
     old_value = _recurring_snapshot(recurring)
     for field, value in fields.items():
         setattr(recurring, field, value)
@@ -238,6 +266,8 @@ def update_recurring_expense(*, recurring: RecurringExpense, updated_by, **field
 
 def deactivate_recurring_expense(*, recurring: RecurringExpense, updated_by, reason='') -> RecurringExpense:
     _require_fixed_expense_admin(updated_by, recurring.villa)
+    if recurring.is_active:
+        _freeze_past_months(recurring)
     with transaction.atomic():
         recurring.is_active = False
         recurring.updated_by = updated_by
@@ -272,7 +302,7 @@ def _create_fixed_expense(recurring: RecurringExpense, period, generated_by):
 
 def _generate_for_period(*, villa, year, month, generated_by) -> list[Expense]:
     period = date_type(year, month, 1)
-    templates = list(RecurringExpense.objects.filter(villa=villa, is_active=True).select_related('category', 'villa', 'villa__business'))
+    templates = [t for t in RecurringExpense.objects.filter(villa=villa, is_active=True).select_related('category', 'villa', 'villa__business') if t.first_period <= period]
     already = set(Expense.objects.filter(recurring_id__in=[t.pk for t in templates], period=period).values_list('recurring_id', flat=True))
     created = [expense for recurring in templates if recurring.pk not in already for expense in [_create_fixed_expense(recurring, period, generated_by)] if expense is not None]
     return created
@@ -290,7 +320,7 @@ def ensure_fixed_expenses(*, villa_ids, year, month) -> int:
     if not villa_ids or (year, month) > (today.year, today.month):
         return 0
     period = date_type(year, month, 1)
-    templates = list(RecurringExpense.objects.filter(villa_id__in=villa_ids, is_active=True).select_related('category', 'villa', 'villa__business'))
+    templates = [t for t in RecurringExpense.objects.filter(villa_id__in=villa_ids, is_active=True).select_related('category', 'villa', 'villa__business') if t.first_period <= period]
     created = 0
     if templates:
         have = set(Expense.objects.filter(recurring_id__in=[t.pk for t in templates], period=period).values_list('recurring_id', flat=True))

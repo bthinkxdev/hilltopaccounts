@@ -9,18 +9,27 @@ from apps.shared.exceptions import DomainError
 from .exceptions import HandoverNotSubmitted, InvalidHandoverPayment, SelfConfirmationNotAllowed
 from .models import CashHandover
 
-def submit_cash_handover(*, staff, payments, submitted_by, notes='', expenses=()) -> CashHandover:
-    """Hand over collected cash, net of the owner-business expenses the staff paid out of it.
+def submit_cash_handover(*, staff, payments, submitted_by, notes='', expenses=(), deposits=()) -> CashHandover:
+    """Hand over collected cash (rent and advance), net of the owner-business expenses the staff paid out of it.
 
-    declared = cash collections − staff-paid expenses. Every selected record is locked to this handover
+    declared = rent cash + advance cash − staff-paid expenses. Every selected record is locked to this handover
     (until it is rejected), so nothing can be handed over or claimed twice.
     """
+    from apps.tenancy.models import DepositCollection
     if staff.is_owner:
         raise DomainError('Owner collections go straight to owner funds and are not handed over.')
     payments = list(payments)
     expenses = list(expenses)
-    if not payments:
+    deposits = list(deposits)
+    if not payments and not deposits:
         raise DomainError('Select at least one cash collection to hand over.')
+    for deposit in deposits:
+        if deposit.collected_by_id != staff.id:
+            raise InvalidHandoverPayment(f'{deposit} was not collected by {staff}.')
+        if deposit.method != DepositCollection.Method.CASH:
+            raise InvalidHandoverPayment(f'{deposit} is not a cash collection.')
+        if deposit.handovers.filter(status__in=[CashHandover.Status.SUBMITTED, CashHandover.Status.CONFIRMED]).exists():
+            raise InvalidHandoverPayment(f'{deposit} is already part of another handover.')
     live = [CashHandover.Status.SUBMITTED, CashHandover.Status.CONFIRMED]
     for payment in payments:
         if payment.collected_by_id != staff.id:
@@ -38,7 +47,7 @@ def submit_cash_handover(*, staff, payments, submitted_by, notes='', expenses=()
             raise InvalidHandoverPayment(f'{expense} is {expense.status} and cannot be settled.')
         if expense.handovers.filter(status__in=live).exists():
             raise InvalidHandoverPayment(f'{expense} is already part of another handover.')
-    collected = sum((p.amount for p in payments), Decimal('0.00'))
+    collected = sum((p.amount for p in payments), Decimal('0.00')) + sum((d.amount for d in deposits), Decimal('0.00'))
     spent = sum((e.amount for e in expenses), Decimal('0.00'))
     declared_amount = collected - spent
     if declared_amount <= 0:
@@ -46,8 +55,9 @@ def submit_cash_handover(*, staff, payments, submitted_by, notes='', expenses=()
     with transaction.atomic():
         handover = CashHandover.objects.create(staff=staff, declared_amount=declared_amount, notes=notes)
         handover.payments.set(payments)
+        handover.deposits.set(deposits)
         handover.expenses.set(expenses)
-        audit_services.log(user=submitted_by, action=Action.CASH_HANDOVER_SUBMITTED, obj=handover, new_value={'declared_amount': str(declared_amount), 'collected': str(collected), 'expenses_paid': str(spent), 'payment_count': len(payments), 'expense_count': len(expenses)})
+        audit_services.log(user=submitted_by, action=Action.CASH_HANDOVER_SUBMITTED, obj=handover, new_value={'declared_amount': str(declared_amount), 'collected': str(collected), 'expenses_paid': str(spent), 'payment_count': len(payments), 'advance_count': len(deposits), 'expense_count': len(expenses)})
     return handover
 
 def confirm_cash_handover(*, handover: CashHandover, confirmed_amount, confirmed_by, notes='') -> CashHandover:

@@ -14,4 +14,6 @@ class Command(BaseCommand):
         for villa in Villa.objects.filter(pk__in=villa_ids).select_related('business'):
             created += len(generate_recurring_expenses_as_system(villa=villa, year=today.year, month=today.month))
         settled = settle_auto_debits(today=today)
-        self.stdout.write(self.style.SUCCESS(f'{created} fixed expense(s) created, {settled} auto-debit(s) settled.'))
+        from apps.billing.services import ensure_rent_invoices
+        invoiced = ensure_rent_invoices(villa_ids=Villa.objects.filter(is_sold=False).values_list('pk', flat=True))
+        self.stdout.write(self.style.SUCCESS(f'{created} fixed expense(s) created, {settled} auto-debit(s) settled, {invoiced} rent invoice(s) created.'))

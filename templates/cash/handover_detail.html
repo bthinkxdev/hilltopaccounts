@@ -35,7 +35,13 @@
       {% for payment in payments %}
         <div class="list-row">
           <span class="list-row__title">{{ payment.invoice.partition.villa.name }} / {{ payment.invoice.partition.name }}</span>
-          <span class="list-row__meta">{{ payment.invoice.invoice_number }} — QAR {{ payment.amount }} — {{ payment.collected_at }}</span>
+          <span class="list-row__meta">Rent {{ payment.invoice.billing_period_start|date:"M Y" }} — QAR {{ payment.amount }} — collected {{ payment.collected_at|date:"d M Y" }}</span>
+        </div>
+      {% endfor %}
+      {% for deposit in deposits %}
+        <div class="list-row">
+          <span class="list-row__title">{{ deposit.tenant.partition.villa.name }} / {{ deposit.tenant.partition.name }}</span>
+          <span class="list-row__meta">Advance — QAR {{ deposit.amount }} — collected {{ deposit.collected_at|date:"d M Y" }}</span>
         </div>
       {% endfor %}
     </div>

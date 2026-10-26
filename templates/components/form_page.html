@@ -35,13 +35,8 @@
           </div>
         </div>
       {% endif %}
-      {% if deposit_edit_page %}
-        <div id="deposit-fully-paid-msg" style="display: {% if is_fully_paid %}flex{% else %}none{% endif %}; align-items: center; gap: var(--space-2); padding: var(--space-3); background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-sm); margin-bottom: var(--space-4); color: var(--success, #10b981); font-size: 13px; font-weight: 500;">
-          <span>&#10003; Deposit is fully paid. Change the deposit amount above to adjust.</span>
-        </div>
-      {% endif %}
       <div class="form-actions">
-        <button class="btn btn--primary" id="form-submit-btn" type="submit" {% if deposit_edit_page and is_fully_paid %}disabled{% endif %}>{{ submit_label|default:"Save" }}</button>
+        <button class="btn btn--primary" id="form-submit-btn" type="submit">{{ submit_label|default:"Save" }}</button>
         {% if cancel_url or request.GET.next %}<a class="btn btn--ghost" href="{{ request.GET.next|default:cancel_url }}">Cancel</a>{% endif %}
       </div>
     </form>
@@ -162,7 +157,7 @@
     }
     function updateHandoverTotal() {
       var coll = 0, exp = 0;
-      document.querySelectorAll('input[name="payments"]:checked').forEach(function (cb) {
+      document.querySelectorAll('input[name="payments"]:checked, input[name="deposits"]:checked').forEach(function (cb) {
         var label = cb.closest('label') || document.querySelector('label[for="' + cb.id + '"]');
         if (label) coll += parseAmount(label.textContent);
       });
@@ -181,7 +176,7 @@
         netEl.style.color = net > 0 ? 'var(--accent)' : 'var(--danger)';
       }
     }
-    document.querySelectorAll('input[name="payments"], input[name="expenses"]').forEach(function (el) {
+    document.querySelectorAll('input[name="payments"], input[name="deposits"], input[name="expenses"]').forEach(function (el) {
       el.addEventListener('change', updateHandoverTotal);
     });
     updateHandoverTotal();
@@ -211,27 +206,6 @@
     if (r) r.addEventListener('change', update);
     b.addEventListener('change', update);
     update();
-  })();
-{% endif %}
-{% if deposit_edit_page %}
-  <script>
-  (function () {
-    var depInput = document.getElementById('id_deposit');
-    var submitBtn = document.getElementById('form-submit-btn');
-    var msg = document.getElementById('deposit-fully-paid-msg');
-    if (!depInput || !submitBtn) return;
-
-    var initialDeposit = (parseFloat(depInput.value) || 0).toFixed(2);
-    var isFullyPaid = {{ is_fully_paid|yesno:"true,false" }};
-
-    if (isFullyPaid) {
-      depInput.addEventListener('input', function () {
-        var curDeposit = (parseFloat(depInput.value) || 0).toFixed(2);
-        var changed = curDeposit !== initialDeposit;
-        submitBtn.disabled = !changed;
-        if (msg) msg.style.display = changed ? 'none' : 'flex';
-      });
-    }
   })();
   </script>
 {% endif %}

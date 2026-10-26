@@ -74,7 +74,7 @@
   <div class="sec-h">4. Profit Share</div>
   <table class="tbl">
     <tr><th>Description</th><th class="r" width="30%">Amount (QAR)</th></tr>
-    <tr><td>Distributable Net Profit</td><td class="r">{{ distributable|floatformat:2 }}</td></tr>
+    <tr><td>Net Profit (Owner + Partners)</td><td class="r">{{ distributable|floatformat:2 }}</td></tr>
     <tr><td>{{ admin_label }}</td><td class="r">{{ owner_cut|floatformat:2 }}</td></tr>
     <tr class="bold"><td>Total Partners Share</td><td class="r">{{ tot_partner|floatformat:2 }}</td></tr>
   </table>

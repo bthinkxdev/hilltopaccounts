@@ -1,7 +1,7 @@
 from decimal import Decimal
 from django import forms
 from apps.villas.models import Partition, Villa
-from .models import Expense, ExpenseCategory, PaidBy
+from .models import Expense, ExpenseCategory
 
 class _TaggedSelect(forms.Select):
     """Select whose options carry a data-<attr> taken from the model instance, for client-side filtering."""
@@ -31,8 +31,7 @@ class ExpenseForm(forms.Form):
     name = forms.CharField(max_length=100, label='Expense', widget=forms.TextInput(attrs={'list': 'expense-names', 'autocomplete': 'off', 'placeholder': 'e.g. Electricity'}))
     amount = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12, widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01'}))
     date = forms.DateField(label='Expense date', widget=forms.DateInput(attrs={'type': 'date'}))
-    paid_by = forms.ChoiceField(required=False, choices=PaidBy.choices, label='Paid by', help_text='Staff-paid expenses come out of the cash the staff collected; owner-paid ones are settled from the owner account.')
-    mark_paid = forms.BooleanField(required=False, label='Already paid')
+    mark_paid = forms.BooleanField(required=False, label='Already paid', help_text='Paid by you — staff payments come out of the cash you collected.')
     payment_method = forms.ChoiceField(required=False, choices=[('', 'Select a method…')] + list(Expense.Method.choices), help_text='Needed when the expense is already paid.')
     description = forms.CharField(required=False, label='Notes', widget=forms.Textarea(attrs={'rows': 2}))
     reference = forms.CharField(required=False, max_length=100)
@@ -48,21 +47,9 @@ class ExpenseForm(forms.Form):
                 villas = villas.filter(is_archived=False)
             self.fields['villa'].queryset = villas.select_related('business')
             self.fields['partition'].queryset = Partition.objects.filter(villa__in=villas).select_related('villa') if user.is_owner else Partition.objects.filter(villa__in=villas, status=Partition.Status.ACTIVE).select_related('villa')
-            if not user.is_owner:
-                self.fields['paid_by'].choices = [(PaidBy.STAFF, 'Staff — from collected cash')]
-                self.fields['paid_by'].initial = PaidBy.STAFF
-                self.fields['paid_by'].help_text = 'Staff-paid expenses come out of collected cash.'
 
     def clean_name(self):
         return ' '.join(self.cleaned_data['name'].split())
-
-    def clean_paid_by(self):
-        if self.user is not None and not self.user.is_owner:
-            return PaidBy.STAFF
-        chosen = self.cleaned_data.get('paid_by')
-        if chosen:
-            return chosen
-        return PaidBy.OWNER if self.user is not None and self.user.is_owner else PaidBy.STAFF
 
     def clean(self):
         cleaned = super().clean()
@@ -89,14 +76,11 @@ class RecurringExpenseForm(forms.Form):
     name = forms.CharField(max_length=100, label='Expense', widget=forms.TextInput(attrs={'list': 'expense-names', 'autocomplete': 'off', 'placeholder': 'e.g. Villa owner rent'}))
     amount = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12, widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01'}))
     due_day = forms.IntegerField(min_value=1, max_value=28, initial=1, widget=forms.HiddenInput(), required=False)
-    paid_by = forms.ChoiceField(choices=PaidBy.choices, initial=PaidBy.OWNER, label='Paid by')
     auto_debit = forms.BooleanField(required=False, label='Auto-debit from the owner account on the due date')
 
-    def __init__(self, *args, user=None, **kwargs):
+    def __init__(self, *args, user=None, can_auto_debit=None, **kwargs):
         super().__init__(*args, **kwargs)
-        if user and not user.is_owner:
-            self.fields['paid_by'].choices = [(PaidBy.STAFF, 'Staff — from collected cash')]
-            self.fields['paid_by'].initial = PaidBy.STAFF
+        if not (can_auto_debit if can_auto_debit is not None else (user is not None and user.is_owner)):
             self.fields.pop('auto_debit', None)
 
     def clean_name(self):
@@ -106,8 +90,6 @@ class RecurringExpenseForm(forms.Form):
         cleaned = super().clean()
         if not cleaned.get('due_day'):
             cleaned['due_day'] = 1
-        if cleaned.get('auto_debit') and cleaned.get('paid_by') != PaidBy.OWNER:
-            self.add_error('auto_debit', 'Only owner-account expenses can be auto-debited.')
         return cleaned
 
 class ReviseExpenseForm(forms.Form):

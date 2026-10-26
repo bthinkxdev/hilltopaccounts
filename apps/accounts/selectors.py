@@ -44,6 +44,12 @@ def tenants_visible_to(user) -> QuerySet[Tenant]:
         return Tenant.objects.all()
     return Tenant.objects.filter(partition__in=partitions_visible_to(user))
 
+def deposits_visible_to(user):
+    from apps.tenancy.models import DepositCollection
+    if user.is_owner:
+        return DepositCollection.objects.all()
+    return DepositCollection.objects.filter(tenant__partition__in=partitions_visible_to(user))
+
 def charges_visible_to(user) -> QuerySet[Charge]:
     if user.is_owner:
         return Charge.objects.all()

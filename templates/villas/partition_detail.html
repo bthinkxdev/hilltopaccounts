@@ -10,7 +10,8 @@
         {% elif partition.status == 'archived' %}<span class="pill pill--neutral">Archived</span>
         {% elif current_tenant %}<span class="pill pill--success">Occupied</span>
         {% else %}<span class="pill pill--neutral">Vacant</span>{% endif %}
-        {% if partition.rent %}<span class="pill pill--neutral">Rent: QAR {{ partition.rent|floatformat:"2" }}/mo</span>{% endif %}
+        {% if current_tenant %}<span class="pill pill--neutral">Rent: QAR {{ rent.current|default:current_tenant.monthly_rent|floatformat:"2" }}/mo</span>
+        {% elif partition.rent %}<span class="pill pill--neutral">Rent: QAR {{ partition.rent|floatformat:"2" }}/mo</span>{% endif %}
       </div>
       {% if partition.description %}<div class="page-header__meta">{{ partition.description }}</div>{% endif %}
     </div>
@@ -63,7 +64,11 @@
     {% if current_tenant %}
       <div class="list-row">
         <a class="list-row__title" href="{% url 'tenancy:detail' current_tenant.pk %}">{{ current_tenant.name }}</a>
-        <span class="list-row__meta">QAR {{ current_tenant.monthly_rent|floatformat:"2" }}/mo since {{ current_tenant.move_in_date }}</span>
+        <span class="list-row__meta">
+          QAR {{ rent.current|default:current_tenant.monthly_rent|floatformat:"2" }}/mo since {{ current_tenant.move_in_date|date:"d M Y" }}
+          {% if rent.upcoming %} · <strong>QAR {{ rent.upcoming|floatformat:"2" }}/mo from {{ rent.upcoming_from|date:"F Y" }}</strong>{% endif %}
+          {% if current_tenant.deposit > 0 %} · Advance QAR {{ current_tenant.deposit|floatformat:"2" }} ({{ current_tenant.deposit_paid|floatformat:"2" }} received{% if current_tenant.deposit_pending %}, {{ current_tenant.deposit_pending|floatformat:"2" }} pending{% endif %}){% else %} · No advance{% endif %}
+        </span>
         {% if can_manage and not villa.is_archived and not villa.business.is_archived and not villa.is_sold %}<a class="btn btn--ghost" href="{% url 'tenancy:move_out' current_tenant.pk %}">Move out &amp; mark vacant</a>{% endif %}
       </div>
     {% elif partition.status == 'archived' or villa.is_archived or villa.business.is_archived or villa.is_sold %}
@@ -141,8 +146,10 @@
         {% for charge in charges %}
           <div class="list-row">
             <span class="list-row__title">{{ charge.charge_type }}</span>
-            <span class="list-row__meta">QAR {{ charge.amount|floatformat:"2" }} / {{ charge.get_frequency_display }}</span>
-            {% if can_manage and not villa.is_sold %}
+            <span class="list-row__meta">QAR {{ charge.amount|floatformat:"2" }} / {{ charge.get_frequency_display }} · from {{ charge.start_date|date:"d M Y" }}{% if charge.end_date %} until {{ charge.end_date|date:"d M Y" }}{% endif %}</span>
+            {% if charge.charge_type.name|lower == 'rent' %}
+              {% if can_manage and not villa.is_sold %}<a class="btn btn--ghost btn--sm" href="{% url 'tenancy:edit' current_tenant.pk %}">Change rent</a>{% endif %}
+            {% elif can_manage and not villa.is_sold %}
               <a class="btn btn--ghost btn--sm" href="{% url 'billing:charge_cancel' charge.pk %}">Deactivate</a>
             {% endif %}
           </div>
@@ -169,7 +176,12 @@
           <div class="list-row">
             <div>
               <a class="list-row__title" href="{% url 'billing:invoice_detail' invoice.pk %}">{{ invoice.invoice_number }}</a>
-              <div class="list-row__meta">{% if invoice.tenant %}{{ invoice.tenant.name }} · {% endif %}{{ invoice.billing_period_start }} – {{ invoice.billing_period_end }}</div>
+              <div class="list-row__meta">{% if invoice.tenant %}{{ invoice.tenant.name }} · {% endif %}Rent for {{ invoice.billing_period_start|date:"F Y" }}</div>
+              {% for p in invoice.live_payments %}
+                {% with name=p.collected_by.get_full_name|default:p.collected_by.username %}
+                <div class="list-row__meta">Collected QAR {{ p.amount|floatformat:"2g" }} on {{ p.collected_at|date:"d M Y" }} by {% if p.collected_by.is_owner %}{% if name != "Admin" %}{{ name }} (Admin, {% else %}Admin ({% endif %}{% else %}{{ name }} (Staff, {% endif %}{{ p.get_method_display }})</div>
+                {% endwith %}
+              {% endfor %}
             </div>
             {% if invoice.computed_status == "paid" %}<span class="pill pill--success">Paid</span>
             {% elif invoice.computed_status == "overdue" %}<span class="pill pill--danger">Overdue</span>
@@ -179,8 +191,8 @@
         {% endfor %}
       {% else %}
         <div class="empty-state">
-          <div class="empty-state__title">No invoices generated yet.</div>
-          <p>Generate a monthly invoice from this partition's active charges.</p>
+          <div class="empty-state__title">No rent billed yet.</div>
+          <p>Each month of a tenancy is billed automatically.</p>
         </div>
       {% endif %}
       {% if current_tenant and can_manage %}

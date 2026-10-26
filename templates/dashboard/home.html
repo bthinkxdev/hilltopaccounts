@@ -104,8 +104,12 @@
         <div class="kpi__value">QAR {{ expected_revenue|floatformat:"2g" }}</div>
       </div>
       <div class="kpi kpi--ic-wallet">
-        <div class="kpi__label">Collected</div>
+        <div class="kpi__label">Rent Collected</div>
         <div class="kpi__value kpi__value--success">QAR {{ collected|floatformat:"2g" }}</div>
+      </div>
+      <div class="kpi kpi--ic-wallet">
+        <div class="kpi__label">Advance Collected</div>
+        <div class="kpi__value kpi__value--success">QAR {{ advance_collected|floatformat:"2g" }}</div>
       </div>
       <div class="kpi kpi--ic-clock">
         <div class="kpi__label">Outstanding</div>

@@ -33,7 +33,7 @@ class OwnerFullJourneyTests(TestCase):
         tenant = Tenant.objects.get(name='Ahmed Ali')
         self.assertRedirects(r, reverse('tenancy:detail', args=[tenant.pk]))
         r = self.client.post(reverse('billing:invoice_generate', args=[partition.pk]), {'billing_period_start': '2026-02-01', 'billing_period_end': '2026-02-28', 'issue_date': '2026-02-01', 'due_date': '2026-02-10'})
-        invoice = Invoice.objects.get(partition=partition)
+        invoice = Invoice.objects.get(partition=partition, billing_period_start=date(2026, 2, 1))
         self.assertRedirects(r, reverse('billing:invoice_detail', args=[invoice.pk]))
         r = self.client.get(reverse('billing:invoice_detail', args=[invoice.pk]))
         self.assertContains(r, '3000.00')

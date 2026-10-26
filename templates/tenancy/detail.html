@@ -11,7 +11,7 @@
     </div>
     {% if can_manage and tenant.status == "active" and not tenant.partition.villa.is_sold %}
       <div style="display: flex; gap: var(--space-2);">
-        <a class="btn btn--ghost" href="{% url 'tenancy:deposit_edit' tenant.pk %}?next={{ request.get_full_path|urlencode }}">Edit Deposit</a>
+        <a class="btn btn--ghost" href="{% url 'tenancy:deposit_edit' tenant.pk %}?next={{ request.get_full_path|urlencode }}">{% if tenant.deposit_pending > 0 %}Collect Advance{% else %}Edit Advance{% endif %}</a>
         <a class="btn btn--ghost" href="{% url 'tenancy:edit' tenant.pk %}">Edit</a>
         <a class="btn btn--ghost" href="{% url 'tenancy:move_out' tenant.pk %}">Move Out</a>
       </div>
@@ -21,12 +21,17 @@
   <div class="card">
     <div class="card__title">Tenant information</div>
     <div class="grid--kpi">
-      <div class="kpi"><div class="kpi__label">Monthly Rent</div><div class="kpi__value">QAR {{ tenant.monthly_rent }}</div></div>
       <div class="kpi">
-        <div class="kpi__label">Deposit</div>
-        <div class="kpi__value">QAR {{ tenant.deposit }}</div>
+        <div class="kpi__label">Monthly Rent</div>
+        <div class="kpi__value">QAR {{ rent.current|default:tenant.monthly_rent }}</div>
+        {% if rent.upcoming %}<div class="kpi__sub" style="margin-top:2px;">QAR {{ rent.upcoming }} from {{ rent.upcoming_from|date:"F Y" }}</div>{% endif %}
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Advance</div>
+        <div class="kpi__value">{% if tenant.deposit > 0 %}QAR {{ tenant.deposit }}{% else %}None{% endif %}</div>
         <div class="kpi__sub" style="margin-top:2px;">
-          {% if tenant.deposit_status == 'received' %}
+          {% if tenant.deposit_status == 'none' %}
+          {% elif tenant.deposit_status == 'received' %}
             <span class="pill pill--success" style="font-size:10px; padding:1px 6px;">Received</span>
           {% elif tenant.deposit_status == 'partially_paid' %}
             <span class="pill pill--warning" style="font-size:10px; padding:1px 6px;">Received {{ tenant.deposit_paid|floatformat:"0g" }} · Pending {{ tenant.deposit_pending|floatformat:"0g" }}</span>
@@ -47,6 +52,20 @@
       {% if tenant.notes %}<div class="list-row"><span class="list-row__title">Notes</span><span class="list-row__meta">{{ tenant.notes }}</span></div>{% endif %}
     </div>
   </div>
+
+  {% if deposit_collections %}
+  <div class="detail-section">
+    <div class="detail-section__title">Advance collections</div>
+    <div class="card">
+      {% for c in deposit_collections %}
+        <div class="list-row">
+          <span class="list-row__title">QAR {{ c.amount|floatformat:"2g" }}</span>
+          <span class="list-row__meta">Collected on {{ c.collected_at|date:"d M Y" }} by {{ c.collected_by.get_full_name|default:c.collected_by.username }} ({{ c.get_method_display }})</span>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
 
   <div class="detail-section">
     <div class="detail-section__title">Invoices</div>

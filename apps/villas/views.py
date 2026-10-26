@@ -66,6 +66,8 @@ def villa_list(request):
     page_obj = paginate_queryset(request, qs, per_page=12)
     villa_ids = [villa.pk for villa in page_obj]
     period = period_context(request, today)
+    from apps.billing.services import ensure_rent_invoices
+    ensure_rent_invoices(villa_ids=villa_ids)
     if period['period'] == 'month':
         from apps.expenses.services import ensure_fixed_expenses
         ensure_fixed_expenses(villa_ids=villa_ids, year=period['year'], month=period['month'])
@@ -75,7 +77,7 @@ def villa_list(request):
         financial_ids = financial_ids | set(villa_ids)
     pnl_by_villa = {}
     if financial_ids:
-        pnl_by_villa = billing_selectors.profit_loss_by_villa(selectors.invoices_visible_to(request.user).filter(partition__villa__in=financial_ids), selectors.expenses_visible_to(request.user).filter(villa__in=financial_ids), period['period_start'], period['period_end'])
+        pnl_by_villa = billing_selectors.profit_loss_by_villa(selectors.invoices_visible_to(request.user).filter(partition__villa__in=financial_ids), selectors.expenses_visible_to(request.user).filter(villa__in=financial_ids), period['period_start'], period['period_end'], deposits=selectors.deposits_visible_to(request.user).filter(tenant__partition__villa__in=financial_ids))
     from apps.cash.models import CashHandover
     from apps.expenses import selectors as expenses_selectors
     from apps.expenses.models import Expense
@@ -121,32 +123,10 @@ def villa_list(request):
         villa.cover = covers.get(villa.pk)
         villa.vacant_total = villa.partition_total - villa.occupied_total
         villa.pnl = pnl_by_villa.get(villa.pk, billing_selectors.EMPTY_PROFIT_LOSS) if villa.pk in financial_ids else None
-        if villa.pnl:
-            net = villa.pnl.get('net', Decimal('0.00'))
-            distributable = max(Decimal('0.00'), net)
-            s_list = shares_by_v.get(villa.pk, []) if (request.user.is_owner or is_partner) else []
-            tot_p = sum((s.percentage for s in s_list), Decimal('0.00'))
-            p_cut = (distributable * (tot_p / Decimal('100.00'))).quantize(Decimal('0.01'))
-            o_pct = max(Decimal('0.00'), Decimal('100.00') - tot_p)
-            o_cut = max(Decimal('0.00'), distributable - p_cut)
-            villa.partner_cut = p_cut
-            villa.owner_cut = o_cut
-            villa.owner_percentage = o_pct
     totals = None
     scoped_financial = selectors.financial_villas(request.user).filter(pk__in=base.values('pk'))
     if scoped_financial.exists():
-        totals = billing_selectors.period_profit_loss(selectors.invoices_visible_to(request.user).filter(partition__villa__in=scoped_financial), selectors.expenses_visible_to(request.user).filter(villa__in=scoped_financial), period['period_start'], period['period_end'])
-        if request.user.is_owner:
-            tot_net = totals.get('net', Decimal('0.00'))
-            dist_tot = max(Decimal('0.00'), tot_net)
-            tot_partner_cut = Decimal('0.00')
-            for v_id, s_list in (shares_by_v.items() if request.user.is_owner else []):
-                v_net = pnl_by_villa.get(v_id, {}).get('net', Decimal('0.00'))
-                if v_net > 0:
-                    tot_p = sum((s.percentage for s in s_list), Decimal('0.00'))
-                    tot_partner_cut += (v_net * (tot_p / Decimal('100.00'))).quantize(Decimal('0.01'))
-            totals['partner_cut'] = tot_partner_cut
-            totals['owner_cut'] = max(Decimal('0.00'), dist_tot - tot_partner_cut)
+        totals = billing_selectors.period_profit_loss(selectors.invoices_visible_to(request.user).filter(partition__villa__in=scoped_financial), selectors.expenses_visible_to(request.user).filter(villa__in=scoped_financial), period['period_start'], period['period_end'], deposits=selectors.deposits_visible_to(request.user).filter(tenant__partition__villa__in=scoped_financial))
     keep = [(name, value) for name, value in (('q', q), ('business', business_id or ''), ('staff', staff_id), ('status', status if status != 'active' else '')) if value]
     businesses = Business.objects.none() if is_staff else selectors.businesses_visible_to(request.user).filter(is_archived=False)
     context = {'staff_choices': staff_choices, 'selected_staff': staff_id, 'page_obj': page_obj, 'q': q, 'totals': totals, 'keep': keep, 'businesses': businesses, 'selected_business': business_id, 'selected_status': status, 'can_create_villa': selectors.businesses_managed_by(request.user).filter(is_archived=False).exists(), 'breadcrumbs': [('Villas', None)], **period}
@@ -170,6 +150,8 @@ def villa_detail(request, pk):
     start, end = period['period_start'], period['period_end']
     # Fixed expenses show up by themselves every month (idempotent, system-attributed) — nobody re-adds them.
     if not villa.is_sold:
+        from apps.billing.services import ensure_rent_invoices
+        ensure_rent_invoices(villa_ids=[villa.pk])
         for month in ([period['month']] if period['period'] == 'month' else range(1, 13)):
             ensure_fixed_expenses(villa_ids=[villa.pk], year=period['year'], month=month)
     scope = selectors.ManageScope(request.user)
@@ -194,10 +176,13 @@ def villa_detail(request, pk):
     partition_covers = _first_photo_by([p for p in photos if p.partition_id], lambda photo: photo.partition_id)
     invoices = selectors.invoices_visible_to(request.user).filter(partition__villa=villa)
     expenses = selectors.expenses_visible_to(request.user).filter(villa=villa)
+    deposits = selectors.deposits_visible_to(request.user).filter(tenant__partition__villa=villa)
     can_view_financials = True
-    partition_pnl = billing_selectors.profit_loss_by_partition(invoices, expenses, start, end)
+    partition_pnl = billing_selectors.profit_loss_by_partition(invoices, expenses, start, end, deposits=deposits)
+    rent_by_partition = billing_selectors.rent_schedules_by_partition(tenant_by_partition, today)
     for partition in all_partitions:
         partition.tenant = tenant_by_partition.get(partition.pk)
+        partition.rent_schedule = rent_by_partition.get(partition.pk)
         partition.cover = partition_covers.get(partition.pk)
         partition.pnl = partition_pnl.get(partition.pk, billing_selectors.EMPTY_PROFIT_LOSS) if can_view_financials else None
 
@@ -209,7 +194,7 @@ def villa_detail(request, pk):
         return expense
 
     one_off = [decorate(e) for e in expenses.filter(date__gte=start, date__lte=end, recurring__isnull=True).select_related('category', 'partition', 'created_by', 'paid_by_user').order_by('-created_at', '-id')[:15]]
-    rent_rows, rent_totals = (billing_selectors.rent_sheet(partitions=active_partitions, tenant_by_partition=tenant_by_partition, invoice_queryset=invoices, year=period['year'], month=period['month'], today=today) if period['period'] == 'month' else (None, None))
+    rent_rows, rent_totals = (billing_selectors.rent_sheet(tenants=tenants + past_tenants, invoice_queryset=invoices, year=period['year'], month=period['month'], today=today) if period['period'] == 'month' else (None, None))
     fixed_rows, fixed_totals = expenses_selectors.fixed_expense_checklist(villa, period['year'], period['month'], today) if period['period'] == 'month' else (None, None)
     for row in fixed_rows or []:
         if row['expense'] is not None:
@@ -277,62 +262,52 @@ def villa_detail(request, pk):
         **period,
     }
     if can_view_financials:
-        context['pnl'] = billing_selectors.period_profit_loss(invoices, expenses, start, end)
+        context['pnl'] = billing_selectors.period_profit_loss(invoices, expenses, start, end, deposits=deposits)
         context['total_outstanding'] = billing_selectors.outstanding_amount(invoices)
         context['activity'] = AuditLog.objects.filter(villa=villa).select_related('user').order_by('-timestamp')[:8]
-        v_url_qs = f"villa={villa.pk}&year={period['year']}&month={period['month']}"
+        v_url_qs = f"villa={villa.pk}&period={period['period']}&year={period['year']}&month={period['month']}"
         context['period_pnl_urls'] = {
-            'income': f"{reverse('billing:payment_list')}?tab=collected&{v_url_qs}",
+            'income': f"{reverse('billing:payment_list')}?tab=income&{v_url_qs}",
             'expenses': f"{reverse('expenses:list')}?{v_url_qs}",
             'profit': f"{reverse('businesses:partner_list')}?tab=all&{v_url_qs}" if request.user.is_owner else '#',
             'owner_profit': f"{reverse('businesses:partner_list')}?tab=owner&{v_url_qs}" if request.user.is_owner else '#',
             'profit_share': f"{reverse('businesses:partner_list')}?tab=partners&{v_url_qs}" if request.user.is_owner else '#',
-            'staff_collections': f"{reverse('billing:payment_list')}?tab=collected&collector=staff&{v_url_qs}",
-            'admin_collections': f"{reverse('billing:payment_list')}?tab=collected&collector=admin&{v_url_qs}",
+            # Monthly view: these cards sit on the rent card (rent only); yearly view: they are part of income.
+            'staff_collections': f"{reverse('billing:payment_list')}?tab={'collected' if period['period'] == 'month' else 'income'}&collector=staff&{v_url_qs}",
+            'admin_collections': f"{reverse('billing:payment_list')}?tab={'collected' if period['period'] == 'month' else 'income'}&collector=admin&{v_url_qs}",
             'staff_expenses': f"{reverse('expenses:list')}?paid_by=staff&{v_url_qs}",
             'admin_expenses': f"{reverse('expenses:list')}?paid_by=owner&{v_url_qs}",
         }
 
-        from apps.businesses.models import PartnerPayout, PartnerVillaShare
+        from apps.businesses.models import PartnerVillaShare
+        from apps.businesses.selectors import profit_split, villa_period_payouts
         shares = list(PartnerVillaShare.objects.filter(villa=villa, partner__is_active=True).select_related('partner'))
-        net_profit = context['pnl'].get('net', Decimal('0.00'))
-        distributable_profit = max(Decimal('0.00'), net_profit)
-        if shares:
-            total_partner_pct = sum((s.percentage for s in shares), Decimal('0.00'))
-            from django.db.models import Q
-            payouts_qs = list(PartnerPayout.objects.filter(
-                Q(villa=villa) | Q(villa__isnull=True),
-                period_year=period['year'], period_month=period['month']
-            ).order_by('paid_on', 'created_at'))
+        split = profit_split(invoices=invoices, expenses=expenses, deposits=deposits, start=start, end=end, shares=shares)
+        is_month = period['period'] == 'month'
+        month_unhanded_cash = cash_selectors.unhanded_staff_cash_for_month(villa, period['year'], period['month']) if is_month else Decimal('0.00')
+        context['month_unhanded_cash'] = month_unhanded_cash
+        total_partner_pct = sum((s.percentage for s in shares), Decimal('0.00'))
+        payouts = villa_period_payouts(villa, period['year'], period['month'] if is_month else None) if shares else []
+        for s in shares:
+            s.cut = split['by_share'].get(s.pk, Decimal('0.00'))
+            partner_payouts = [p for p in payouts if p.partner_id == s.partner_id]
+            s.paid_amount = sum((p.amount for p in partner_payouts), Decimal('0.00'))
+            s.payout = partner_payouts[-1] if partner_payouts else None
+            s.remaining = max(Decimal('0.00'), s.cut - s.paid_amount)
+            s.is_fully_paid = (s.paid_amount >= s.cut and s.cut > 0)
+            s.is_partial = (0 < s.paid_amount < s.cut)
+        context['villa_partner_shares'] = shares
+        # The owner keeps the rest and bears any loss, so owner + partners always equals the net profit.
+        context['villa_owner_share'] = {'percentage': max(Decimal('0.00'), Decimal('100.00') - total_partner_pct), 'cut': split['owner_share']}
+        context['has_unhanded_cash'] = month_unhanded_cash > 0
+        context['has_unpaid_partners'] = is_month and any(s.remaining > 0 for s in shares) and not context['has_unhanded_cash']
 
-            for s in shares:
-                s.cut = (distributable_profit * (s.percentage / Decimal('100.00'))).quantize(Decimal('0.01'))
-                partner_payouts = [p for p in payouts_qs if p.partner_id == s.partner_id]
-                s.paid_amount = sum((p.amount for p in partner_payouts), Decimal('0.00'))
-                s.payout = partner_payouts[-1] if partner_payouts else None
-                s.remaining = max(Decimal('0.00'), s.cut - s.paid_amount)
-                s.is_fully_paid = (s.paid_amount >= s.cut and s.cut > 0)
-                s.is_partial = (0 < s.paid_amount < s.cut)
-
-            owner_pct = max(Decimal('0.00'), Decimal('100.00') - total_partner_pct)
-            owner_cut = (distributable_profit * (owner_pct / Decimal('100.00'))).quantize(Decimal('0.01'))
-            context['villa_partner_shares'] = shares
-            context['villa_owner_share'] = {'percentage': owner_pct, 'cut': owner_cut}
-            unhanded_cash = context['cash']['holding']
-            context['has_unhanded_cash'] = (unhanded_cash > 0)
-            context['has_unpaid_partners'] = (distributable_profit > 0) and any(not s.is_fully_paid for s in shares) and not context['has_unhanded_cash']
-        else:
-            context['villa_partner_shares'] = []
-            context['villa_owner_share'] = {'percentage': Decimal('100.00'), 'cut': distributable_profit}
-            context['has_unpaid_partners'] = False
-            context['has_unhanded_cash'] = False
-
-        context['owner_share_amount'] = context['villa_owner_share']['cut']
+        context['owner_share_amount'] = split['owner_share']
         context['owner_share_pct'] = context['villa_owner_share']['percentage']
-        context['total_partner_cut'] = sum((s.cut for s in shares), Decimal('0.00')) if shares else Decimal('0.00')
-        context['total_partner_pct'] = total_partner_pct if shares else Decimal('0.00')
+        context['total_partner_cut'] = split['partner_cut']
+        context['total_partner_pct'] = total_partner_pct
         context['partner_count'] = len(shares)
-        context['distributable_profit'] = distributable_profit
+        context['distributable_profit'] = split['net']
 
         is_partner = selectors.is_partner(request.user)
         context['is_partner'] = is_partner
@@ -527,16 +502,21 @@ def partition_detail(request, pk):
         messages.info(request, 'This villa has been sold.' if partition.villa.is_sold else 'This villa has been archived.')
         return redirect('villas:villa_list')
     villa = partition.villa
-    period = period_context(request, today)
+    if not villa.is_sold:
+        from apps.billing.services import ensure_rent_invoices
+        ensure_rent_invoices(villa_ids=[villa.pk])
+    period = period_context(request, today, allow_future=True)
     start, end = period['period_start'], period['period_end']
     current_tenant = partition.current_tenant
     all_invoices = selectors.invoices_visible_to(request.user).filter(partition=partition)
-    invoices = list(all_invoices.select_related('tenant').order_by('-created_at', '-id')[:20])
+    invoices = list(all_invoices.select_related('tenant').prefetch_related('payments__collected_by').order_by('-billing_period_start', '-id')[:20])
     for invoice in invoices:
         invoice.computed_status = billing_selectors.invoice_status(invoice)
         invoice.computed_outstanding = billing_selectors.invoice_outstanding(invoice)
+        invoice.live_payments = sorted((p for p in invoice.payments.all() if not p.is_cancelled), key=lambda p: (p.collected_at, p.pk))
     expenses = selectors.expenses_visible_to(request.user).filter(partition=partition)
-    recent_expenses = list(expenses.filter(date__gte=start, date__lte=end).select_related('category', 'paid_by_user', 'created_by').order_by('-created_at', '-id')[:8])
+    # Every expense of the period (not just the latest few), so the active ones add up to the Expenses card.
+    recent_expenses = list(expenses.filter(date__gte=start, date__lte=end).select_related('category', 'paid_by_user', 'created_by').order_by('-created_at', '-id'))
     scope = selectors.ManageScope(request.user)
     can_manage_here = scope.can_manage_villa(villa.pk, villa.business_id) and not villa.is_sold
     is_staff = selectors.is_field_staff(request.user)
@@ -553,9 +533,9 @@ def partition_detail(request, pk):
         p.can_delete = selectors.can_delete_photo(request.user, p) and not villa.is_sold
     active_charges = list(Charge.objects.filter(partition=partition, is_active=True).filter(Q(end_date__isnull=True) | Q(end_date__gt=today))) if current_tenant else []
     can_add_charge = (not villa.is_sold) and (ChargeType.objects.filter(is_active=True).exclude(id__in={c.charge_type_id for c in active_charges}).exists() if current_tenant else False)
-    context = {'partition': partition, 'villa': villa, 'current_tenant': current_tenant, 'past_tenants': past_tenants, 'charges': active_charges, 'can_add_charge': can_add_charge, 'invoices': invoices, 'recent_expenses': recent_expenses, 'photos': partition_photos, 'can_manage': selectors.can_manage_villa(request.user, villa) and not villa.is_sold, 'can_archive': (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)) and not villa.is_sold, 'can_delete_photos': (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)) and not villa.is_sold, 'can_view_financials': can_view_financials, 'keep': [], 'breadcrumbs': [('Villas', reverse('villas:villa_list')), (villa.name, reverse('villas:villa_detail', args=[villa.pk])), (partition.name, None)], **period}
+    context = {'partition': partition, 'villa': villa, 'current_tenant': current_tenant, 'past_tenants': past_tenants, 'rent': billing_selectors.rent_schedule(partition, today) if current_tenant else None, 'charges': active_charges, 'can_add_charge': can_add_charge, 'invoices': invoices, 'recent_expenses': recent_expenses, 'photos': partition_photos, 'can_manage': selectors.can_manage_villa(request.user, villa) and not villa.is_sold, 'can_archive': (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)) and not villa.is_sold, 'can_delete_photos': (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)) and not villa.is_sold, 'can_view_financials': can_view_financials, 'keep': [], 'breadcrumbs': [('Villas', reverse('villas:villa_list')), (villa.name, reverse('villas:villa_detail', args=[villa.pk])), (partition.name, None)], **period}
     if can_view_financials:
-        context['pnl'] = billing_selectors.period_profit_loss(all_invoices, expenses, start, end)
+        context['pnl'] = billing_selectors.period_profit_loss(all_invoices, expenses, start, end, deposits=selectors.deposits_visible_to(request.user).filter(tenant__partition=partition))
         context['outstanding'] = billing_selectors.outstanding_amount(all_invoices)
     return render(request, 'villas/partition_detail.html', context)
 

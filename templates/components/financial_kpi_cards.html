@@ -6,9 +6,10 @@ Reusable Financial KPI Cards: 4 Card Rows (Income/Expenses/Profit, Collections, 
 <div class="card card--tight">
   <div class="card__title">Income, Expenses &amp; Profit — {{ period_label }}</div>
   <div class="grid--kpi">
-    <a class="kpi kpi--ic-wallet" href="{{ period_pnl_urls.income }}" title="View Income Collections">
+    <a class="kpi kpi--ic-wallet" href="{{ period_pnl_urls.income }}" title="Rent for {{ period_label }} collected so far (whenever it was collected) plus advance collected in {{ period_label }}">
       <div class="kpi__label">Total Income &rarr;</div>
       <div class="kpi__value kpi__value--success">QAR {{ pnl.income|floatformat:"2g" }}</div>
+      {% if pnl.advance_income %}<div class="list-row__meta">Rent QAR {{ pnl.rent_income|floatformat:"2g" }} + Advance QAR {{ pnl.advance_income|floatformat:"2g" }}</div>{% endif %}
     </a>
     <a class="kpi kpi--ic-receipt" href="{{ period_pnl_urls.expenses }}" title="View Expenses">
       <div class="kpi__label">Total Expenses &rarr;</div>
@@ -23,14 +24,26 @@ Reusable Financial KPI Cards: 4 Card Rows (Income/Expenses/Profit, Collections, 
 
 {# row 2: collection details #}
 <div class="card card--tight">
-  <div class="card__title">Collection Details — {{ period_label }}</div>
+  <div class="card__title">{% if rent_totals %}Rent for {{ period_label }}{% else %}Collection Details — {{ period_label }}{% endif %}</div>
   <div class="grid--kpi">
     {% if rent_totals %}
     <a class="kpi kpi--ic-wallet" href="#rent" title="View Expected Tenant Rent">
       <div class="kpi__label">Expected &rarr;</div>
       <div class="kpi__value">QAR {{ rent_totals.expected|floatformat:"2g" }}</div>
     </a>
-    {% endif %}
+    <a class="kpi kpi--ic-user" href="{{ period_pnl_urls.staff_collections }}" title="{{ period_label }} rent collected by staff">
+      <div class="kpi__label">Staff Collected &rarr;</div>
+      <div class="kpi__value kpi__value--success">QAR {{ rent_totals.staff_collected|floatformat:"2g" }}</div>
+    </a>
+    <a class="kpi kpi--ic-wallet" href="{{ period_pnl_urls.admin_collections }}" title="{{ period_label }} rent collected by admin">
+      <div class="kpi__label">Admin Collected &rarr;</div>
+      <div class="kpi__value kpi__value--accent">QAR {{ rent_totals.admin_collected|floatformat:"2g" }}</div>
+    </a>
+    <a class="kpi kpi--ic-wallet" href="#rent" title="{{ period_label }} rent collected so far">
+      <div class="kpi__label">Total Collected &rarr;</div>
+      <div class="kpi__value">QAR {{ rent_totals.collected|floatformat:"2g" }}</div>
+    </a>
+    {% else %}
     <a class="kpi kpi--ic-user" href="{{ period_pnl_urls.staff_collections }}" title="View Staff Collections">
       <div class="kpi__label">Staff Collected &rarr;</div>
       <div class="kpi__value kpi__value--success">QAR {{ pnl.staff_collected|floatformat:"2g" }}</div>
@@ -43,6 +56,7 @@ Reusable Financial KPI Cards: 4 Card Rows (Income/Expenses/Profit, Collections, 
       <div class="kpi__label">Total Collected &rarr;</div>
       <div class="kpi__value">QAR {{ pnl.income|floatformat:"2g" }}</div>
     </a>
+    {% endif %}
     {% if rent_totals %}
     <a class="kpi kpi--ic-home" href="#rent" title="View Pending Tenant Collections">
       <div class="kpi__label">Pending ({{ rent_totals.pending_count }}) &rarr;</div>
@@ -59,14 +73,17 @@ Reusable Financial KPI Cards: 4 Card Rows (Income/Expenses/Profit, Collections, 
     <a class="kpi kpi--ic-receipt" href="{{ period_pnl_urls.staff_expenses }}" title="View Staff Expenses">
       <div class="kpi__label">Staff Expenses &rarr;</div>
       <div class="kpi__value kpi__value--warning">QAR {{ pnl.staff_expenses|floatformat:"2g" }}</div>
+      {% if pnl.staff_expenses_unpaid %}<div class="list-row__meta">QAR {{ pnl.staff_expenses_unpaid|floatformat:"2g" }} not paid yet</div>{% endif %}
     </a>
     <a class="kpi kpi--ic-receipt" href="{{ period_pnl_urls.admin_expenses }}" title="View Admin Expenses">
       <div class="kpi__label">Admin Expenses &rarr;</div>
       <div class="kpi__value kpi__value--danger">QAR {{ pnl.owner_expenses|floatformat:"2g" }}</div>
+      {% if pnl.owner_expenses_unpaid %}<div class="list-row__meta">QAR {{ pnl.owner_expenses_unpaid|floatformat:"2g" }} not paid yet</div>{% endif %}
     </a>
     <a class="kpi kpi--ic-receipt" href="{{ period_pnl_urls.expenses }}" title="View All Expenses">
       <div class="kpi__label">Total Expenses &rarr;</div>
       <div class="kpi__value">QAR {{ pnl.expenses|floatformat:"2g" }}</div>
+      {% if pnl.unpaid_expenses %}<div class="list-row__meta">QAR {{ pnl.unpaid_expenses|floatformat:"2g" }} not paid yet</div>{% endif %}
     </a>
   </div>
 </div>
@@ -85,8 +102,8 @@ Reusable Financial KPI Cards: 4 Card Rows (Income/Expenses/Profit, Collections, 
         <div class="kpi__label">Total Partners Share ({{ total_partner_pct|default:my_partner_share.percentage|floatformat:"1g" }}%)</div>
         <div class="kpi__value {% if total_partner_cut > 0 %}kpi__value--accent{% endif %}">QAR {{ total_partner_cut|default:my_partner_share.cut|floatformat:"2g" }}</div>
       </div>
-      <div class="kpi kpi--ic-wallet" title="Distributable Net Profit">
-        <div class="kpi__label">Distributable Net Profit</div>
+      <div class="kpi kpi--ic-wallet" title="Net profit = owner share + partners share">
+        <div class="kpi__label">Net Profit (Owner + Partners)</div>
         <div class="kpi__value {% if distributable_profit > 0 or pnl.net > 0 %}kpi__value--success{% elif pnl.net < 0 %}kpi__value--danger{% endif %}">
           QAR {{ distributable_profit|default:pnl.net|floatformat:"2g" }}
         </div>
@@ -94,7 +111,8 @@ Reusable Financial KPI Cards: 4 Card Rows (Income/Expenses/Profit, Collections, 
     {% else %}
       <a class="kpi kpi--ic-chart" href="{{ period_pnl_urls.owner_profit|default:period_pnl_urls.profit_share|default:'#' }}" title="View Owner Profit Breakdown">
         <div class="kpi__label">{% if is_partner %}{% if villa %}Admin Share ({{ owner_share_pct|floatformat:"1g" }}%){% else %}Admin Profit Share{% endif %}{% else %}{% if villa %}Owner Share ({{ owner_share_pct|floatformat:"1g" }}%){% else %}Owner Profit Share{% endif %}{% endif %} &rarr;</div>
-        <div class="kpi__value {% if owner_share_amount > 0 %}kpi__value--success{% endif %}">QAR {{ owner_share_amount|floatformat:"2g" }}</div>
+        <div class="kpi__value {% if owner_share_amount > 0 %}kpi__value--success{% elif owner_share_amount < 0 %}kpi__value--danger{% endif %}">QAR {{ owner_share_amount|floatformat:"2g" }}</div>
+        {% if owner_share_amount < 0 %}<div class="list-row__meta">owner carries the loss</div>{% endif %}
       </a>
       <a class="kpi kpi--ic-user" href="{{ period_pnl_urls.profit_share|default:'#' }}" title="View Partner Shares">
         <div class="kpi__label">
@@ -116,8 +134,8 @@ Reusable Financial KPI Cards: 4 Card Rows (Income/Expenses/Profit, Collections, 
           {% endif %}
         </div>
       </a>
-      <a class="kpi kpi--ic-wallet" href="{{ period_pnl_urls.profit|default:period_pnl_urls.profit_share|default:'#' }}" title="View Distributable Net Profit">
-        <div class="kpi__label">Distributable Net Profit &rarr;</div>
+      <a class="kpi kpi--ic-wallet" href="{{ period_pnl_urls.profit|default:period_pnl_urls.profit_share|default:'#' }}" title="Net profit = owner share + partners share">
+        <div class="kpi__label">Net Profit (Owner + Partners) &rarr;</div>
         <div class="kpi__value {% if distributable_profit > 0 or pnl.net > 0 %}kpi__value--success{% elif pnl.net < 0 %}kpi__value--danger{% endif %}">
           QAR {{ distributable_profit|default:pnl.net|floatformat:"2g" }}
         </div>

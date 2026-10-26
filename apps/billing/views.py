@@ -3,8 +3,9 @@ from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db.models import Q
+from django.db.models import F, Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.urls import reverse
 from apps.accounts import selectors
@@ -78,6 +79,9 @@ def charge_cancel(request, pk):
     charge = get_object_or_404(selectors.charges_visible_to(request.user), pk=pk)
     if not _can_manage(request.user, charge.partition.villa):
         raise PermissionDenied('You cannot remove this charge.')
+    if charge.charge_type.name.lower() == 'rent':
+        messages.info(request, 'Rent is changed from the tenant (Edit tenant), so earlier months keep their rent.')
+        return redirect('villas:partition_detail', pk=charge.partition.pk)
     if request.method == 'POST':
         form = ReasonForm(request.POST)
         if form.is_valid():
@@ -150,12 +154,12 @@ def invoice_cancel(request, pk):
 
 @login_required
 def payment_list(request):
-    period = period_context(request)
+    period = period_context(request, allow_future=True)
     year, month = period['year'], period['month']
     today = date.today()
 
     tab = request.GET.get('tab', 'all')
-    if tab not in ('all', 'collected', 'pending'):
+    if tab not in ('all', 'collected', 'pending', 'income', 'received'):
         tab = 'all'
 
     q = request.GET.get('q', '').strip()
@@ -192,14 +196,19 @@ def payment_list(request):
     villas = list(villas_qs.distinct().order_by('name'))
 
     v_ids = [v.pk for v in villas]
-    partitions_qs = selectors.partitions_visible_to(request.user).filter(villa_id__in=v_ids).select_related('villa').prefetch_related('tenancies')
-    tenants = list(selectors.tenants_visible_to(request.user).filter(partition__villa_id__in=v_ids, status=Tenant.Status.ACTIVE).select_related('partition'))
-    tenant_by_partition = {t.partition_id: t for t in tenants}
+    from .services import ensure_rent_invoices
+    ensure_rent_invoices(villa_ids=v_ids)
+    tenants = list(selectors.tenants_visible_to(request.user).filter(partition__villa_id__in=v_ids, status__in=[Tenant.Status.ACTIVE, Tenant.Status.MOVED_OUT]).select_related('partition'))
 
     invoices = selectors.invoices_visible_to(request.user).filter(partition__villa_id__in=v_ids)
 
+    scope = selectors.ManageScope(request.user)
+    can_manage_villa = {v.pk: scope.can_manage_villa(v.pk, v.business_id) for v in villas}
+    is_month = period['period'] == 'month'
+
     villa_sections = []
     all_collection_rows = []
+    arrears_rows = []
     total_all_count = 0
     total_collected_count = 0
     total_pending_count = 0
@@ -214,13 +223,9 @@ def payment_list(request):
 
     q_lower = q.lower()
 
-    for villa in villas:
-        v_partitions = [p for p in partitions_qs if p.villa_id == villa.pk]
-        v_tenant_map = {p.pk: tenant_by_partition[p.pk] for p in v_partitions if p.pk in tenant_by_partition}
-
+    for villa in (villas if is_month else []):  # the rent sheet is one month; the yearly view uses the Collected / Collection Record tabs
         rows, totals = billing_selectors.rent_sheet(
-            partitions=v_partitions,
-            tenant_by_partition=v_tenant_map,
+            tenants=[t for t in tenants if t.partition.villa_id == villa.pk],
             invoice_queryset=invoices.filter(partition__villa=villa),
             year=year,
             month=month,
@@ -234,6 +239,7 @@ def payment_list(request):
         decorated_rows = []
         for r in rows:
             r['villa'] = villa
+            r['can_manage'] = can_manage_villa[villa.pk]
             t = r['tenant']
             dep_total = t.deposit or Decimal('0.00')
             dep_paid = t.deposit_paid or Decimal('0.00')
@@ -355,6 +361,74 @@ def payment_list(request):
                 'deposit_pending': v_deposit_pending,
             })
 
+    # Earlier months still unpaid — so the list shows everything that is still to be collected, not just this month.
+    portfolio_arrears = Decimal('0.00')
+    if is_month:
+        staff_by_villa = {v.pk: {a.user_id for a in v.staff_assignments.all()} for v in villas}
+        villa_by_id = {v.pk: v for v in villas}
+        unpaid_earlier = billing_selectors.with_computed_totals(invoices.filter(is_cancelled=False, billing_period_start__lt=period['period_start'])).filter(_paid__lt=F('_total')).select_related('tenant', 'partition').prefetch_related('items', 'payments__collected_by').order_by('billing_period_start', 'partition__name')
+        for inv in unpaid_earlier:
+            villa, tenant = villa_by_id[inv.partition.villa_id], inv.tenant
+            if q_lower and not (q_lower in inv.partition.name.lower() or q_lower in tenant.name.lower() or q_lower in villa.name.lower() or (tenant.mobile and q_lower in tenant.mobile.lower())):
+                continue
+            staff_ids = staff_by_villa[villa.pk]
+            if (active_collector == 'staff' and not staff_ids) or (active_collector == 'admin' and staff_ids) or (active_collector.isdigit() and int(active_collector) not in staff_ids):
+                continue
+            payments = sorted((p for p in inv.payments.all() if not p.is_cancelled), key=lambda p: (p.collected_at, p.pk))
+            arrears_rows.append({
+                'villa': villa, 'partition': inv.partition, 'tenant': tenant, 'invoice': inv, 'month': inv.billing_period_start,
+                'due': inv._total, 'paid': inv._paid, 'balance': inv._total - inv._paid, 'payments': payments,
+                'charges': [{'name': item.description, 'amount': item.amount} for item in inv.items.all()],
+                'is_current': tenant.status == Tenant.Status.ACTIVE and tenant.partition_id == inv.partition_id,
+                'can_manage': can_manage_villa[villa.pk],
+            })
+            portfolio_arrears += inv._total - inv._paid
+            total_all_count += 1
+            total_pending_count += 1
+    if tab == 'collected':
+        arrears_rows = []
+
+    def filtered(qs, tenant_path):
+        """Apply the page filters to rent payments (tenant_path='invoice__') or advance collections (tenant_path='')."""
+        if villa_id.isdigit():
+            qs = qs.filter(**{f'{tenant_path}tenant__partition__villa_id': int(villa_id)})
+        if active_collector == 'staff':
+            qs = qs.filter(collected_by__is_owner=False)
+        elif active_collector == 'admin':
+            qs = qs.filter(collected_by__is_owner=True)
+        elif active_collector.isdigit():
+            qs = qs.filter(collected_by_id=int(active_collector))
+        if q:
+            qs = qs.filter(Q(**{f'{tenant_path}tenant__name__icontains': q}) | Q(**{f'{tenant_path}tenant__mobile__icontains': q}) | Q(**{f'{tenant_path}tenant__partition__name__icontains': q}) | Q(**{f'{tenant_path}tenant__partition__villa__name__icontains': q}))
+        return qs.select_related(f'{tenant_path}tenant__partition__villa', 'collected_by')
+
+    def collection_rows(payments, deposits):
+        """One list of everything collected — rent and advance — each with when, by whom, and what it was for."""
+        rows = []
+        for p in filtered(payments, 'invoice__'):
+            month = p.invoice.billing_period_start
+            rows.append({'collected_at': p.collected_at, 'created_at': p.created_at, 'tenant': p.invoice.tenant, 'partition': p.invoice.tenant.partition, 'villa': p.invoice.tenant.partition.villa,
+                         'for_label': f'{month:%B %Y}', 'for_flag': 'Arrears' if month < period['period_start'] else ('Advance rent' if month > period['period_end'] else ''),
+                         'collected_by': p.collected_by, 'method': p.get_method_display(), 'amount': p.amount})
+        for d in filtered(deposits, ''):
+            rows.append({'collected_at': d.collected_at, 'created_at': d.created_at, 'tenant': d.tenant, 'partition': d.tenant.partition, 'villa': d.tenant.partition.villa,
+                         'for_label': 'Advance / deposit', 'for_flag': '', 'collected_by': d.collected_by, 'method': d.get_method_display(), 'amount': d.amount})
+        for row in rows:
+            # Time is known only when it was recorded on the collection day itself (a back-dated entry has no real time).
+            recorded = timezone.localtime(row['created_at'])
+            row['collected_time'] = recorded if recorded.date() == row['collected_at'] else None
+        rows.sort(key=lambda r: (r['collected_at'], r['created_at']), reverse=True)
+        return rows
+
+    start, end = period['period_start'], period['period_end']
+    visible_deposits = selectors.deposits_visible_to(request.user)
+    # Income: rent FOR this period's months + advance collected in it — the same rule as the Total Income card.
+    income_records = collection_rows(billing_selectors.income_payments(selectors.invoices_visible_to(request.user), start, end), billing_selectors.income_deposits(visible_deposits, start, end))
+    # Collection record: everything physically collected on dates inside the period, whatever it was for.
+    received_records = collection_rows(selectors.payments_visible_to(request.user).filter(is_cancelled=False, invoice__is_cancelled=False, collected_at__gte=start, collected_at__lte=end), visible_deposits.filter(collected_at__gte=start, collected_at__lte=end))
+    received_payments = income_records if tab == 'income' else received_records
+    received_total = sum((r['amount'] for r in received_payments), Decimal('0.00'))
+
     has_filters = bool(q or active_collector or villa_id)
 
     keep = []
@@ -372,7 +446,11 @@ def payment_list(request):
             'all': total_all_count,
             'collected': total_collected_count,
             'pending': total_pending_count,
+            'income': len(income_records),
+            'received': len(received_records),
         },
+        'received_payments': received_payments,
+        'received_total': received_total,
         'portfolio_rent_expected': portfolio_rent_expected,
         'portfolio_rent_collected': portfolio_rent_collected,
         'portfolio_rent_pending': portfolio_rent_pending,
@@ -388,7 +466,9 @@ def payment_list(request):
         'q': q,
         'keep': keep,
         'has_filters': has_filters,
-        'can_manage': True,
+        'arrears_rows': arrears_rows,
+        'portfolio_arrears': portfolio_arrears,
+        'is_month': is_month,
     }
     context.update(period)
     return render(request, 'billing/payment_list.html', context)
@@ -455,19 +535,20 @@ def payment_correct(request, pk):
 @require_POST
 def rent_collect(request, partition_pk):
     """Staff taps 'Collected' on the month's rent sheet. POST only."""
+    from django.utils.http import url_has_allowed_host_and_scheme
     partition = get_object_or_404(selectors.partitions_visible_to(request.user).select_related('villa'), pk=partition_pk)
-    back = request.POST.get('next') or reverse('villas:villa_detail', args=[partition.villa_id])
+    next_url = request.POST.get('next')
+    if next_url and not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        next_url = None
+    back = next_url or reverse('villas:villa_detail', args=[partition.villa_id])
     try:
+        collected_at_str = request.POST.get('collected_at', '').strip()
+        collected_at = date.fromisoformat(collected_at_str) if collected_at_str else None
         y_val = request.POST.get('year') or request.GET.get('year')
         m_val = request.POST.get('month') or request.GET.get('month')
         if not y_val or not m_val:
-            collected_at_str = request.POST.get('collected_at')
-            if collected_at_str:
-                d = date.fromisoformat(collected_at_str)
-                y_val, m_val = d.year, d.month
-            else:
-                today = date.today()
-                y_val, m_val = today.year, today.month
+            d = collected_at or date.today()
+            y_val, m_val = d.year, d.month
         year, month = int(y_val), int(m_val)
         if not (2000 <= year <= 2100 and 1 <= month <= 12):
             raise ValueError
@@ -478,31 +559,29 @@ def rent_collect(request, partition_pk):
     if method not in ('cash', 'bank_transfer'):
         messages.error(request, 'Choose how the rent was paid.')
         return redirect(back)
-    if not request.POST.get('next'):
+    if not next_url:
         back = f'{back}?period=month&year={year}&month={month}#rent'
     if not _can_manage(request.user, partition.villa):
         raise PermissionDenied('You cannot collect rent for this villa.')
     amount_str = request.POST.get('amount', '').strip()
-    rent_amount_str = request.POST.get('rent_amount', '').strip()
     try:
         amount = Decimal(amount_str) if amount_str else None
-        rent_amount = Decimal(rent_amount_str) if rent_amount_str else None
     except Exception:
         messages.error(request, 'Please enter a valid amount.')
         return redirect(back)
     try:
-        payment = collect_rent(
+        payments = collect_rent(
             partition=partition,
             year=year,
             month=month,
             method=method,
             collected_by=request.user,
             amount=amount,
-            rent_amount=rent_amount,
+            collected_at=collected_at,
         )
     except DomainError as exc:
         messages.error(request, str(exc))
     else:
-        messages.success(request, f'{partition.name}: QAR {payment.amount} rent collected for {payment.invoice.billing_period_start:%B %Y}.')
+        messages.success(request, f'{partition.name}: QAR {sum(p.amount for p in payments)} collected for {date(year, month, 1):%B %Y}.')
     return redirect(back)
 

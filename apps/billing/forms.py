@@ -14,10 +14,13 @@ class ChargeForm(forms.Form):
 
     def __init__(self, *args, partition=None, **kwargs):
         super().__init__(*args, **kwargs)
+        # Rent is set on the tenant (onboarding / edit tenant) so its month-by-month history stays correct.
+        types = ChargeType.objects.filter(is_active=True).exclude(name__iexact='Rent')
         if partition:
             today = date.today()
             active_ids = Charge.objects.filter(partition=partition, is_active=True).filter(Q(end_date__isnull=True) | Q(end_date__gt=today)).values_list('charge_type_id', flat=True)
-            self.fields['charge_type'].queryset = ChargeType.objects.filter(is_active=True).exclude(id__in=active_ids)
+            types = types.exclude(id__in=active_ids)
+        self.fields['charge_type'].queryset = types
 
 class NewChargeTypeForm(forms.Form):
     name = forms.CharField(max_length=100)

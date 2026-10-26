@@ -10,6 +10,7 @@ class Tenant(models.Model):
         ARCHIVED = ('archived', 'Archived')
 
     class DepositStatus(models.TextChoices):
+        NONE = ('none', 'No advance')
         RECEIVED = ('received', 'Received')
         PENDING = ('pending', 'Pending')
         PARTIALLY_PAID = ('partially_paid', 'Partially Paid')
@@ -45,7 +46,9 @@ class Tenant(models.Model):
             self.deposit = Decimal('0.00')
         if self.deposit_paid is None:
             self.deposit_paid = Decimal('0.00')
-        if self.deposit > 0 and self.deposit_paid >= self.deposit:
+        if self.deposit == 0:
+            self.deposit_status = self.DepositStatus.NONE
+        elif self.deposit_paid >= self.deposit:
             self.deposit_status = self.DepositStatus.RECEIVED
         elif self.deposit_paid > 0:
             self.deposit_status = self.DepositStatus.PARTIALLY_PAID
@@ -62,3 +65,29 @@ class Tenant(models.Model):
 
     def __str__(self):
         return f'{self.name} — {self.partition}'
+
+
+class DepositCollection(models.Model):
+    """One collection of a tenant's advance (security deposit). Never edited; the tenant's deposit_paid is their sum.
+
+    An advance is a refundable liability, not income, so it never appears in income or profit.
+    """
+
+    class Method(models.TextChoices):
+        CASH = ('cash', 'Cash')
+        BANK_TRANSFER = ('bank_transfer', 'Bank Transfer')
+        OTHER = ('other', 'Other')
+
+    tenant = models.ForeignKey(Tenant, on_delete=models.PROTECT, related_name='deposit_collections')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    method = models.CharField(max_length=20, choices=Method.choices, default=Method.CASH)
+    collected_at = models.DateField()
+    collected_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-collected_at', '-id']
+        constraints = [models.CheckConstraint(check=models.Q(amount__gt=0), name='deposit_collection_amount_positive')]
+
+    def __str__(self):
+        return f'{self.amount} advance — {self.tenant.name} ({self.collected_at})'

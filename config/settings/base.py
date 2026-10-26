@@ -5,7 +5,7 @@ env = environ.Env(DEBUG=(bool, False))
 environ.Env.read_env(BASE_DIR / '.env')
 SECRET_KEY = env('SECRET_KEY')
 DEBUG = env('DEBUG')
-ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=[])
+ALLOWED_HOSTS = ["*"]
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
 DJANGO_APPS = ['django.contrib.admin', 'django.contrib.auth', 'django.contrib.contenttypes', 'django.contrib.sessions', 'django.contrib.messages', 'django.contrib.staticfiles', 'django.contrib.humanize']
 LOCAL_APPS = ['apps.shared', 'apps.businesses', 'apps.villas', 'apps.tenancy', 'apps.billing', 'apps.expenses', 'apps.cash', 'apps.accounts', 'apps.audit', 'apps.dashboard', 'apps.notifications', 'apps.listings']

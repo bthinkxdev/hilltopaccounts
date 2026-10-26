@@ -198,6 +198,7 @@ class QueryCountTests(TestCase):
         self._count(reverse('villas:villa_detail', args=[villa.pk]))  # warm caches (content types etc.)
         few = (self._count(reverse('villas:villa_detail', args=[villa.pk])), self._count(reverse('expenses:list')))
         self._populate(villa, owner, 6, 10)
+        self._count(reverse('villas:villa_detail', args=[villa.pk]))  # one-time: bills the new tenants' current month
         many = (self._count(reverse('villas:villa_detail', args=[villa.pk])), self._count(reverse('expenses:list')))
         self.assertEqual(few, many)
 

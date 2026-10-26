@@ -23,6 +23,32 @@ def ensure_rent_charge(*, partition, tenant, created_by):
         return None
     return create_charge(partition=partition, charge_type=rent_type, amount=tenant.monthly_rent, start_date=tenant.move_in_date, created_by=created_by, frequency=Charge.Frequency.MONTHLY)
 
+def rent_change_effective_date(*, partition, tenant) -> date:
+    """First month a new rent can apply to: the current month, or the month after the latest billed month if later.
+    Billed months (and any earlier unbilled months) keep the rent they had."""
+    this_month = date.today().replace(day=1)
+    last_billed = Invoice.objects.filter(partition=partition, tenant=tenant, is_cancelled=False).order_by('-billing_period_start').values_list('billing_period_start', flat=True).first()
+    if last_billed is None:
+        return max(this_month, tenant.move_in_date.replace(day=1))
+    return max(this_month, (last_billed.replace(day=1) + timedelta(days=32)).replace(day=1))
+
+def change_rent(*, partition, tenant, new_amount, changed_by) -> date:
+    """Set a tenant's new monthly rent from the first month it can apply to; returns that date.
+
+    The running Rent charge is ended the day before and a new one starts, so every earlier month keeps its own
+    rent — nothing billed or past is rewritten.
+    """
+    effective = rent_change_effective_date(partition=partition, tenant=tenant)
+    rent_type = get_or_create_charge_type(name='Rent')
+    with transaction.atomic():
+        for charge in Charge.objects.filter(partition=partition, charge_type=rent_type, is_active=True).filter(Q(end_date__isnull=True) | Q(end_date__gte=effective)):
+            if charge.start_date >= effective:
+                cancel_charge(charge=charge, cancelled_by=changed_by, reason='Rent changed')
+            else:
+                update_charge(charge=charge, updated_by=changed_by, end_date=effective - timedelta(days=1))
+        create_charge(partition=partition, charge_type=rent_type, amount=new_amount, start_date=effective, created_by=changed_by, frequency=Charge.Frequency.MONTHLY)
+    return effective
+
 def close_future_charges(*, partition, move_out_date, closed_by):
     """Move-out: end running monthly charges at the move-out date and deactivate anything starting after it."""
     for charge in Charge.objects.filter(partition=partition, is_active=True):
@@ -90,6 +116,58 @@ def generate_monthly_invoice(*, partition, billing_period_start, billing_period_
         audit_services.log(user=generated_by, action=Action.INVOICE_CREATED, obj=invoice, business=partition.villa.business, villa=partition.villa, new_value={'invoice_number': invoice.invoice_number, 'tenant': tenant.name, 'total': str(selectors.invoice_total(invoice)), 'line_items': len(charges)})
     return invoice
 
+def _month_end(month_start: date) -> date:
+    return (month_start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+
+def _months_to_bill(tenant, up_to: date) -> list:
+    month, last = selectors.first_billed_month(tenant), up_to.replace(day=1)
+    if tenant.move_out_date:
+        last = min(last, tenant.move_out_date.replace(day=1))
+    months = []
+    while month <= last:
+        months.append(month)
+        month = (month + timedelta(days=32)).replace(day=1)
+    return months
+
+def ensure_tenant_invoices(tenant, *, up_to: date, generated_by, billed=None) -> int:
+    from apps.villas.models import Partition
+    created = 0
+    if billed is None:
+        billed = {d.replace(day=1) for d in Invoice.objects.filter(partition_id=tenant.partition_id, tenant=tenant, is_cancelled=False).values_list('billing_period_start', flat=True)}
+    for month in _months_to_bill(tenant, up_to):
+        if month not in billed:
+            end = _month_end(month)
+            with transaction.atomic():
+                locked = Partition.objects.select_for_update().get(pk=tenant.partition_id)
+                if not Invoice.objects.filter(partition=locked, is_cancelled=False, billing_period_start__lte=end, billing_period_end__gte=month).exists():
+                    try:
+                        generate_monthly_invoice(partition=locked, billing_period_start=month, billing_period_end=end, issue_date=month, due_date=min(end, month + timedelta(days=9)), generated_by=generated_by)
+                        created += 1
+                    except (NothingToBill, DuplicateInvoicePeriod, PartitionVacant):
+                        pass
+    return created
+
+def ensure_rent_invoices(*, villa_ids, up_to=None) -> int:
+    """Give every month of every active tenancy its invoice, up to the current month — frozen at that month's rent.
+
+    Without this a month only existed once someone collected something, so untouched months were missing from
+    rent to collect, overdue alerts and outstanding totals. Idempotent; attributed to the system user.
+    """
+    from apps.accounts.services import get_system_user
+    from apps.tenancy.models import Tenant
+    tenants = list(Tenant.objects.filter(partition__villa_id__in=list(villa_ids), status=Tenant.Status.ACTIVE, partition__villa__is_sold=False))
+    if not tenants:
+        return 0
+    up_to = up_to or date.today()
+    billed = {}
+    for tenant_id, start in Invoice.objects.filter(tenant__in=tenants, is_cancelled=False).values_list('tenant_id', 'billing_period_start'):
+        billed.setdefault(tenant_id, set()).add(start.replace(day=1))
+    missing = [t for t in tenants if any(m not in billed.get(t.pk, set()) for m in _months_to_bill(t, up_to))]
+    if not missing:
+        return 0  # constant queries on every page once everything is billed
+    system_user = get_system_user()
+    return sum(ensure_tenant_invoices(t, up_to=up_to, generated_by=system_user, billed=billed.get(t.pk, set())) for t in missing)
+
 def cancel_invoice(*, invoice: Invoice, cancelled_by, reason='') -> Invoice:
     if invoice.is_cancelled:
         raise InvoiceCancelled(f'{invoice} is already cancelled.')
@@ -141,56 +219,38 @@ def correct_payment(*, payment: Payment, new_amount, corrected_by, reason, metho
     return new_payment
 
 
-def collect_rent(*, partition, year, month, method, collected_by, amount=None, rent_amount=None) -> Payment:
+def collect_rent(*, partition, year, month, method, collected_by, amount=None, collected_at=None) -> list[Payment]:
     """Monthly rent collection for a partition.
 
     Creates the month's invoice on first use (and the rent charge from the tenant's monthly rent when the
-    partition has no charges yet), supports rent amount edits and partial payments, then records the payment.
+    partition has no charges yet), then records the amount received — partial payments leave the rest pending.
+    The rent itself is never changed here: it is set on the tenant (see change_rent).
     The partition row is locked, so concurrent staff actions cannot conflict.
     """
     from apps.villas.models import Partition
     if not access.can_manage_villa(collected_by, partition.villa):
         raise PermissionDenied('You cannot collect rent for this villa.')
+    collected_at = collected_at or date.today()
+    if collected_at > date.today():
+        raise DomainError('Collection date cannot be in the future.')
     start, end = selectors.period_bounds(year, month)
     with transaction.atomic():
         locked = Partition.objects.select_for_update().select_related('villa', 'villa__business').get(pk=partition.pk)
         tenant = locked.current_tenant
         if tenant is None:
             raise PartitionVacant(f'{locked} has no active tenant — nothing to collect.')
-        invoices = list(Invoice.objects.filter(partition=locked, billing_period_start__lte=end, billing_period_end__gte=start, is_cancelled=False))
-        if not invoices:
+        month_invoices = Invoice.objects.filter(partition=locked, billing_period_start__lte=end, billing_period_end__gte=start, is_cancelled=False)
+        if not month_invoices.exists():
             ensure_rent_charge(partition=locked, tenant=tenant, created_by=collected_by)
-            inv = generate_monthly_invoice(partition=locked, billing_period_start=start, billing_period_end=end, issue_date=start, due_date=min(end, start + timedelta(days=9)), generated_by=collected_by)
-            invoices = [inv]
-        target_invoice = None
-        for inv in invoices:
-            if selectors.invoice_outstanding(inv) > 0:
-                target_invoice = inv
-                break
-        if target_invoice is None:
-            try:
-                inv = generate_monthly_invoice(partition=locked, billing_period_start=start, billing_period_end=end, issue_date=start, due_date=min(end, start + timedelta(days=9)), generated_by=collected_by)
-                target_invoice = inv
-            except (DuplicateInvoicePeriod, NothingToBill):
-                raise NothingToCollect(f'{locked.name}: rent for {start:%B %Y} is already fully collected, or there is nothing to bill.')
-
-        if rent_amount is not None and str(rent_amount).strip() != '':
-            rent_val = Decimal(str(rent_amount))
-            rent_item = target_invoice.items.filter(charge__charge_type__name='Rent').first()
-            if rent_item:
-                paid_so_far = selectors.invoice_paid_amount(target_invoice)
-                other_items_sum = sum((item.amount for item in target_invoice.items.exclude(pk=rent_item.pk)), start=Decimal('0.00'))
-                if (rent_val + other_items_sum) < paid_so_far:
-                    raise DomainError(f'Total rent cannot be less than already collected amount (QAR {paid_so_far}).')
-                if rent_item.amount != rent_val:
-                    rent_item.amount = rent_val
-                    rent_item.save(update_fields=['amount'])
-            if tenant and tenant.monthly_rent != rent_val:
-                tenant.monthly_rent = rent_val
-                tenant.save(update_fields=['monthly_rent'])
-            Charge.objects.filter(partition=locked, charge_type__name='Rent', is_active=True).update(amount=rent_val)
-
-        outstanding = selectors.invoice_outstanding(target_invoice)
+        # Bill whatever of the month is not on a bill yet — the first bill, or a charge (e.g. Gas) added after the
+        # month was already billed — so the amount due here is exactly what the rent sheet shows.
+        try:
+            generate_monthly_invoice(partition=locked, billing_period_start=start, billing_period_end=end, issue_date=start, due_date=min(end, start + timedelta(days=9)), generated_by=collected_by)
+        except (DuplicateInvoicePeriod, NothingToBill):
+            pass
+        open_invoices = [(inv, selectors.invoice_outstanding(inv)) for inv in month_invoices.order_by('issue_date', 'id')]
+        open_invoices = [(inv, due) for inv, due in open_invoices if due > 0]
+        outstanding = sum((due for _, due in open_invoices), Decimal('0.00'))
         if outstanding <= Decimal('0.00'):
             raise NothingToCollect(f'{locked.name}: rent for {start:%B %Y} is already fully collected, or there is nothing to bill.')
 
@@ -203,4 +263,12 @@ def collect_rent(*, partition, year, month, method, collected_by, amount=None, r
         else:
             pay_amount = outstanding
 
-        return record_payment(invoice=target_invoice, amount=pay_amount, method=method, collected_by=collected_by, collected_at=date.today(), created_by=collected_by)
+        # One amount received can settle several bills of the month: oldest first, one payment record per bill.
+        payments, remaining = [], pay_amount
+        for inv, due in open_invoices:
+            if remaining <= 0:
+                break
+            part = min(due, remaining)
+            payments.append(record_payment(invoice=inv, amount=part, method=method, collected_by=collected_by, collected_at=collected_at, created_by=collected_by))
+            remaining -= part
+        return payments

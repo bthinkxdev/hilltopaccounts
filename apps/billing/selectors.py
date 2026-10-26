@@ -48,9 +48,10 @@ def collection_rate(invoice_queryset) -> Decimal:
         return Decimal('0.00')
     return (collected_amount(invoice_queryset) / revenue * 100).quantize(Decimal('0.01'))
 
-def profit(invoice_queryset, expense_queryset) -> Decimal:
+def profit(invoice_queryset, expense_queryset, *, deposits) -> Decimal:
+    """All-time profit: rent collected + advance collected − expenses."""
     from apps.expenses.selectors import valid_expense_total
-    return collected_amount(invoice_queryset) - valid_expense_total(expense_queryset)
+    return collected_amount(invoice_queryset) + (deposits.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')) - valid_expense_total(expense_queryset)
 
 def overdue_invoices(invoice_queryset):
     today = date.today()
@@ -86,75 +87,104 @@ def period_bounds(year: int, month: int | None = None) -> tuple[date, date]:
         return date(year, 1, 1), date(year, 12, 31)
     return date(year, month, 1), date(year, month, calendar.monthrange(year, month)[1])
 
-def income_between(invoice_queryset, start: date, end: date) -> Decimal:
-    """Cash-basis income: live payments collected in the period against non-cancelled invoices."""
-    live = invoice_queryset.filter(is_cancelled=False)
-    return Payment.objects.filter(invoice__in=live, is_cancelled=False, collected_at__gte=start, collected_at__lte=end).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+def income_payments(invoice_queryset, start: date, end: date):
+    """Payments that are income of the period: rent FOR a month in the period, whenever it was collected.
+
+    Every month is isolated — last month's rent collected today is last month's income, next month's rent
+    collected today is next month's income. The collection date is only shown on the collection record.
+    """
+    live = invoice_queryset.filter(is_cancelled=False, billing_period_start__gte=start, billing_period_start__lte=end)
+    return Payment.objects.filter(invoice__in=live, is_cancelled=False)
+
+def income_deposits(deposit_queryset, start: date, end: date):
+    """Advance (deposit) collections that are income of the period. An advance is not rent for a month, so it is
+    income of the month it was collected in."""
+    return deposit_queryset.filter(collected_at__gte=start, collected_at__lte=end)
+
+def _total(qs) -> Decimal:
+    return qs.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
 
 def outstanding_billed_between(invoice_queryset, start: date, end: date) -> Decimal:
     """Still-unpaid balance on invoices whose billing period starts inside the period."""
     billed = invoice_queryset.filter(billing_period_start__gte=start, billing_period_start__lte=end)
     return outstanding_amount(billed)
 
-def period_profit_loss(invoice_queryset, expense_queryset, start: date, end: date) -> dict:
-    """The one authoritative Income − Expenses = Profit/Loss calculation for any scope and period."""
+def period_profit_loss(invoice_queryset, expense_queryset, start: date, end: date, *, deposits) -> dict:
+    """The one authoritative Income − Expenses = Profit/Loss calculation for any scope and period.
+
+    Income = rent for the period's months + advance collected in the period. `deposits` is the DepositCollection
+    queryset of the same scope (required, so no page can silently leave the advance out).
+    """
     from apps.expenses.selectors import unpaid, valid_expense_total
     in_period = expense_queryset.filter(date__gte=start, date__lte=end)
-    income = income_between(invoice_queryset, start, end)
+    live_payments = income_payments(invoice_queryset, start, end)
+    advances = income_deposits(deposits, start, end)
+    rent_income, advance_income = _total(live_payments), _total(advances)
+    income = rent_income + advance_income
     expenses = valid_expense_total(in_period)
     from apps.expenses.models import PaidBy
     live_expenses = in_period.filter(status='active')
     by_payer = {row['paid_by']: row['total'] for row in live_expenses.order_by().values('paid_by').annotate(total=Sum('amount'))}
+    unpaid_by_payer = {row['paid_by']: row['total'] for row in live_expenses.filter(paid_on__isnull=True).order_by().values('paid_by').annotate(total=Sum('amount'))}
     zero = Decimal('0.00')
 
-    live_invoices = invoice_queryset.filter(is_cancelled=False)
-    live_payments = Payment.objects.filter(invoice__in=live_invoices, is_cancelled=False, collected_at__gte=start, collected_at__lte=end)
-    admin_collected = live_payments.filter(collected_by__is_owner=True).aggregate(total=Sum('amount'))['total'] or zero
-    staff_collected = live_payments.filter(collected_by__is_owner=False).aggregate(total=Sum('amount'))['total'] or zero
+    admin_collected = _total(live_payments.filter(collected_by__is_owner=True)) + _total(advances.filter(collected_by__is_owner=True))
+    staff_collected = _total(live_payments.filter(collected_by__is_owner=False)) + _total(advances.filter(collected_by__is_owner=False))
 
     return {
         'income': income,
+        'rent_income': rent_income,
+        'advance_income': advance_income,
         'expenses': expenses,
         'net': income - expenses,
         'staff_collected': staff_collected,
         'admin_collected': admin_collected,
         'staff_expenses': by_payer.get(PaidBy.STAFF, zero),
         'owner_expenses': by_payer.get(PaidBy.OWNER, zero),
+        'staff_expenses_unpaid': unpaid_by_payer.get(PaidBy.STAFF, zero),
+        'owner_expenses_unpaid': unpaid_by_payer.get(PaidBy.OWNER, zero),
         'to_verify': valid_expense_total(live_expenses.filter(paid_on__isnull=False, verified_at__isnull=True)),
         'outstanding': outstanding_billed_between(invoice_queryset, start, end),
         'unpaid_expenses': valid_expense_total(unpaid(in_period)),
     }
 
-def _profit_loss_by(invoice_queryset, expense_queryset, start: date, end: date, *, payment_key: str, expense_key: str) -> dict:
-    """Income, expenses and net per group, using the same rules as period_profit_loss but in two grouped queries."""
+def _profit_loss_by(invoice_queryset, expense_queryset, start: date, end: date, *, deposits, payment_key: str, deposit_key: str, expense_key: str) -> dict:
+    """Income, expenses and net per group, using the same rules as period_profit_loss but in grouped queries."""
+    from collections import defaultdict
     from apps.expenses.models import Expense
-    live = invoice_queryset.filter(is_cancelled=False)
-    income_rows = Payment.objects.filter(invoice__in=live, is_cancelled=False, collected_at__gte=start, collected_at__lte=end).order_by().values(payment_key).annotate(total=Sum('amount'))
-    expense_rows = expense_queryset.filter(status=Expense.Status.ACTIVE, date__gte=start, date__lte=end).order_by().values(expense_key).annotate(total=Sum('amount'))
-    income = {row[payment_key]: row['total'] for row in income_rows}
-    spent = {row[expense_key]: row['total'] for row in expense_rows}
     zero = Decimal('0.00')
+    income = defaultdict(lambda: zero)
+    for row in income_payments(invoice_queryset, start, end).order_by().values(payment_key).annotate(total=Sum('amount')):
+        income[row[payment_key]] += row['total']
+    for row in income_deposits(deposits, start, end).order_by().values(deposit_key).annotate(total=Sum('amount')):
+        income[row[deposit_key]] += row['total']
+    expense_rows = expense_queryset.filter(status=Expense.Status.ACTIVE, date__gte=start, date__lte=end).order_by().values(expense_key).annotate(total=Sum('amount'))
+    spent = {row[expense_key]: row['total'] for row in expense_rows}
     return {key: {'income': income.get(key, zero), 'expenses': spent.get(key, zero), 'net': income.get(key, zero) - spent.get(key, zero)} for key in set(income) | set(spent)}
 
 EMPTY_PROFIT_LOSS = {
     'income': Decimal('0.00'),
+    'rent_income': Decimal('0.00'),
+    'advance_income': Decimal('0.00'),
     'expenses': Decimal('0.00'),
     'net': Decimal('0.00'),
     'staff_collected': Decimal('0.00'),
     'admin_collected': Decimal('0.00'),
     'staff_expenses': Decimal('0.00'),
     'owner_expenses': Decimal('0.00'),
+    'staff_expenses_unpaid': Decimal('0.00'),
+    'owner_expenses_unpaid': Decimal('0.00'),
     'to_verify': Decimal('0.00'),
     'outstanding': Decimal('0.00'),
     'unpaid_expenses': Decimal('0.00'),
 }
 
-def profit_loss_by_villa(invoice_queryset, expense_queryset, start: date, end: date) -> dict:
-    return _profit_loss_by(invoice_queryset, expense_queryset, start, end, payment_key='invoice__partition__villa_id', expense_key='villa_id')
+def profit_loss_by_villa(invoice_queryset, expense_queryset, start: date, end: date, *, deposits) -> dict:
+    return _profit_loss_by(invoice_queryset, expense_queryset, start, end, deposits=deposits, payment_key='invoice__partition__villa_id', deposit_key='tenant__partition__villa_id', expense_key='villa_id')
 
-def profit_loss_by_partition(invoice_queryset, expense_queryset, start: date, end: date) -> dict:
-    """Partition-level figures: income billed to that partition, and expenses explicitly recorded against it."""
-    return _profit_loss_by(invoice_queryset, expense_queryset, start, end, payment_key='invoice__partition_id', expense_key='partition_id')
+def profit_loss_by_partition(invoice_queryset, expense_queryset, start: date, end: date, *, deposits) -> dict:
+    """Partition-level figures: income of that partition (rent + advance), and expenses explicitly recorded against it."""
+    return _profit_loss_by(invoice_queryset, expense_queryset, start, end, deposits=deposits, payment_key='invoice__partition_id', deposit_key='tenant__partition_id', expense_key='partition_id')
 
 
 class RentStatus:
@@ -231,24 +261,60 @@ def prior_unpaid_invoices_by_partition(partition_pks, start_date):
             })
     return res
 
-def rent_sheet(*, partitions, tenant_by_partition: dict, invoice_queryset, year: int, month: int, today: date):
-    """Month-end collection sheet for one villa: per occupied partition, what is due, collected and still pending."""
+def rent_schedule(partition, today=None) -> dict:
+    """The rent in force today and any scheduled change, from the partition's Rent charges (what is actually billed)."""
+    return rent_schedule_from(Charge.objects.filter(partition=partition, is_active=True, charge_type__name='Rent'), today)
+
+def rent_schedules_by_partition(partition_ids, today=None) -> dict:
     from collections import defaultdict
+    grouped = defaultdict(list)
+    for charge in Charge.objects.filter(partition_id__in=list(partition_ids), is_active=True, charge_type__name='Rent'):
+        grouped[charge.partition_id].append(charge)
+    return {pid: rent_schedule_from(charges, today) for pid, charges in grouped.items()}
+
+def rent_schedule_from(charges, today=None) -> dict:
+    today = today or date.today()
+    charges = sorted(charges, key=lambda c: c.start_date)
+    current = next((c for c in charges if c.start_date <= today and (c.end_date is None or c.end_date >= today)), None)
+    upcoming = next((c for c in charges if c.start_date > today), None)
+    return {'current': current.amount if current else None, 'upcoming': upcoming.amount if upcoming else None, 'upcoming_from': upcoming.start_date if upcoming else None}
+
+def first_billed_month(tenant) -> date:
+    """Rent is tracked from the month the tenant was added to the system (or moved in, if later), so onboarding a
+    long-standing tenant never invents years of arrears."""
+    from django.utils import timezone
+    added = timezone.localdate(tenant.created_at) if tenant.created_at else date.today()
+    return max(tenant.move_in_date, added).replace(day=1)
+
+def resident_in_month(tenant, year: int, month: int) -> bool:
     start, end = period_bounds(year, month)
+    return tenant.move_in_date <= end and (tenant.move_out_date is None or tenant.move_out_date >= start)
+
+def rent_sheet(*, tenants, invoice_queryset, year: int, month: int, today: date):
+    """One month's rent sheet: a row for every tenant who lived there during the month — including one who has
+    since moved out — with what is due, collected (and when), and still pending. Rows sum to the month's income."""
+    from collections import defaultdict
+    from apps.tenancy.models import Tenant
+    start, end = period_bounds(year, month)
+    tenants = sorted((t for t in tenants if t.status != Tenant.Status.ARCHIVED and resident_in_month(t, year, month)), key=lambda t: (t.partition.name, t.move_in_date, t.pk))
+    current_by_partition = {t.partition_id: t for t in tenants if t.status == Tenant.Status.ACTIVE}
+    partition_pks = list({t.partition_id for t in tenants})
     invoices_by_partition_tenant = defaultdict(list)
     for invoice in rent_invoice_queryset(invoice_queryset, year, month).prefetch_related('items', 'payments__collected_by'):
         invoices_by_partition_tenant[(invoice.partition_id, invoice.tenant_id)].append(invoice)
-    unbilled_map = unbilled_charges_by_partition([p.pk for p in partitions], year, month, tenant_by_partition)
-    unbilled_details_map = unbilled_charges_details_by_partition([p.pk for p in partitions], year, month, tenant_by_partition)
-    prior_unpaid_map = prior_unpaid_invoices_by_partition([p.pk for p in partitions], start)
+    unbilled_map = unbilled_charges_by_partition(partition_pks, year, month, current_by_partition)
+    unbilled_details_map = unbilled_charges_details_by_partition(partition_pks, year, month, current_by_partition)
+    prior_unpaid_map = prior_unpaid_invoices_by_partition(partition_pks, start)
     zero = Decimal('0.00')
     rows, expected, collected = [], zero, zero
-    for partition in partitions:
-        tenant = tenant_by_partition.get(partition.pk)
-        if tenant is None:
-            continue
+    for tenant in tenants:
+        partition = tenant.partition
+        is_current = tenant.status == Tenant.Status.ACTIVE
         p_invoices = invoices_by_partition_tenant.get((partition.pk, tenant.pk), [])
-        unbilled = unbilled_map[partition.pk]
+        if not p_invoices and (not is_current or start < first_billed_month(tenant)):
+            continue  # nothing billed, and either a former tenant or a month before rent tracking began
+        # Unbilled charges belong to whoever lives there now; a former tenant's months were billed at move-out.
+        unbilled = unbilled_map[partition.pk] if is_current else zero
         charges_breakdown = []
         live_payments = []
         staff_collected = zero
@@ -267,7 +333,7 @@ def rent_sheet(*, partitions, tenant_by_partition: dict, invoice_queryset, year:
                             admin_collected += p.amount
                         elif p.collected_by:
                             staff_collected += p.amount
-            for c in unbilled_details_map.get(partition.pk, []):
+            for c in (unbilled_details_map.get(partition.pk, []) if is_current else []):
                 charges_breakdown.append(c)
             if due > 0 and paid >= due:
                 status = RentStatus.COLLECTED
@@ -306,13 +372,19 @@ def rent_sheet(*, partitions, tenant_by_partition: dict, invoice_queryset, year:
                         'amount': zero,
                         'is_owner': p.collected_by.is_owner,
                         'role': 'Admin' if p.collected_by.is_owner else 'Staff',
+                        'dates': [],
                     }
                 breakdown_by_user[uid]['amount'] += p.amount
+                breakdown_by_user[uid]['dates'].append(p.collected_at)
         collector_breakdown = list(breakdown_by_user.values())
+        for cb in collector_breakdown:
+            cb['dates'] = sorted(set(cb['dates']))
+        live_payments.sort(key=lambda p: (p.collected_at, p.pk))
 
         rows.append({
             'partition': partition,
             'tenant': tenant,
+            'is_current': is_current,
             'invoice': primary_invoice,
             'due': due,
             'paid': paid,
@@ -331,11 +403,19 @@ def rent_sheet(*, partitions, tenant_by_partition: dict, invoice_queryset, year:
         })
         expected += due
         collected += paid
-    return rows, {'expected': expected, 'collected': collected, 'pending': expected - collected, 'pending_count': sum(1 for r in rows if r['status'] != RentStatus.COLLECTED)}
+    return rows, {
+        'expected': expected,
+        'collected': collected,
+        'staff_collected': sum((r['staff_collected'] for r in rows), zero),
+        'admin_collected': sum((r['admin_collected'] for r in rows), zero),
+        'pending': expected - collected,
+        'pending_count': sum(1 for r in rows if r['status'] != RentStatus.COLLECTED),
+    }
 
 def pending_rent_by_villa(invoice_queryset, partition_queryset, year: int, month: int) -> dict:
     """villa id -> number of occupied partitions whose rent for the month is not fully collected."""
-    occupied = partition_queryset.filter(tenancies__status='active').values_list('pk', 'villa_id').distinct()
+    _, month_end = period_bounds(year, month)
+    occupied = partition_queryset.filter(tenancies__status='active', tenancies__move_in_date__lte=month_end).values_list('pk', 'villa_id').distinct()
     occupied_by_villa = {}
     partition_villa = {}
     for partition_id, villa_id in occupied:

@@ -2,9 +2,11 @@ from decimal import Decimal
 from django import forms
 from apps.billing.models import Payment
 from apps.expenses.models import Expense
+from apps.tenancy.models import DepositCollection
 
 class HandoverSubmitForm(forms.Form):
-    payments = forms.ModelMultipleChoiceField(queryset=Payment.objects.none(), widget=forms.CheckboxSelectMultiple)
+    payments = forms.ModelMultipleChoiceField(queryset=Payment.objects.none(), required=False, widget=forms.CheckboxSelectMultiple, label='Rent collections')
+    deposits = forms.ModelMultipleChoiceField(queryset=DepositCollection.objects.none(), required=False, widget=forms.CheckboxSelectMultiple, label='Advance collections')
     expenses = forms.ModelMultipleChoiceField(queryset=Expense.objects.none(), required=False, widget=forms.CheckboxSelectMultiple, label='Expenses you paid from this cash', help_text='You hand over: selected collections minus selected expenses.')
     notes = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2}))
 
@@ -13,14 +15,21 @@ class HandoverSubmitForm(forms.Form):
         if staff is not None:
             from . import selectors
             payments_qs = selectors.unclaimed_cash_payments(staff).select_related('invoice', 'invoice__partition__villa')
+            deposits_qs = selectors.unclaimed_cash_deposits(staff).select_related('tenant__partition__villa')
             expenses_qs = selectors.unclaimed_staff_expenses(staff).select_related('category', 'villa')
             self.fields['payments'].queryset = payments_qs
+            self.fields['deposits'].queryset = deposits_qs
             self.fields['expenses'].queryset = expenses_qs
-            self.fields['payments'].label_from_instance = lambda p: f'QAR {p.amount} — {p.invoice.partition.villa.name} / {p.invoice.partition.name} — {p.collected_at}'
+            self.fields['payments'].label_from_instance = lambda p: f'QAR {p.amount} — {p.invoice.partition.villa.name} / {p.invoice.partition.name} — rent {p.invoice.billing_period_start:%b %Y} — {p.collected_at}'
+            self.fields['deposits'].label_from_instance = lambda d: f'QAR {d.amount} — {d.tenant.partition.villa.name} / {d.tenant.partition.name} — advance — {d.collected_at}'
             self.fields['expenses'].label_from_instance = lambda e: f'{e.category} — QAR {e.amount} — {e.villa.name} — {e.paid_on}'
+            if not deposits_qs.exists():
+                del self.fields['deposits']
             if not self.is_bound:
                 self.fields['payments'].initial = list(payments_qs.values_list('pk', flat=True))
-                total_coll = sum((p.amount for p in payments_qs), Decimal('0.00'))
+                if 'deposits' in self.fields:
+                    self.fields['deposits'].initial = list(deposits_qs.values_list('pk', flat=True))
+                total_coll = sum((p.amount for p in payments_qs), Decimal('0.00')) + sum((d.amount for d in deposits_qs), Decimal('0.00'))
                 total_exp = sum((e.amount for e in expenses_qs), Decimal('0.00'))
                 if total_coll > total_exp:
                     self.fields['expenses'].initial = list(expenses_qs.values_list('pk', flat=True))

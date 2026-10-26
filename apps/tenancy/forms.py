@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 from django import forms
 
-from .models import Tenant
+from .models import DepositCollection
 
 class TenantForm(forms.Form):
     name = forms.CharField(max_length=200)
@@ -11,15 +11,21 @@ class TenantForm(forms.Form):
     id_document_number = forms.CharField(required=False, max_length=64, label='ID / Passport number')
     nationality = forms.CharField(required=False, max_length=100)
     move_in_date = forms.DateField(widget=forms.DateInput(attrs={'type': 'date'}))
-    monthly_rent = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12)
-    deposit = forms.DecimalField(required=False, min_value=Decimal('0'), decimal_places=2, max_digits=12, initial=Decimal('0'), label='Total Deposit (QAR)')
-    deposit_status = forms.ChoiceField(required=False, choices=Tenant.DepositStatus.choices, initial=Tenant.DepositStatus.PENDING, label='Deposit Status')
-    deposit_paid = forms.DecimalField(required=False, min_value=Decimal('0'), decimal_places=2, max_digits=12, initial=Decimal('0'), label='Amount Received (QAR)', help_text='Required if deposit is partially paid.')
+    monthly_rent = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12, label='Monthly Rent (QAR)', help_text='Fixed every month. Collections can be partial; the rest stays pending.')
+    deposit = forms.DecimalField(required=False, min_value=Decimal('0'), decimal_places=2, max_digits=12, initial=Decimal('0'), label='Advance / Security Deposit (QAR)', help_text='Leave 0 if there is no advance.')
+    deposit_paid = forms.DecimalField(required=False, min_value=Decimal('0'), decimal_places=2, max_digits=12, initial=Decimal('0'), label='Advance Received Now (QAR)', help_text='Can be part of the advance; the rest stays pending.')
+    deposit_method = forms.ChoiceField(required=False, choices=DepositCollection.Method.choices, initial=DepositCollection.Method.CASH, label='Advance Payment Method')
     notes = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2}))
 
-    def __init__(self, *args, restrict_past_move_in=False, lock_rent=False, **kwargs):
+    def __init__(self, *args, restrict_past_move_in=False, lock_rent=False, editing=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.restrict_past_move_in = restrict_past_move_in
+        self.editing = editing
+        if editing:
+            # The advance already received is changed only by collecting it (dated records), never typed over.
+            del self.fields['deposit_paid']
+            del self.fields['deposit_method']
+            self.fields['monthly_rent'].help_text = 'A new rent applies from the first month not yet billed; earlier months keep their rent.'
         if restrict_past_move_in:
             self.fields['move_in_date'].widget.attrs['min'] = date.today().isoformat()
         if lock_rent:
@@ -48,30 +54,41 @@ class TenantForm(forms.Form):
 
     def clean(self):
         cleaned_data = super().clean()
-        deposit = cleaned_data.get('deposit') or Decimal('0.00')
-        status = cleaned_data.get('deposit_status') or Tenant.DepositStatus.PENDING
-        paid = cleaned_data.get('deposit_paid') or Decimal('0.00')
-
-        if status == Tenant.DepositStatus.PARTIALLY_PAID and paid <= 0:
-            self.add_error('deposit_paid', 'Enter received amount for partially paid deposit.')
-        elif status == Tenant.DepositStatus.RECEIVED and paid <= 0:
-            paid = deposit
-
-        cleaned_data['deposit'] = deposit
-        cleaned_data['deposit_paid'] = paid
+        cleaned_data['deposit'] = cleaned_data.get('deposit') or Decimal('0.00')
+        if not self.editing:
+            paid = cleaned_data.get('deposit_paid') or Decimal('0.00')
+            if paid > cleaned_data['deposit']:
+                self.add_error('deposit_paid', 'Advance received cannot be more than the advance.')
+            cleaned_data['deposit_paid'] = paid
+            cleaned_data['deposit_method'] = cleaned_data.get('deposit_method') or DepositCollection.Method.CASH
         return cleaned_data
 
-class DepositEditForm(forms.Form):
-    deposit = forms.DecimalField(min_value=Decimal('0'), decimal_places=2, max_digits=12)
-    deposit_paid = forms.DecimalField(required=False, min_value=Decimal('0'), decimal_places=2, max_digits=12, initial=Decimal('0'))
+class DepositCollectForm(forms.Form):
+    """Change the advance amount and/or collect part of what is pending."""
+    deposit = forms.DecimalField(min_value=Decimal('0'), decimal_places=2, max_digits=12, label='Advance / Security Deposit (QAR)')
+    amount = forms.DecimalField(required=False, min_value=Decimal('0'), decimal_places=2, max_digits=12, initial=Decimal('0'), label='Amount Received Now (QAR)')
+    method = forms.ChoiceField(choices=DepositCollection.Method.choices, initial=DepositCollection.Method.CASH, label='Payment Method')
+    collected_at = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}), label='Collection Date')
+
+    def __init__(self, *args, tenant=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tenant = tenant
+        self.fields['collected_at'].widget.attrs['max'] = date.today().isoformat()
 
     def clean(self):
         cleaned_data = super().clean()
-        deposit = cleaned_data.get('deposit') or Decimal('0.00')
-        deposit_paid = cleaned_data.get('deposit_paid') or Decimal('0.00')
-        if deposit_paid > deposit:
-            self.add_error('deposit_paid', 'Amount received cannot exceed total deposit.')
-        cleaned_data['deposit_paid'] = deposit_paid
+        deposit = cleaned_data.get('deposit')
+        amount = cleaned_data.get('amount') or Decimal('0.00')
+        cleaned_data['amount'] = amount
+        if deposit is None or self.tenant is None:
+            return cleaned_data
+        if deposit < self.tenant.deposit_paid:
+            self.add_error('deposit', f'Cannot be less than what was already collected (QAR {self.tenant.deposit_paid}).')
+        elif amount > deposit - self.tenant.deposit_paid:
+            self.add_error('amount', f'Only QAR {deposit - self.tenant.deposit_paid} of the advance is pending.')
+        collected_at = cleaned_data.get('collected_at')
+        if collected_at and collected_at > date.today():
+            self.add_error('collected_at', 'Collection date cannot be in the future.')
         return cleaned_data
 
 class MoveOutForm(forms.Form):

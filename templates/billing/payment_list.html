@@ -6,7 +6,13 @@
       <h1 style="margin: 0; font-size: 26px; font-weight: 700;">Collections</h1>
       <p style="color: var(--text-secondary); margin: 4px 0 0 0; font-size: 13px;">
         Showing {{ period_label }}
-        {% if collector == 'staff' %}
+        {% if tab == 'income' %}
+          &bull; Collected for {{ period_label }}{% if collector == 'staff' %} by staff{% elif collector == 'admin' %} by admin{% elif active_collector_user %} by {{ active_collector_user.get_full_name|default:active_collector_user.username }}{% endif %}: <strong style="color: var(--success); font-weight: 700;">QAR {{ received_total|floatformat:"2g" }}</strong>
+          &bull; rent for {{ period_label }} plus advance collected in it; the date shows when each was collected
+        {% elif tab == 'received' %}
+          &bull; Collected on dates in {{ period_label }}{% if collector == 'staff' %} by staff{% elif collector == 'admin' %} by admin{% elif active_collector_user %} by {{ active_collector_user.get_full_name|default:active_collector_user.username }}{% endif %}: <strong style="color: var(--success); font-weight: 700;">QAR {{ received_total|floatformat:"2g" }}</strong>
+          &bull; collection record — each amount counts as income of the month it is for
+        {% elif collector == 'staff' %}
           &bull; Staff Collections: <strong style="color: var(--success); font-weight: 700;">QAR {{ portfolio_rent_collected|floatformat:"2g" }}</strong>
           &bull; Filter: <span class="pill pill--success" style="font-size: 11px; padding: 2px 7px;">Staff Collected</span>
         {% elif collector == 'admin' %}
@@ -17,9 +23,12 @@
           &bull; Filter: <span class="pill pill--neutral" style="font-size: 11px; padding: 2px 7px;">{{ active_collector_user.get_full_name|default:active_collector_user.username }}</span>
         {% elif tab == 'collected' %}
           &bull; Total Collected: <strong style="color: var(--text-primary); font-size: 14px; font-weight: 700;">QAR {{ portfolio_rent_collected|floatformat:"2g" }}</strong>
-          &bull; Deposit Received: <strong style="color: var(--text-primary);">QAR {{ portfolio_deposit_received|floatformat:"2g" }}</strong>
+          &bull; Advance Received: <strong style="color: var(--text-primary);">QAR {{ portfolio_deposit_received|floatformat:"2g" }}</strong>
         {% else %}
-          &bull; Rent Collected: <strong style="color: var(--text-primary);">QAR {{ portfolio_rent_collected|floatformat:"2g" }}</strong> of <strong>QAR {{ portfolio_rent_expected|floatformat:"2g" }}</strong> &bull; Deposit Received: <strong style="color: var(--text-primary);">QAR {{ portfolio_deposit_received|floatformat:"2g" }}</strong> &bull; Deposit Pending: <strong style="color: var(--warning);">QAR {{ portfolio_deposit_pending|floatformat:"2g" }}</strong>
+          &bull; Rent Collected: <strong style="color: var(--text-primary);">QAR {{ portfolio_rent_collected|floatformat:"2g" }}</strong> of <strong>QAR {{ portfolio_rent_expected|floatformat:"2g" }}</strong> &bull; Advance Received: <strong style="color: var(--text-primary);">QAR {{ portfolio_deposit_received|floatformat:"2g" }}</strong> &bull; Advance Pending: <strong style="color: var(--warning);">QAR {{ portfolio_deposit_pending|floatformat:"2g" }}</strong>
+        {% endif %}
+        {% if portfolio_arrears and tab != 'collected' and tab != 'income' and tab != 'received' %}
+          &bull; Earlier months unpaid: <strong style="color: var(--danger);">QAR {{ portfolio_arrears|floatformat:"2g" }}</strong>
         {% endif %}
       </p>
     </div>
@@ -39,6 +48,14 @@
     <a class="overview-tab{% if tab == 'pending' %} overview-tab--active{% endif %}" href="?tab=pending{% if year %}&year={{ year }}{% endif %}{% if month %}&month={{ month }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if collector %}&collector={{ collector }}{% endif %}{% if villa_id %}&villa={{ villa_id }}{% endif %}">
       <span>Pending</span>
       <span class="overview-tab__badge overview-tab__badge--warning">{{ tab_counts.pending }}</span>
+    </a>
+    <a class="overview-tab{% if tab == 'income' %} overview-tab--active{% endif %}" href="?tab=income&period={{ period|default:'month' }}{% if year %}&year={{ year }}{% endif %}{% if month %}&month={{ month }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if collector %}&collector={{ collector }}{% endif %}{% if villa_id %}&villa={{ villa_id }}{% endif %}" title="Payments that are income of this period: rent for these months, with the date each was collected">
+      <span>Collected for {% if period == 'year' %}{{ year }}{% else %}Month{% endif %}</span>
+      <span class="overview-tab__badge">{{ tab_counts.income }}</span>
+    </a>
+    <a class="overview-tab{% if tab == 'received' %} overview-tab--active{% endif %}" href="?tab=received&period={{ period|default:'month' }}{% if year %}&year={{ year }}{% endif %}{% if month %}&month={{ month }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if collector %}&collector={{ collector }}{% endif %}{% if villa_id %}&villa={{ villa_id }}{% endif %}" title="Collection record: everything collected on dates in this period, for any month">
+      <span>Collection Record</span>
+      <span class="overview-tab__badge">{{ tab_counts.received }}</span>
     </a>
   </div>
 
@@ -78,6 +95,80 @@
     {% endif %}
   </form>
 
+  {% if tab == 'received' or tab == 'income' %}
+  <div class="collections-card collections-desktop-table">
+    <div class="collections-table-wrap">
+      <table class="collections-table">
+        <thead>
+          <tr>
+            <th>Collected On</th>
+            <th>Villa &amp; Room</th>
+            <th>Tenant</th>
+            <th>For</th>
+            <th>Collected By</th>
+            <th style="text-align: right; padding-right: 20px;">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in received_payments %}
+            <tr>
+              <td style="font-weight: 600;">
+                {{ p.collected_at|date:"d M Y" }}
+                {% if p.collected_time %}<div style="color: var(--text-secondary); font-size: 11px; font-weight: 400; margin-top: 2px;">{{ p.collected_time|date:"g:i A" }}</div>{% endif %}
+              </td>
+              <td>
+                <div style="font-weight: 600;"><a href="{% url 'villas:villa_detail' p.villa.pk %}" style="color: inherit; text-decoration: none;">{{ p.villa.name }}</a></div>
+                <div style="color: var(--text-secondary); font-size: 12px; margin-top: 3px;">{{ p.partition.name }}</div>
+              </td>
+              <td>{{ p.tenant.name }}</td>
+              <td>
+                {{ p.for_label }}
+                {% if p.for_flag == 'Arrears' %}<span class="pill pill--warning" style="font-size: 10px;">Arrears</span>{% elif p.for_flag %}<span class="pill pill--neutral" style="font-size: 10px;">{{ p.for_flag }}</span>{% endif %}
+              </td>
+              <td>
+                {% with name=p.collected_by.get_full_name|default:p.collected_by.username %}
+                  {% if p.collected_by.is_owner %}<span class="pill pill--accent" style="font-size: 10px;">Admin</span>{% if name != "Admin" %} {{ name }}{% endif %}
+                  {% else %}<span class="pill pill--success" style="font-size: 10px;">Staff</span> {{ name }}{% endif %}
+                {% endwith %}
+                <div style="color: var(--text-secondary); font-size: 11px; margin-top: 2px;">{{ p.method }}</div>
+              </td>
+              <td style="text-align: right; padding-right: 20px; font-weight: 600; font-variant-numeric: tabular-nums;">QAR {{ p.amount|floatformat:"2g" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" style="text-align: center; padding: var(--space-6); color: var(--text-secondary);">{% if tab == 'income' %}Nothing collected yet for {{ period_label }}.{% else %}Nothing collected on dates in {{ period_label }}.{% endif %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="collections-mobile-list">
+    {% for p in received_payments %}
+      <div class="collections-m-card">
+        <div class="collections-m-header">
+          <div class="collections-m-title-group">
+            <a href="{% url 'villas:villa_detail' p.villa.pk %}" class="collections-m-villa">{{ p.villa.name }}</a>
+            <span class="collections-m-partition">{{ p.partition.name }} · {{ p.tenant.name }}</span>
+          </div>
+          <div style="text-align: right; font-weight: 700;">QAR {{ p.amount|floatformat:"2g" }}</div>
+        </div>
+        <div class="collections-m-meta-row" style="font-size: 12px; color: var(--text-secondary);">
+          <span>Collected {{ p.collected_at|date:"d M Y" }}{% if p.collected_time %}, {{ p.collected_time|date:"g:i A" }}{% endif %} · for {{ p.for_label }}{% if p.for_flag %} ({{ p.for_flag }}){% endif %}</span>
+          {% with name=p.collected_by.get_full_name|default:p.collected_by.username %}
+            <span>{% if p.collected_by.is_owner %}Admin{% if name != "Admin" %} {{ name }}{% endif %}{% else %}Staff {{ name }}{% endif %} · {{ p.method }}</span>
+          {% endwith %}
+        </div>
+      </div>
+    {% empty %}
+      <div class="collections-card" style="text-align: center; padding: var(--space-6); color: var(--text-secondary);">{% if tab == 'income' %}Nothing collected yet for {{ period_label }}.{% else %}Nothing collected on dates in {{ period_label }}.{% endif %}</div>
+    {% endfor %}
+  </div>
+  {% elif not is_month %}
+  <div class="collections-card" style="text-align: center; padding: var(--space-6); color: var(--text-secondary);">
+    Rent is collected month by month — pick a month to see what is collected and pending, or open
+    <a href="?tab=income&period=year&year={{ year }}{% if villa_id %}&villa={{ villa_id }}{% endif %}">Collected for {{ year }}</a> /
+    <a href="?tab=received&period=year&year={{ year }}{% if villa_id %}&villa={{ villa_id }}{% endif %}">Collection Record</a>.
+  </div>
+  {% else %}
   <!-- desktop table -->
   <div class="collections-card collections-desktop-table">
     <div class="collections-table-wrap">
@@ -86,9 +177,9 @@
           <tr>
             <th style="width: 20%;">Villa & Room</th>
             <th style="width: 18%;">Tenant</th>
-            <th style="width: 17%;">Monthly Due</th>
+            <th style="width: 17%;">Due for {{ period_label }}</th>
             <th style="width: 12%;">Due Status</th>
-            <th style="width: 14%;">Security Deposit</th>
+            <th style="width: 14%;">Advance</th>
             <th style="width: 19%; min-width: 215px; text-align: right; padding-right: 20px;">Action</th>
           </tr>
         </thead>
@@ -163,6 +254,7 @@
                           <span style="color: var(--text-secondary);">{{ cb.user.get_full_name|default:cb.user.username }}:</span>
                           <strong style="color: var(--success); font-variant-numeric: tabular-nums;">QAR {{ cb.amount|floatformat:"2g" }}</strong>
                         {% endif %}
+                        <span style="color: var(--text-muted);">on {% for d in cb.dates %}{{ d|date:"d M Y" }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>
                       </div>
                     {% endfor %}
                   </div>
@@ -179,12 +271,15 @@
                   </div>
                   <div style="color: var(--text-secondary); font-size: 11px; margin-top: 2px;">Total: QAR {{ row.deposit_total|floatformat:"0g" }}</div>
                 {% else %}
-                  <span style="color: var(--text-muted); font-size: 13px;">No deposit</span>
+                  <span style="color: var(--text-muted); font-size: 13px;">No advance</span>
                 {% endif %}
               </td>
               <td style="text-align: right; white-space: nowrap; padding-right: 20px;">
                 <div class="collections-btn-group">
-                  {% if row.status != "collected" and can_manage %}
+                  {% if not row.is_current %}
+                    <span class="pill pill--neutral" style="font-size: 11px;">Moved out</span>
+                    {% if row.status != "collected" and row.can_manage and row.invoice %}<a class="btn btn--ghost btn--sm" href="{% url 'billing:payment_record' row.invoice.pk %}">Record payment</a>{% endif %}
+                  {% elif row.status != "collected" and row.can_manage %}
                     <button class="btn btn--primary btn--sm" type="button"
                       data-action-url="{% url 'billing:rent_collect' row.partition.pk %}"
                       data-partition="{{ row.partition.name }}"
@@ -197,14 +292,14 @@
                       data-prior-unpaid='[{% for p in row.prior_unpaid %}{"period":"{{ p.period|escapejs }}","outstanding":{{ p.outstanding }},"paid":{{ p.paid }},"total":{{ p.total }},"charges":[{% for c in p.charges %}{"name":"{{ c.name|escapejs }}","amount":{{ c.amount }}}{% if not forloop.last %},{% endif %}{% endfor %}]}{% if not forloop.last %},{% endif %}{% endfor %}]'
                       onclick="openRentCollectModal(this)">Collect Due</button>
                   {% endif %}
-                  {% if row.deposit_pending > 0 and can_manage %}
+                  {% if row.deposit_pending > 0 and row.can_manage and row.is_current %}
                     <button class="btn btn--ghost btn--sm collections-btn-deposit" type="button"
                       data-action-url="{% url 'tenancy:deposit_edit' row.tenant.pk %}"
                       data-partition="{{ row.partition.name }}"
                       data-tenant="{{ row.tenant.name }}"
                       data-deposit="{{ row.deposit_total }}"
                       data-paid="{{ row.deposit_paid }}"
-                      onclick="openDepositModal(event, this)">Collect Deposit</button>
+                      onclick="openDepositModal(event, this)">Collect Advance</button>
                   {% elif row.status == "collected" and row.deposit_pending == 0 %}
                     <span style="color: var(--success); font-size: 13px; font-weight: 500;">✓ Done</span>
                   {% endif %}
@@ -251,6 +346,7 @@
                     {% else %}
                       <span style="color: var(--success); font-weight: 600;">Staff ({{ cb.user.get_full_name|default:cb.user.username }}):</span> QAR {{ cb.amount|floatformat:"2g" }}
                     {% endif %}
+                    <span style="color: var(--text-muted);">on {% for d in cb.dates %}{{ d|date:"d M" }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>
                   </div>
                 {% endfor %}
               </div>
@@ -274,14 +370,14 @@
               {% endif %}
               <div style="color: var(--text-secondary); font-size: 10px; margin-top: 2px;">Total: QAR {{ row.deposit_total|floatformat:"0g" }}</div>
             {% else %}
-              <span style="color: var(--text-muted); font-size: 12px;">No deposit</span>
+              <span style="color: var(--text-muted); font-size: 12px;">No advance</span>
             {% endif %}
           </div>
         </div>
 
         <div class="collections-m-due-box">
           <div>
-            <div class="collections-m-due-label">Monthly Due</div>
+            <div class="collections-m-due-label">Due for {{ period_label }}</div>
             {% if row.extra_charges > 0 %}
               <div class="collections-m-due-sub">Rent {{ row.rent_amount|floatformat:"0g" }} + Chg {{ row.extra_charges|floatformat:"0g" }}</div>
             {% endif %}
@@ -304,7 +400,10 @@
         </div>
 
         <div class="collections-m-actions">
-          {% if row.status != "collected" and can_manage %}
+          {% if not row.is_current %}
+            <span class="pill pill--neutral" style="font-size: 11px;">Moved out</span>
+            {% if row.status != "collected" and row.can_manage and row.invoice %}<a class="btn btn--ghost btn--sm collections-m-btn" href="{% url 'billing:payment_record' row.invoice.pk %}">Record payment</a>{% endif %}
+          {% elif row.status != "collected" and row.can_manage %}
             <button class="btn btn--primary btn--sm collections-m-btn" type="button"
               data-action-url="{% url 'billing:rent_collect' row.partition.pk %}"
               data-partition="{{ row.partition.name }}"
@@ -317,14 +416,14 @@
               data-prior-unpaid='[{% for p in row.prior_unpaid %}{"period":"{{ p.period|escapejs }}","outstanding":{{ p.outstanding }},"paid":{{ p.paid }},"total":{{ p.total }},"charges":[{% for c in p.charges %}{"name":"{{ c.name|escapejs }}","amount":{{ c.amount }}}{% if not forloop.last %},{% endif %}{% endfor %}]}{% if not forloop.last %},{% endif %}{% endfor %}]'
               onclick="openRentCollectModal(this)">Collect Due</button>
           {% endif %}
-          {% if row.deposit_pending > 0 and can_manage %}
+          {% if row.deposit_pending > 0 and row.can_manage and row.is_current %}
             <button class="btn btn--ghost btn--sm collections-btn-deposit collections-m-btn" type="button"
               data-action-url="{% url 'tenancy:deposit_edit' row.tenant.pk %}"
               data-partition="{{ row.partition.name }}"
               data-tenant="{{ row.tenant.name }}"
               data-deposit="{{ row.deposit_total }}"
               data-paid="{{ row.deposit_paid }}"
-              onclick="openDepositModal(event, this)">Collect Deposit</button>
+              onclick="openDepositModal(event, this)">Collect Advance</button>
           {% elif row.status == "collected" and row.deposit_pending == 0 %}
             <div style="color: var(--success); font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: flex-end; width: 100%;">✓ All Collected</div>
           {% endif %}
@@ -336,6 +435,50 @@
       </div>
     {% endfor %}
   </div>
+
+  {% if arrears_rows %}
+  <div class="detail-section" id="arrears" style="margin-top: var(--space-4);">
+    <div class="detail-section__title" style="color: var(--danger);">Earlier months still unpaid — QAR {{ portfolio_arrears|floatformat:"2g" }}</div>
+    <div class="card card--tight">
+      {% for row in arrears_rows %}
+        <div class="list-row list-row--compact">
+          <div class="list-row__main">
+            <div class="list-row__title">
+              <a href="{% url 'villas:villa_detail' row.villa.pk %}?period=month&year={{ row.month.year }}&month={{ row.month.month }}" style="color: inherit;">{{ row.villa.name }}</a> / {{ row.partition.name }}
+              · <a href="{% url 'tenancy:detail' row.tenant.pk %}" style="color: inherit;">{{ row.tenant.name }}</a>
+            </div>
+            <div class="list-row__meta">Rent for <b>{{ row.month|date:"F Y" }}</b> · due QAR {{ row.due|floatformat:"2g" }}{% if row.paid %} · paid {{ row.paid|floatformat:"2g" }}{% endif %} · <span style="color: var(--danger); font-weight: 600;">QAR {{ row.balance|floatformat:"2g" }} left</span>{% if row.tenant.mobile %} · {{ row.tenant.mobile }}{% endif %}</div>
+            {% for p in row.payments %}
+              {% with name=p.collected_by.get_full_name|default:p.collected_by.username %}
+              <div class="list-row__meta">Collected QAR {{ p.amount|floatformat:"2g" }} on {{ p.collected_at|date:"d M Y" }} by {% if p.collected_by.is_owner %}{% if name != "Admin" %}{{ name }} (Admin, {% else %}Admin ({% endif %}{% else %}{{ name }} (Staff, {% endif %}{{ p.get_method_display }})</div>
+              {% endwith %}
+            {% endfor %}
+          </div>
+          <span class="pill pill--danger">Overdue</span>
+          {% if row.can_manage %}
+            {% if row.is_current %}
+              <button class="btn btn--primary btn--sm" type="button"
+                data-action-url="{% url 'billing:rent_collect' row.partition.pk %}"
+                data-year="{{ row.month.year }}" data-month="{{ row.month.month }}" data-period-label="{{ row.month|date:'F Y' }}"
+                data-partition="{{ row.partition.name }}"
+                data-tenant="{{ row.tenant.name }}"
+                data-due="{{ row.due }}"
+                data-paid="{{ row.paid }}"
+                data-balance="{{ row.balance }}"
+                data-charges='[{% for c in row.charges %}{"name":"{{ c.name|escapejs }}","amount":{{ c.amount }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
+                data-prior-unpaid='[]'
+                onclick="openRentCollectModal(this)">Collect</button>
+            {% else %}
+              <span class="pill pill--neutral">Moved out</span>
+              <a class="btn btn--ghost btn--sm" href="{% url 'billing:payment_record' row.invoice.pk %}">Record payment</a>
+            {% endif %}
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  {% endif %}
 
   {% include "components/collection_modals.html" %}
 {% endblock %}
