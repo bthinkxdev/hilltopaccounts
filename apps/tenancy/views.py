@@ -118,9 +118,12 @@ def tenant_create(request, partition_pk):
     initial = {}
     if partition.rent is not None:
         initial['monthly_rent'] = partition.rent
+        initial['deposit'] = partition.rent
+
+    is_staff = not request.user.is_owner
 
     if request.method == 'POST':
-        form = TenantForm(request.POST, initial=initial, restrict_past_move_in=not request.user.is_owner, lock_rent=False)
+        form = TenantForm(request.POST, initial=initial, restrict_past_move_in=is_staff, lock_rent=False, lock_deposit=is_staff)
         if form.is_valid():
             try:
                 tenant = create_tenant(partition=partition, created_by=request.user, **form.cleaned_data)
@@ -130,7 +133,7 @@ def tenant_create(request, partition_pk):
                 messages.success(request, f'{tenant.name} moved in to {partition.name}.')
                 return redirect('tenancy:detail', pk=tenant.pk)
     else:
-        form = TenantForm(initial=initial, restrict_past_move_in=not request.user.is_owner, lock_rent=False)
+        form = TenantForm(initial=initial, restrict_past_move_in=is_staff, lock_rent=False, lock_deposit=is_staff)
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Move In Tenant — {partition.name}', 'submit_label': 'Move In', 'cancel_url': reverse('villas:partition_detail', args=[partition.pk]), 'breadcrumbs': [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk])), (partition.villa.name, reverse('villas:villa_detail', args=[partition.villa.pk])), (partition.name, reverse('villas:partition_detail', args=[partition.pk])), ('Move In Tenant', None)]})
 
 @login_required

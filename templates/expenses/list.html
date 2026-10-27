@@ -7,34 +7,24 @@
   </div>
 
   <div class="grid--kpi">
-    <a class="kpi {% if due == 'overdue' %}kpi--active{% endif %}" href="?period={{ period }}&year={{ year }}{% if period == 'month' %}&month={{ month }}{% endif %}&due=overdue&status=active{% if selected_villa %}&villa={{ selected_villa }}{% endif %}">
+    <a class="kpi {% if due == 'overdue' %}kpi--active{% endif %}" href="?period={{ period }}&year={{ year }}{% if period == 'month' %}&month={{ month }}{% endif %}&due=overdue&status=active{% if selected_villa %}&villa={{ selected_villa }}{% endif %}{% if selected_staff %}&staff={{ selected_staff }}{% endif %}">
       <div class="kpi__label">Overdue</div>
       <div class="kpi__value {% if summary.overdue.count %}kpi__value--danger{% endif %}">QAR {{ summary.overdue.total|floatformat:"2" }}</div>
       <div class="kpi__sub">{{ summary.overdue.count }} expense{{ summary.overdue.count|pluralize }}</div>
     </a>
-    <a class="kpi {% if due == 'today' %}kpi--active{% endif %}" href="?period={{ period }}&year={{ year }}{% if period == 'month' %}&month={{ month }}{% endif %}&due=today&status=active{% if selected_villa %}&villa={{ selected_villa }}{% endif %}">
-      <div class="kpi__label">Due today</div>
-      <div class="kpi__value {% if summary.today.count %}kpi__value--warning{% endif %}">QAR {{ summary.today.total|floatformat:"2" }}</div>
-      <div class="kpi__sub">{{ summary.today.count }} expense{{ summary.today.count|pluralize }}</div>
-    </a>
-    <a class="kpi {% if due == 'upcoming' %}kpi--active{% endif %}" href="?period={{ period }}&year={{ year }}{% if period == 'month' %}&month={{ month }}{% endif %}&due=upcoming&status=active{% if selected_villa %}&villa={{ selected_villa }}{% endif %}">
-      <div class="kpi__label">Upcoming</div>
-      <div class="kpi__value">QAR {{ summary.upcoming.total|floatformat:"2" }}</div>
-      <div class="kpi__sub">{{ summary.upcoming.count }} expense{{ summary.upcoming.count|pluralize }}</div>
-    </a>
-    <a class="kpi {% if due == 'unpaid' %}kpi--active{% endif %}" href="?period={{ period }}&year={{ year }}{% if period == 'month' %}&month={{ month }}{% endif %}&due=unpaid&status=active{% if selected_villa %}&villa={{ selected_villa }}{% endif %}">
+    <a class="kpi {% if due == 'unpaid' %}kpi--active{% endif %}" href="?period={{ period }}&year={{ year }}{% if period == 'month' %}&month={{ month }}{% endif %}&due=unpaid&status=active{% if selected_villa %}&villa={{ selected_villa }}{% endif %}{% if selected_staff %}&staff={{ selected_staff }}{% endif %}">
       <div class="kpi__label">Outstanding</div>
       <div class="kpi__value">QAR {{ summary.unpaid.total|floatformat:"2" }}</div>
       <div class="kpi__sub">{{ summary.unpaid.count }} unpaid</div>
     </a>
     {% if not is_field_staff %}
-    <a class="kpi {% if due == 'verify' %}kpi--active{% endif %}" href="?period={{ period }}&year={{ year }}{% if period == 'month' %}&month={{ month }}{% endif %}&due=verify&status=active{% if selected_villa %}&villa={{ selected_villa }}{% endif %}">
+    <a class="kpi {% if due == 'verify' %}kpi--active{% endif %}" href="?period={{ period }}&year={{ year }}{% if period == 'month' %}&month={{ month }}{% endif %}&due=verify&status=active{% if selected_villa %}&villa={{ selected_villa }}{% endif %}{% if selected_staff %}&staff={{ selected_staff }}{% endif %}">
       <div class="kpi__label">To verify</div>
       <div class="kpi__value {% if summary.verify.count %}kpi__value--warning{% endif %}">QAR {{ summary.verify.total|floatformat:"2" }}</div>
       <div class="kpi__sub">{{ summary.verify.count }} paid by staff</div>
     </a>
     {% endif %}
-    <a class="kpi {% if due == 'paid' %}kpi--active{% endif %}" href="?period={{ period }}&year={{ year }}{% if period == 'month' %}&month={{ month }}{% endif %}&due=paid&status=active{% if selected_villa %}&villa={{ selected_villa }}{% endif %}">
+    <a class="kpi {% if due == 'paid' %}kpi--active{% endif %}" href="?period={{ period }}&year={{ year }}{% if period == 'month' %}&month={{ month }}{% endif %}&due=paid&status=active{% if selected_villa %}&villa={{ selected_villa }}{% endif %}{% if selected_staff %}&staff={{ selected_staff }}{% endif %}">
       <div class="kpi__label">Paid</div>
       <div class="kpi__value kpi__value--success">QAR {{ summary.paid.total|floatformat:"2" }}</div>
       <div class="kpi__sub">{{ summary.paid.count }} expense{{ summary.paid.count|pluralize }}</div>
@@ -66,10 +56,17 @@
         <option value="reversed" {% if status == "reversed" %}selected{% endif %}>Reversed</option>
         <option value="" {% if not status %}selected{% endif %}>All</option>
       </select>
-      <select name="paid_by" onchange="this.form.submit()">
-        <option value="">All expenses</option>
-        <option value="staff" {% if paid_by == "staff" %}selected{% endif %}>Staff Expenses</option>
-        <option value="owner" {% if paid_by == "owner" %}selected{% endif %}>Admin Expenses</option>
+      <select name="staff" onchange="this.form.submit()">
+        <option value="">All Payers / Staff</option>
+        <option value="staff" {% if selected_staff == "staff" %}selected{% endif %}>Staff Expenses</option>
+        <option value="owner" {% if selected_staff == "owner" %}selected{% endif %}>Admin Expenses</option>
+        {% if staff_users %}
+          <optgroup label="Specific Staff">
+            {% for s in staff_users %}
+              <option value="{{ s.pk }}" {% if selected_staff == s.pk|stringformat:"s" %}selected{% endif %}>{{ s.get_full_name|default:s.username }}</option>
+            {% endfor %}
+          </optgroup>
+        {% endif %}
       </select>
       {% if has_filters %}<a class="btn btn--ghost filter-clear-btn" href="{{ request.path }}?period={{ period }}&year={{ year }}{% if period == 'month' %}&month={{ month }}{% endif %}">Clear Filter</a>{% endif %}
     </form>

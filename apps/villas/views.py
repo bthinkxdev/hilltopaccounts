@@ -65,7 +65,7 @@ def villa_list(request):
     qs = base.select_related('business').annotate(partition_total=Count('partitions', distinct=True), occupied_total=Count('partitions', filter=Q(partitions__tenancies__status='active'), distinct=True)).order_by('business__name', 'name')
     page_obj = paginate_queryset(request, qs, per_page=12)
     villa_ids = [villa.pk for villa in page_obj]
-    period = period_context(request, today)
+    period = period_context(request, today, allow_future=True)
     from apps.billing.services import ensure_rent_invoices
     ensure_rent_invoices(villa_ids=villa_ids)
     if period['period'] == 'month':

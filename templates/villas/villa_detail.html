@@ -207,7 +207,7 @@
                         {% elif partition.tenant.deposit_status == 'partially_paid' %}
                           <span class="pill pill--warning" style="font-size: 10px; padding: 1px 6px;">Received {{ partition.tenant.deposit_paid|floatformat:"0g" }} · Pending {{ partition.tenant.deposit_pending|floatformat:"0g" }}</span>
                         {% else %}
-                          <span class="pill pill--neutral" style="font-size: 10px; padding: 1px 6px;">Pending</span>
+                          <span class="pill pill--danger" style="font-size: 10px; padding: 1px 6px;">Pending</span>
                         {% endif %}
                       {% else %}
                         No advance

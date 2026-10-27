@@ -17,9 +17,10 @@ class TenantForm(forms.Form):
     deposit_method = forms.ChoiceField(required=False, choices=DepositCollection.Method.choices, initial=DepositCollection.Method.CASH, label='Advance Payment Method')
     notes = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2}))
 
-    def __init__(self, *args, restrict_past_move_in=False, lock_rent=False, editing=False, **kwargs):
+    def __init__(self, *args, restrict_past_move_in=False, lock_rent=False, lock_deposit=False, editing=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.restrict_past_move_in = restrict_past_move_in
+        self.lock_deposit = lock_deposit
         self.editing = editing
         if editing:
             # The advance already received is changed only by collecting it (dated records), never typed over.
@@ -33,6 +34,18 @@ class TenantForm(forms.Form):
             self.fields['monthly_rent'].help_text = 'Set by the partition rent.'
             if self.is_bound and not self.initial.get('monthly_rent') and 'monthly_rent' in self.data:
                 self.initial['monthly_rent'] = self.data.get('monthly_rent')
+        if not editing and 'deposit' in self.fields:
+            dep_id = self['deposit'].id_for_label
+            self.fields['monthly_rent'].widget.attrs['oninput'] = (
+                f"var d = document.getElementById('{dep_id}'); if (d && (!d.dataset.custom || d.readOnly)) d.value = this.value;"
+            )
+            self.fields['deposit'].widget.attrs['oninput'] = (
+                "this.dataset.custom = (this.value !== '' && this.value !== '0') ? '1' : '';"
+            )
+        if lock_deposit and 'deposit' in self.fields:
+            self.fields['deposit'].widget.attrs['readonly'] = True
+            self.fields['deposit'].widget.attrs['style'] = 'opacity: 0.75; cursor: not-allowed; pointer-events: none;'
+            self.fields['deposit'].help_text = 'Fixed to rent amount (staff cannot change).'
 
     def clean_mobile(self):
         mobile = self.cleaned_data.get('mobile', '').strip()
@@ -54,7 +67,10 @@ class TenantForm(forms.Form):
 
     def clean(self):
         cleaned_data = super().clean()
-        cleaned_data['deposit'] = cleaned_data.get('deposit') or Decimal('0.00')
+        if self.lock_deposit and cleaned_data.get('monthly_rent'):
+            cleaned_data['deposit'] = cleaned_data['monthly_rent']
+        else:
+            cleaned_data['deposit'] = cleaned_data.get('deposit') or Decimal('0.00')
         if not self.editing:
             paid = cleaned_data.get('deposit_paid') or Decimal('0.00')
             if paid > cleaned_data['deposit']:

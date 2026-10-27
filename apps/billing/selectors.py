@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from django.db.models import DecimalField, F, OuterRef, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
@@ -237,7 +237,7 @@ def unbilled_charges_details_by_partition(partition_pks, year: int, month: int, 
         res[c.partition_id].append({'name': name, 'amount': c.amount})
     return res
 
-def prior_unpaid_invoices_by_partition(partition_pks, start_date):
+def prior_unpaid_invoices_by_partition(partition_pks, start_date, tenant_by_partition=None):
     from collections import defaultdict
     prior_invs = Invoice.objects.filter(
         partition_id__in=partition_pks,
@@ -259,6 +259,20 @@ def prior_unpaid_invoices_by_partition(partition_pks, start_date):
                 'outstanding': outstanding,
                 'charges': charges,
             })
+    if tenant_by_partition:
+        for pid, tenant in tenant_by_partition.items():
+            cur = first_billed_month(tenant)
+            while cur < start_date:
+                period = cur.strftime('%B %Y')
+                for c in unbilled_charges_details_by_partition([pid], cur.year, cur.month, {pid: tenant}).get(pid, []):
+                    entry = next((i for i in res[(pid, tenant.pk)] if i['period'] == period), None)
+                    if not entry:
+                        entry = {'id': None, 'period': period, 'total': Decimal('0.00'), 'paid': Decimal('0.00'), 'outstanding': Decimal('0.00'), 'charges': []}
+                        res[(pid, tenant.pk)].append(entry)
+                    entry['total'] += c['amount']
+                    entry['outstanding'] += c['amount']
+                    entry['charges'].append(c)
+                cur = (cur + timedelta(days=32)).replace(day=1)
     return res
 
 def rent_schedule(partition, today=None) -> dict:
@@ -304,7 +318,7 @@ def rent_sheet(*, tenants, invoice_queryset, year: int, month: int, today: date)
         invoices_by_partition_tenant[(invoice.partition_id, invoice.tenant_id)].append(invoice)
     unbilled_map = unbilled_charges_by_partition(partition_pks, year, month, current_by_partition)
     unbilled_details_map = unbilled_charges_details_by_partition(partition_pks, year, month, current_by_partition)
-    prior_unpaid_map = prior_unpaid_invoices_by_partition(partition_pks, start)
+    prior_unpaid_map = prior_unpaid_invoices_by_partition(partition_pks, start, current_by_partition)
     zero = Decimal('0.00')
     rows, expected, collected = [], zero, zero
     for tenant in tenants:

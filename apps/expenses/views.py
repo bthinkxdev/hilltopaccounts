@@ -1,7 +1,9 @@
 from datetime import date
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -59,9 +61,12 @@ def expense_list(request):
     due = request.GET.get('due', '')
     if due in dict(DueBucket.CHOICES):
         qs = expense_selectors.filter_by_due_bucket(qs, due, today)
-    paid_by = request.GET.get('paid_by', '')
-    if paid_by in (PaidBy.STAFF, PaidBy.OWNER):
-        qs = qs.filter(paid_by=paid_by)
+    staff_id = request.GET.get('staff', '').strip() or request.GET.get('paid_by', '').strip()
+    if staff_id.isdigit():
+        uid = int(staff_id)
+        qs = qs.filter(Q(paid_by_user_id=uid) | Q(created_by_id=uid))
+    elif staff_id in (PaidBy.STAFF, PaidBy.OWNER):
+        qs = qs.filter(paid_by=staff_id)
     payable = request.GET.get('payable') == '1'
     if payable:
         # Bills staff may pay from collected cash (the dashboard's "Staff bills due"): not auto-debits, not villa rent.
@@ -70,6 +75,10 @@ def expense_list(request):
     summary_base = visible.filter(date__gte=start, date__lte=end)
     if villa_id.isdigit():
         summary_base = summary_base.filter(villa_id=villa_id)
+    if staff_id.isdigit():
+        summary_base = summary_base.filter(Q(paid_by_user_id=int(staff_id)) | Q(created_by_id=int(staff_id)))
+    elif staff_id in (PaidBy.STAFF, PaidBy.OWNER):
+        summary_base = summary_base.filter(paid_by=staff_id)
 
     page_obj = paginate_queryset(request, qs.order_by('due_date', '-created_at', '-id') if due in (DueBucket.UNPAID, DueBucket.OVERDUE, DueBucket.TODAY, DueBucket.UPCOMING) else qs.order_by('-created_at', '-id'))
     scope = selectors.ManageScope(request.user)
@@ -81,8 +90,14 @@ def expense_list(request):
         expense.can_verify = scope.can_verify_expense(expense)
         expense.can_edit = expense.can_manage and expense.status == 'active' and expense.paid_on is None and not (is_field_staff and expense.paid_by == PaidBy.OWNER)
 
+    User = get_user_model()
+    if request.user.is_owner:
+        staff_users = list(User.objects.filter(is_active=True, is_owner=False).exclude(username='system').order_by('first_name', 'username'))
+    else:
+        staff_users = [request.user]
+
     villas = selectors.villas_visible_to(request.user).filter(is_archived=False, is_sold=False).select_related('business')
-    has_filters = bool(villa_id.isdigit() or (due in dict(DueBucket.CHOICES)) or ('status' in request.GET and status != Expense.Status.ACTIVE) or paid_by or payable)
+    has_filters = bool(villa_id.isdigit() or (due in dict(DueBucket.CHOICES)) or ('status' in request.GET and status != Expense.Status.ACTIVE) or staff_id or payable)
 
     keep = []
     if villa_id.isdigit():
@@ -91,8 +106,8 @@ def expense_list(request):
         keep.append(('due', due))
     if status and status != Expense.Status.ACTIVE:
         keep.append(('status', status))
-    if paid_by:
-        keep.append(('paid_by', paid_by))
+    if staff_id:
+        keep.append(('staff', staff_id))
     if payable:
         keep.append(('payable', '1'))
 
@@ -100,8 +115,10 @@ def expense_list(request):
         'page_obj': page_obj,
         'status': status,
         'due': due,
-        'paid_by': paid_by,
-        'due_choices': DueBucket.CHOICES,
+        'paid_by': staff_id,
+        'selected_staff': staff_id,
+        'staff_users': staff_users,
+        'due_choices': DueBucket.FILTER_CHOICES,
         'is_field_staff': is_field_staff,
         'villas': villas,
         'selected_villa': villa_id,
@@ -256,7 +273,7 @@ def expense_revise(request, pk):
                 messages.success(request, f'{expense.category} updated to QAR {form.cleaned_data["amount"]}.')
                 return redirect(back)
     else:
-        form = ReviseExpenseForm(initial={'amount': expense.amount, 'due_date': expense.due_date, 'description': expense.description})
+        form = ReviseExpenseForm(initial={'amount': expense.amount, 'description': expense.description})
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Edit {expense.category} — {expense.villa.name if expense.villa_id else expense.business.name}', 'cancel_url': back})
 
 def _villa_for_fixed_expenses(request, villa_pk):

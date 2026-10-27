@@ -175,7 +175,7 @@ def update_expense(*, expense: Expense, updated_by, **fields) -> Expense:
             audit_services.log(user=updated_by, action=Action.EXPENSE_UPDATED, obj=expense, business=expense.business, villa=expense.villa, old_value=old_value, new_value=new_value)
     return expense
 
-def revise_unpaid_expense(*, expense: Expense, updated_by, amount, due_date, description='') -> Expense:
+def revise_unpaid_expense(*, expense: Expense, updated_by, amount, due_date=None, description='') -> Expense:
     """Adjust the amount/due date of an expense that has not been paid yet (e.g. this month's electricity bill).
 
     A paid expense is financial history: it can only be cancelled or reversed, never rewritten.
@@ -186,6 +186,8 @@ def revise_unpaid_expense(*, expense: Expense, updated_by, amount, due_date, des
             raise PermissionDenied('You cannot edit this expense.')
         if locked.status != Expense.Status.ACTIVE or locked.paid_on is not None:
             raise ExpenseNotEditable('Only an unpaid, active expense can be edited. Cancel or reverse a paid one instead.')
+        if due_date is None:
+            due_date = locked.due_date
         return update_expense(expense=locked, updated_by=updated_by, amount=amount, due_date=due_date, description=description)
 
 def _set_status(*, expense: Expense, status, actor, reason) -> Expense:

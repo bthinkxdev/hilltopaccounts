@@ -94,5 +94,4 @@ class RecurringExpenseForm(forms.Form):
 
 class ReviseExpenseForm(forms.Form):
     amount = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12, widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01'}))
-    due_date = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
     description = forms.CharField(required=False, label='Notes', widget=forms.Textarea(attrs={'rows': 2}))

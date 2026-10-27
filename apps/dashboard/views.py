@@ -40,7 +40,7 @@ class HomeView(LoginRequiredMixin, TemplateView):
         ctx['partition_count'] = partition_count
         ctx['occupied_count'] = occupied_count
         ctx['vacant_count'] = partition_count - occupied_count
-        ctx.update(period_context(self.request))
+        ctx.update(period_context(self.request, allow_future=True))
         ctx['keep'] = []
         financial = selectors.financial_villas(user)
         if not financial.exists() and (selectors.is_partner(user) or staff_view):
