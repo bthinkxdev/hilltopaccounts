@@ -74,7 +74,7 @@
         <div class="kpi__label">{% if is_cash_negative %}Out-of-pocket (To reimburse){% else %}Cash in hand{% endif %}</div>
         <div class="kpi__value {% if is_cash_negative %}kpi__value--danger{% elif outstanding_cash > 0 %}kpi__value--warning{% endif %}">QAR {{ abs_outstanding_cash|floatformat:"2g" }}</div>
       </div>
-      {% elif can_view_financials %}
+      {% elif can_view_financials and not is_partner %}
       <div class="kpi kpi--ic-cash">
         <div class="kpi__label">Cash held by staff</div>
         <div class="kpi__value {% if cash_held_by_staff > 0 %}kpi__value--warning{% endif %}">QAR {{ cash_held_by_staff|floatformat:"2g" }}</div>

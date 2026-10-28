@@ -15,11 +15,15 @@
     <div class="grid--kpi">
       <div class="kpi"><div class="kpi__label">Staff</div><div class="kpi__value">{{ handover.staff.get_full_name|default:handover.staff.username }}</div></div>
       <div class="kpi"><div class="kpi__label">Collected cash</div><div class="kpi__value">QAR {{ collected_total|floatformat:"2" }}</div></div>
+      {% comment %}
       <div class="kpi"><div class="kpi__label">Expenses paid by staff</div><div class="kpi__value">QAR {{ expenses_total|floatformat:"2" }}</div></div>
+      {% endcomment %}
       <div class="kpi"><div class="kpi__label">Handed over (declared)</div><div class="kpi__value">QAR {{ handover.declared_amount }}</div></div>
       {% if handover.confirmed_amount is not None %}
         <div class="kpi"><div class="kpi__label">Confirmed</div><div class="kpi__value">QAR {{ handover.confirmed_amount }}</div></div>
-        <div class="kpi"><div class="kpi__label">Discrepancy</div><div class="kpi__value {% if handover.discrepancy != 0 %}kpi__value--warning{% endif %}">QAR {{ handover.discrepancy }}</div></div>
+        {% if handover.discrepancy and handover.discrepancy != 0 %}
+          <div class="kpi"><div class="kpi__label">Discrepancy</div><div class="kpi__value kpi__value--warning">QAR {{ handover.discrepancy }}</div></div>
+        {% endif %}
       {% endif %}
     </div>
     <div class="list-row__meta" style="margin-top: var(--space-3);">

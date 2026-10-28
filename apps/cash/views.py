@@ -24,7 +24,7 @@ def handover_list(request):
     page_obj = paginate_queryset(request, qs.order_by('-submitted_at'))
     is_owner = request.user.is_owner
     my_unclaimed = [] if is_owner else list(selectors.unclaimed_cash_payments(request.user)) + list(selectors.unclaimed_cash_deposits(request.user))
-    can_confirm = accounts_selectors.can_view_financial_kpis(request.user)
+    can_confirm = accounts_selectors.can_confirm_cash_handovers(request.user)
     context = {'page_obj': page_obj, 'status': status, 'status_choices': CashHandover.Status.choices, 'is_owner': is_owner, 'can_view_accountability': can_confirm, 'breadcrumbs': [('Cash Handover', None)]}
     if not is_owner:
         # The owner's own collections are already owner funds, so "my cash" only applies to everyone else.
@@ -40,7 +40,7 @@ def handover_list(request):
 @login_required
 def handover_detail(request, pk):
     handover = get_object_or_404(accounts_selectors.cash_handovers_visible_to(request.user), pk=pk)
-    can_confirm = handover.status == CashHandover.Status.SUBMITTED and handover.staff_id != request.user.pk and accounts_selectors.can_view_financial_kpis(request.user)
+    can_confirm = handover.status == CashHandover.Status.SUBMITTED and handover.staff_id != request.user.pk and accounts_selectors.can_confirm_cash_handovers(request.user)
     return render(request, 'cash/handover_detail.html', {'handover': handover, 'payments': handover.payments.select_related('invoice', 'invoice__partition__villa', 'invoice__partition'), 'deposits': handover.deposits.select_related('tenant__partition__villa'), 'expenses': handover.expenses.select_related('category', 'villa'), 'collected_total': handover.declared_amount + (handover.expenses.aggregate(t=Sum('amount'))['t'] or 0), 'expenses_total': handover.expenses.aggregate(t=Sum('amount'))['t'] or 0, 'can_confirm': can_confirm, 'breadcrumbs': [('Cash Handover', reverse('cash:handover_list')), (f'#{handover.pk}', None)]})
 
 @login_required
@@ -65,7 +65,7 @@ def handover_submit(request):
 @login_required
 def handover_confirm(request, pk):
     handover = get_object_or_404(accounts_selectors.cash_handovers_visible_to(request.user), pk=pk)
-    if not accounts_selectors.can_view_financial_kpis(request.user):
+    if not accounts_selectors.can_confirm_cash_handovers(request.user):
         raise PermissionDenied('You cannot confirm cash handovers.')
     if request.method == 'POST':
         form = ConfirmHandoverForm(request.POST)
@@ -84,7 +84,7 @@ def handover_confirm(request, pk):
 @login_required
 def handover_reject(request, pk):
     handover = get_object_or_404(accounts_selectors.cash_handovers_visible_to(request.user), pk=pk)
-    if not accounts_selectors.can_view_financial_kpis(request.user):
+    if not accounts_selectors.can_confirm_cash_handovers(request.user):
         raise PermissionDenied('You cannot reject cash handovers.')
     if request.method == 'POST':
         form = ReasonForm(request.POST)

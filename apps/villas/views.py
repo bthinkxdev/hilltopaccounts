@@ -62,7 +62,7 @@ def villa_list(request):
         staff_choices = list(User.objects.filter(is_active=True, assignments__role=Assignment.Role.VILLA_STAFF, assignments__villa__in=financial_scope).distinct().order_by('first_name', 'username'))
         if staff_id.isdigit():
             base = base.filter(pk__in=Assignment.objects.filter(role=Assignment.Role.VILLA_STAFF, user_id=staff_id, villa__in=financial_scope).values('villa_id'))
-    qs = base.select_related('business').annotate(partition_total=Count('partitions', distinct=True), occupied_total=Count('partitions', filter=Q(partitions__tenancies__status='active'), distinct=True)).order_by('business__name', 'name')
+    qs = base.select_related('business').annotate(partition_total=Count('partitions', filter=Q(partitions__status=Partition.Status.ACTIVE), distinct=True), occupied_total=Count('partitions', filter=Q(partitions__status=Partition.Status.ACTIVE, partitions__tenancies__status='active'), distinct=True)).order_by('business__name', 'name')
     page_obj = paginate_queryset(request, qs, per_page=12)
     villa_ids = [villa.pk for villa in page_obj]
     period = period_context(request, today, allow_future=True)
@@ -82,7 +82,6 @@ def villa_list(request):
     from apps.expenses import selectors as expenses_selectors
     from apps.expenses.models import Expense
     from apps.billing.models import Payment
-    from apps.villas.models import Partition
     staff_names = {}
     for assignment in Assignment.objects.filter(user__is_active=True, role=Assignment.Role.VILLA_STAFF, villa_id__in=financial_ids).select_related('user'):
         staff_names.setdefault(assignment.villa_id, []).append(assignment.user.get_full_name() or assignment.user.username)

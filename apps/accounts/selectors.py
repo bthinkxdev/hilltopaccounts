@@ -18,6 +18,11 @@ def can_view_financial_kpis(user) -> bool:
         return True
     return is_partner(user) or Assignment.objects.filter(user=user, role__in=[Assignment.Role.BUSINESS_MANAGER, Assignment.Role.ACCOUNTANT, Assignment.Role.PARTNER]).exists()
 
+def can_confirm_cash_handovers(user) -> bool:
+    if user.is_owner:
+        return True
+    return can_view_financial_kpis(user) and not is_partner(user)
+
 def is_field_staff(user) -> bool:
     """Operational users (villa staff) who must not see business-level finance, P&L or verification."""
     return not user.is_owner and not can_view_financial_kpis(user)

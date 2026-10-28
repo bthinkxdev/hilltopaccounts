@@ -119,9 +119,10 @@ class HomeView(LoginRequiredMixin, TemplateView):
             if overdue:
                 overdue_total = sum((billing_selectors.invoice_outstanding(i) for i in overdue), start=0)
                 needs_attention.append({'label': 'Overdue rent', 'count': len(overdue), 'meta': f'QAR {overdue_total} outstanding', 'url': reverse('billing:payment_list') + '?tab=pending#arrears'})
-            pending_handovers = selectors.cash_handovers_visible_to(user).filter(status=CashHandover.Status.SUBMITTED)
-            if pending_handovers.exists():
-                needs_attention.append({'label': 'Pending cash handovers', 'count': pending_handovers.count(), 'meta': 'Awaiting your confirmation', 'url': reverse('cash:handover_list') + '?status=submitted'})
+            if selectors.can_confirm_cash_handovers(user):
+                pending_handovers = selectors.cash_handovers_visible_to(user).filter(status=CashHandover.Status.SUBMITTED).exclude(staff=user)
+                if pending_handovers.exists():
+                    needs_attention.append({'label': 'Pending cash handovers', 'count': pending_handovers.count(), 'meta': 'Awaiting your confirmation', 'url': reverse('cash:handover_list') + '?status=submitted'})
             if user.is_owner:
                 from apps.businesses.selectors import partner_shares_due_after_payout
                 for item in partner_shares_due_after_payout():
@@ -172,7 +173,7 @@ class HomeView(LoginRequiredMixin, TemplateView):
         ctx['abs_outstanding_cash'] = abs(outstanding_cash)
         ctx['is_cash_negative'] = outstanding_cash < 0
         ctx['pending_handover_amount'] = cash_selectors.pending_handover_amount(user)
-        if ctx['can_view_financials'] and not staff_view:
+        if selectors.can_confirm_cash_handovers(user):
             rows = cash_selectors.staff_accountability(user, ctx['year'], ctx['month'])
             ctx['cash_held_by_staff'] = sum((r['holding'] for r in rows), start=0)
             ctx['pending_staff_handovers'] = sum((r['awaiting_confirmation'] for r in rows), start=0)
