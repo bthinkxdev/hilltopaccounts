@@ -126,7 +126,13 @@ def tenant_create(request, partition_pk):
         form = TenantForm(request.POST, initial=initial, restrict_past_move_in=False, lock_rent=False, lock_deposit=is_staff)
         if form.is_valid():
             try:
-                tenant = create_tenant(partition=partition, created_by=request.user, **form.cleaned_data)
+                from django.db import transaction
+                with transaction.atomic():
+                    rent_paid = form.cleaned_data.pop('rent_paid', 0)
+                    tenant = create_tenant(partition=partition, created_by=request.user, **form.cleaned_data)
+                    if rent_paid:
+                        from apps.billing.services import collect_rent
+                        collect_rent(partition=partition, year=tenant.move_in_date.year, month=tenant.move_in_date.month, method=form.cleaned_data.get('deposit_method', 'cash'), collected_by=request.user, amount=rent_paid, collected_at=min(tenant.move_in_date, date.today()))
             except DomainError as exc:
                 form.add_error(None, str(exc))
             else:

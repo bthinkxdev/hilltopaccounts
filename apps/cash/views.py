@@ -106,7 +106,7 @@ def staff_accountability(request):
     """Owner / Business Manager overview: for each staff member, collected, spent, handed over, still holding, rent pending."""
     if not accounts_selectors.can_view_financial_kpis(request.user):
         raise PermissionDenied('Only the Owner, Business Managers and Accountants can see staff accountability.')
-    period = period_context(request)
+    period = period_context(request, allow_future=True)
     rows = selectors.staff_accountability(request.user, period['year'], period['month'])
     context = {'rows': rows, 'keep': [], 'breadcrumbs': [('Cash Handover', reverse('cash:handover_list')), ('Staff accountability', None)], **period}
     return render(request, 'cash/staff_accountability.html', context)

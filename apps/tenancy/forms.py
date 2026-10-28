@@ -73,9 +73,12 @@ class TenantForm(forms.Form):
             cleaned_data['deposit'] = cleaned_data.get('deposit') or Decimal('0.00')
         if not self.editing:
             paid = cleaned_data.get('deposit_paid') or Decimal('0.00')
-            if paid > cleaned_data['deposit']:
-                self.add_error('deposit_paid', 'Advance received cannot be more than the advance.')
-            cleaned_data['deposit_paid'] = paid
+            deposit = cleaned_data['deposit']
+            monthly_rent = cleaned_data.get('monthly_rent') or Decimal('0.00')
+            if paid > deposit + monthly_rent:
+                self.add_error('deposit_paid', f'Amount received cannot be more than advance + first month rent (QAR {deposit + monthly_rent}).')
+            cleaned_data['deposit_paid'] = min(paid, deposit)
+            cleaned_data['rent_paid'] = min(max(Decimal('0.00'), paid - deposit), monthly_rent)
             cleaned_data['deposit_method'] = cleaned_data.get('deposit_method') or DepositCollection.Method.CASH
         return cleaned_data
 
