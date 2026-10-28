@@ -42,7 +42,7 @@ def business_list(request):
 def business_detail(request, pk):
     business = get_object_or_404(selectors.businesses_visible_to(request.user), pk=pk)
     villas = selectors.villas_visible_to(request.user).filter(business=business, is_archived=False, is_sold=False)
-    period = period_context(request)
+    period = period_context(request, allow_future=True)
     financial = selectors.financial_villas(request.user).filter(business=business, is_sold=False)
     context = {'period_pnl': billing_selectors.period_profit_loss(selectors.invoices_visible_to(request.user).filter(partition__villa__in=financial), selectors.expenses_visible_to(request.user).filter(villa__in=financial), period['period_start'], period['period_end'], deposits=selectors.deposits_visible_to(request.user).filter(tenant__partition__villa__in=financial)) if financial.exists() else None, 'keep': [], **period, 'business': business, 'villas': villas, 'can_view_financials': selectors.can_view_financial_kpis(request.user), 'breadcrumbs': [('Businesses', reverse('businesses:list')), (business.name, None)]}
     if context['can_view_financials']:

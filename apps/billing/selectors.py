@@ -294,11 +294,8 @@ def rent_schedule_from(charges, today=None) -> dict:
     return {'current': current.amount if current else None, 'upcoming': upcoming.amount if upcoming else None, 'upcoming_from': upcoming.start_date if upcoming else None}
 
 def first_billed_month(tenant) -> date:
-    """Rent is tracked from the month the tenant was added to the system (or moved in, if later), so onboarding a
-    long-standing tenant never invents years of arrears."""
-    from django.utils import timezone
-    added = timezone.localdate(tenant.created_at) if tenant.created_at else date.today()
-    return max(tenant.move_in_date, added).replace(day=1)
+    """Rent is tracked from the month the tenant moved in."""
+    return tenant.move_in_date.replace(day=1)
 
 def resident_in_month(tenant, year: int, month: int) -> bool:
     start, end = period_bounds(year, month)
