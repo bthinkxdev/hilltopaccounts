@@ -13,6 +13,8 @@ class TenantForm(forms.Form):
     move_in_date = forms.DateField(widget=forms.DateInput(attrs={'type': 'date'}))
     monthly_rent = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12, label='Monthly Rent (QAR)', help_text='Fixed every month. Collections can be partial; the rest stays pending.')
     deposit = forms.DecimalField(required=False, min_value=Decimal('0'), decimal_places=2, max_digits=12, initial=Decimal('0'), label='Advance / Security Deposit (QAR)', help_text='Leave 0 if there is no advance.')
+    rent_paid = forms.DecimalField(required=False, min_value=Decimal('0'), decimal_places=2, max_digits=12, initial=Decimal('0'), label='Rent Received Now (QAR)', help_text='First month rent received now; the rest stays pending.')
+    rent_method = forms.ChoiceField(required=False, choices=DepositCollection.Method.choices, initial=DepositCollection.Method.CASH, label='Rent Payment Method')
     deposit_paid = forms.DecimalField(required=False, min_value=Decimal('0'), decimal_places=2, max_digits=12, initial=Decimal('0'), label='Advance Received Now (QAR)', help_text='Can be part of the advance; the rest stays pending.')
     deposit_method = forms.ChoiceField(required=False, choices=DepositCollection.Method.choices, initial=DepositCollection.Method.CASH, label='Advance Payment Method')
     notes = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2}))
@@ -24,8 +26,10 @@ class TenantForm(forms.Form):
         self.editing = editing
         if editing:
             # The advance already received is changed only by collecting it (dated records), never typed over.
-            del self.fields['deposit_paid']
-            del self.fields['deposit_method']
+            self.fields.pop('deposit_paid', None)
+            self.fields.pop('deposit_method', None)
+            self.fields.pop('rent_paid', None)
+            self.fields.pop('rent_method', None)
             self.fields['monthly_rent'].help_text = 'A new rent applies from the first month not yet billed; earlier months keep their rent.'
         if restrict_past_move_in:
             self.fields['move_in_date'].widget.attrs['min'] = date.today().isoformat()
@@ -72,14 +76,20 @@ class TenantForm(forms.Form):
         else:
             cleaned_data['deposit'] = cleaned_data.get('deposit') or Decimal('0.00')
         if not self.editing:
-            paid = cleaned_data.get('deposit_paid') or Decimal('0.00')
             deposit = cleaned_data['deposit']
             monthly_rent = cleaned_data.get('monthly_rent') or Decimal('0.00')
-            if paid > deposit + monthly_rent:
-                self.add_error('deposit_paid', f'Amount received cannot be more than advance + first month rent (QAR {deposit + monthly_rent}).')
-            cleaned_data['deposit_paid'] = min(paid, deposit)
-            cleaned_data['rent_paid'] = min(max(Decimal('0.00'), paid - deposit), monthly_rent)
+            deposit_paid = cleaned_data.get('deposit_paid') or Decimal('0.00')
+            rent_paid = cleaned_data.get('rent_paid') or Decimal('0.00')
+
+            if deposit_paid > deposit:
+                self.add_error('deposit_paid', f'Advance received now cannot be more than the advance amount (QAR {deposit}).')
+            if rent_paid > monthly_rent:
+                self.add_error('rent_paid', f'Rent received now cannot be more than monthly rent (QAR {monthly_rent}).')
+
+            cleaned_data['deposit_paid'] = deposit_paid
+            cleaned_data['rent_paid'] = rent_paid
             cleaned_data['deposit_method'] = cleaned_data.get('deposit_method') or DepositCollection.Method.CASH
+            cleaned_data['rent_method'] = cleaned_data.get('rent_method') or DepositCollection.Method.CASH
         return cleaned_data
 
 class DepositCollectForm(forms.Form):
