@@ -82,6 +82,21 @@
           </form>
         {% endif %}
 
+        {% if user.is_authenticated and nav_has_scope and nav_period %}
+          <div class="period-switch{% if nav_period.aware %} period-switch--live{% else %} period-switch--idle{% endif %}{% if nav_period.is_current %} period-switch--current{% endif %}" data-period-switch data-aware="{{ nav_period.aware|yesno:'1,0' }}" data-current-year="{{ nav_period.current_year }}" data-current-month="{{ nav_period.current_month }}" title="{% if nav_period.aware %}Every figure on this page follows this month{% else %}This page is not month-based (by design){% endif %}">
+            <span class="period-switch__dot" aria-hidden="true"></span>
+            <select id="period-month" class="period-switch__select" aria-label="Month">
+              <option value="0"{% if nav_period.is_year %} selected{% endif %}>Full year</option>
+              {% for value, name in nav_period.month_choices %}<option value="{{ value }}"{% if not nav_period.is_year and not nav_period.is_all and nav_period.month == value %} selected{% endif %}>{{ name }}</option>{% endfor %}
+            </select>
+            <select id="period-year" class="period-switch__select" aria-label="Year">
+              {% if nav_period.is_all %}<option value="" selected>All time</option>{% endif %}
+              {% for y in nav_period.year_choices %}<option value="{{ y }}"{% if not nav_period.is_all and nav_period.year == y %} selected{% endif %}>{{ y }}</option>{% endfor %}
+            </select>
+            <button type="button" class="period-switch__today" data-period-today{% if nav_period.is_current %} hidden{% endif %}>Current month</button>
+          </div>
+        {% endif %}
+
         <div class="topbar__actions">
           {% if user.is_authenticated %}
             <a class="btn btn--ghost" href="{% url 'notifications:list' %}" aria-label="Notifications{% if notification_unread_count %}, {{ notification_unread_count }} unread{% endif %}">Alerts{% if notification_unread_count %} <span class="badge-dot">{{ notification_unread_count }}</span>{% endif %}</a>
@@ -98,6 +113,13 @@
       </header>
 
       <main class="main">
+        {% if user.is_authenticated and nav_period.aware %}
+          <div class="period-banner{% if nav_period.is_current %} period-banner--current{% endif %}" role="status">
+            <span class="period-banner__dot" aria-hidden="true"></span>
+            <span>Showing data for <strong>{{ nav_period.label }}</strong></span>
+            {% if not nav_period.is_current and not nav_period.is_all %}<button type="button" class="period-banner__reset" data-period-today>Back to current month</button>{% endif %}
+          </div>
+        {% endif %}
         {% if breadcrumbs %}{% include "components/breadcrumbs.html" %}{% endif %}
         {% if messages %}
           {% for message in messages %}
@@ -109,8 +131,17 @@
     </div>
   </div>
 
+  <div id="app-loader" class="app-loader" hidden role="status" aria-live="polite">
+    <div class="app-loader__card">
+      <div class="app-loader__spinner" aria-hidden="true"></div>
+      <div class="app-loader__title" id="app-loader-title">Loading…</div>
+      <div class="app-loader__sub" id="app-loader-sub"></div>
+    </div>
+  </div>
+
   <script src="{% static 'js/theme.js' %}"></script>
   <script src="{% static 'js/app.js' %}"></script>
+  <script src="{% static 'js/period.js' %}"></script>
   {% block extra_scripts %}{% endblock %}
 </body>
 </html>

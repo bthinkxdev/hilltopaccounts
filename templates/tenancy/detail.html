@@ -58,9 +58,15 @@
     <div class="detail-section__title">Advance collections</div>
     <div class="card">
       {% for c in deposit_collections %}
-        <div class="list-row">
-          <span class="list-row__title">QAR {{ c.amount|floatformat:"2g" }}</span>
-          <span class="list-row__meta">Collected on {{ c.collected_at|date:"d M Y" }} by {{ c.collected_by.get_full_name|default:c.collected_by.username }} ({{ c.get_method_display }})</span>
+        <div class="list-row"{% if c.is_voided %} style="opacity: .6;"{% endif %}>
+          <span class="list-row__title">{% if c.is_voided %}<s>QAR {{ c.amount|floatformat:"2g" }}</s>{% else %}QAR {{ c.amount|floatformat:"2g" }}{% endif %}</span>
+          <span class="list-row__meta">Collected on {{ c.collected_at|date:"d M Y" }} by {{ c.collected_by.get_full_name|default:c.collected_by.username }} ({{ c.get_method_display }})
+            {% if c.is_voided %}· Cancelled {{ c.voided_at|date:"d M Y" }} by {{ c.voided_by.get_full_name|default:c.voided_by.username }}: {{ c.void_reason }}{% endif %}</span>
+          {% if c.is_voided %}<span class="pill pill--neutral">Cancelled</span>
+          {% elif can_manage %}
+            <a class="btn btn--ghost btn--sm" href="{% url 'tenancy:deposit_correct' c.pk %}">Correct</a>
+            <a class="btn btn--ghost btn--sm" href="{% url 'tenancy:deposit_void' c.pk %}">Cancel</a>
+          {% endif %}
         </div>
       {% endfor %}
     </div>

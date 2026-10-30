@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from apps.shared.managers import LiveManager
 
 class Business(models.Model):
     name = models.CharField(max_length=200, unique=True)
@@ -87,6 +88,16 @@ class PartnerPayout(models.Model):
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    voided_at = models.DateTimeField(null=True, blank=True)
+    voided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name='+')
+    void_reason = models.TextField(blank=True)
+
+    objects = LiveManager()
+    all_objects = models.Manager()
+
+    @property
+    def is_voided(self):
+        return self.voided_at is not None
 
     class Meta:
         ordering = ['-paid_on', '-created_at']

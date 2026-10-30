@@ -94,7 +94,8 @@ def charge_cancel(request, pk):
 
 @login_required
 def invoice_list(request):
-    qs = selectors.invoices_visible_to(request.user).select_related('partition', 'partition__villa', 'tenant')
+    period = period_context(request, allow_future=True)
+    qs = selectors.invoices_visible_to(request.user).select_related('partition', 'partition__villa', 'tenant').filter(billing_period_start__gte=period['period_start'], billing_period_start__lte=period['period_end'])
     q = request.GET.get('q', '').strip()
     if q:
         qs = qs.filter(Q(invoice_number__icontains=q) | Q(tenant__name__icontains=q))
@@ -412,7 +413,7 @@ def payment_list(request):
                          'collected_by': p.collected_by, 'method': p.get_method_display(), 'amount': p.amount})
         for d in filtered(deposits, ''):
             rows.append({'collected_at': d.collected_at, 'created_at': d.created_at, 'tenant': d.tenant, 'partition': d.tenant.partition, 'villa': d.tenant.partition.villa,
-                         'for_label': 'Advance / deposit', 'for_flag': '', 'collected_by': d.collected_by, 'method': d.get_method_display(), 'amount': d.amount})
+                         'for_label': 'Advance / deposit', 'for_flag': ('Arrears' if d.tenant.move_in_date < period['period_start'] else ('Advance' if d.tenant.move_in_date > period['period_end'] else '')), 'collected_by': d.collected_by, 'method': d.get_method_display(), 'amount': d.amount})
         for row in rows:
             # Time is known only when it was recorded on the collection day itself (a back-dated entry has no real time).
             recorded = timezone.localtime(row['created_at'])
@@ -422,7 +423,7 @@ def payment_list(request):
 
     start, end = period['period_start'], period['period_end']
     visible_deposits = selectors.deposits_visible_to(request.user)
-    # The Collected list: every payment that counts for this period (rent FOR its months + advance collected in it —
+    # The Collected list: every payment that counts for this period (rent FOR its months + the advance of tenancies starting in it —
     # the same rule as the Total Income card), each showing when it was collected and by whom.
     received_payments = collection_rows(billing_selectors.income_payments(selectors.invoices_visible_to(request.user), start, end), billing_selectors.income_deposits(visible_deposits, start, end))
     received_total = sum((r['amount'] for r in received_payments), Decimal('0.00'))
@@ -543,8 +544,8 @@ def rent_collect(request, partition_pk):
         y_val = request.POST.get('year') or request.GET.get('year')
         m_val = request.POST.get('month') or request.GET.get('month')
         if not y_val or not m_val:
-            d = collected_at or date.today()
-            y_val, m_val = d.year, d.month
+            from apps.shared.periods import selected_year_month
+            y_val, m_val = selected_year_month(request)
         year, month = int(y_val), int(m_val)
         if not (2000 <= year <= 2100 and 1 <= month <= 12):
             raise ValueError

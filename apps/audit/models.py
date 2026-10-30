@@ -56,6 +56,10 @@ class Action(models.TextChoices):
     PARTNER_SHARE_DELETED = ('partner.share_deleted', 'Partner share removed')
     PARTNER_PAYOUT_CREATED = ('partner.payout_created', 'Partner payout recorded')
     PARTNER_PAYOUT_DELETED = ('partner.payout_deleted', 'Partner payout deleted')
+    PARTNER_PAYOUT_VOIDED = ('partner.payout_voided', 'Partner payout voided')
+    PARTNER_PAYOUT_CORRECTED = ('partner.payout_corrected', 'Partner payout corrected')
+    DEPOSIT_COLLECTION_VOIDED = ('deposit.collection_voided', 'Advance collection voided')
+    DEPOSIT_COLLECTION_CORRECTED = ('deposit.collection_corrected', 'Advance collection corrected')
 
 class AuditLog(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True, db_index=True)

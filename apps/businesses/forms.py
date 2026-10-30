@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from django import forms
 from apps.shared.forms import ReasonForm
 from .models import Business, Partner, PartnerPayout, PartnerVillaShare
@@ -76,3 +77,10 @@ class PartnerPayoutForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if not self.initial.get('paid_on'):
             self.initial['paid_on'] = date.today()
+
+
+class PartnerPayoutCorrectionForm(forms.Form):
+    amount = forms.DecimalField(min_value=Decimal("0.01"), decimal_places=2, max_digits=12, label="Correct amount (QAR)")
+    paid_on = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}), label="Paid on")
+    payment_method = forms.ChoiceField(choices=PartnerPayout.Method.choices, label="Payment method")
+    reason = forms.CharField(widget=forms.Textarea(attrs={"rows": 2}), help_text="Recorded in the audit trail.")

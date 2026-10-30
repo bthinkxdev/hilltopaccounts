@@ -182,7 +182,9 @@ def expense_create(request, villa_pk=None):
                 return redirect('villas:partition_detail', pk=expense.partition_id)
             return redirect('villas:villa_detail', pk=expense.villa_id) if (villa_pk or request.GET.get('villa')) else redirect('expenses:list')
     else:
-        initial = {'villa': preselected, 'date': date.today()}
+        from apps.shared.periods import selected_year_month
+        sel_year, sel_month = selected_year_month(request)
+        initial = {'villa': preselected, 'date': date.today() if (sel_year, sel_month) == (date.today().year, date.today().month) else date(sel_year, sel_month, 1)}
         partition_id = request.GET.get('partition', '')
         if partition_id.isdigit():
             partition = Partition.objects.filter(pk=partition_id, villa__in=manageable).first()

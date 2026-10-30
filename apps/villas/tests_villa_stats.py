@@ -187,7 +187,7 @@ class FixedRentTests(VillaStatsBase):
 
 class AdvanceTests(VillaStatsBase):
 
-    def test_advance_is_fixed_collected_in_parts_with_dates_and_is_income_of_the_collection_month(self):
+    def test_advance_is_fixed_collected_in_parts_with_dates_and_is_income_of_the_move_in_month(self):
         p = self.occupied('ADV', move_in=THIS_MONTH, deposit=Decimal('3000.00'), deposit_paid=Decimal('1000.00'))
         tenant = Tenant.objects.get(partition=p)
         self.assertEqual((tenant.deposit_paid, tenant.deposit_pending, tenant.deposit_status), (Decimal('1000.00'), Decimal('2000.00'), Tenant.DepositStatus.PARTIALLY_PAID))
@@ -203,6 +203,14 @@ class AdvanceTests(VillaStatsBase):
         self.assertEqual(self.page(NEXT_MONTH)['pnl']['income'], ZERO)  # pending advance is income only once collected
         tile = [t for t in self.page(THIS_MONTH)['partitions'] if t.pk == p.pk][0]
         self.assertEqual(tile.pnl['income'], Decimal('2500.00'))
+
+    def test_advance_collected_today_for_a_last_month_move_in_is_last_months_income(self):
+        p = self.occupied('LATE', move_in=LAST_MONTH, deposit=Decimal('3000.00'))
+        tenant = Tenant.objects.get(partition=p)
+        collect_deposit(tenant=tenant, amount=Decimal('1200.00'), method='bank_transfer', collected_by=self.owner)  # collected today
+        self.login('owner')
+        self.assertEqual(self.page(LAST_MONTH)['pnl']['advance_income'], Decimal('1200.00'))
+        self.assertEqual(self.page(THIS_MONTH)['pnl']['advance_income'], ZERO)
 
     def test_income_list_includes_advance_and_matches_the_card(self):
         p = self.occupied('ADV', move_in=THIS_MONTH, deposit=Decimal('3000.00'), deposit_paid=Decimal('1000.00'))

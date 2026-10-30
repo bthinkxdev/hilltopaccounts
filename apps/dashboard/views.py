@@ -201,8 +201,11 @@ def global_search(request):
 
 def _get_financial_export_data(request):
     user, today = request.user, date.today()
-    s = parse_date(request.GET.get('start_date') or '') or today.replace(day=1)
-    e = parse_date(request.GET.get('end_date') or '') or today
+    from apps.shared.periods import selected_year_month
+    import calendar
+    sel_year, sel_month = selected_year_month(request, today)
+    s = parse_date(request.GET.get('start_date') or '') or date(sel_year, sel_month, 1)
+    e = parse_date(request.GET.get('end_date') or '') or date(sel_year, sel_month, calendar.monthrange(sel_year, sel_month)[1])
     s, e = min(s, e), max(s, e)
 
     villas = selectors.financial_villas(user) or selectors.villas_visible_to(user)

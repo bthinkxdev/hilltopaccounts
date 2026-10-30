@@ -13,9 +13,10 @@ from apps.billing import selectors as billing_selectors
 from apps.shared.exceptions import DomainError
 from apps.shared.pagination import paginate_queryset
 from apps.villas.models import Partition
-from .forms import DepositCollectForm, MoveOutForm, TenantForm
-from .models import Tenant
-from .services import collect_deposit, create_tenant, move_out_tenant, update_tenant
+from apps.shared.forms import ReasonForm
+from .forms import DepositCollectForm, DepositCorrectionForm, MoveOutForm, TenantForm
+from .models import DepositCollection, Tenant
+from .services import collect_deposit, correct_deposit, create_tenant, move_out_tenant, update_tenant, void_deposit
 
 @login_required
 def tenant_list(request):
@@ -54,7 +55,7 @@ def tenant_detail(request, pk):
         'invoices': invoices,
         'outstanding_balance': balance,
         'unbilled_balance': unbilled,
-        'deposit_collections': list(tenant.deposit_collections.select_related('collected_by')),
+        'deposit_collections': list(DepositCollection.all_objects.filter(tenant=tenant).select_related('collected_by', 'voided_by')),
         'rent': billing_selectors.rent_schedule(partition, today) if tenant.status == Tenant.Status.ACTIVE else None,
         'can_manage': (request.user.is_owner or selectors.is_business_manager_of(request.user, partition.villa.business) or selectors.is_villa_staff_of(request.user, partition.villa)) and not partition.villa.is_sold,
         'breadcrumbs': prefix + [
@@ -201,6 +202,59 @@ def tenant_deposit_edit(request, pk):
         'submit_label': 'Save Advance',
         'cancel_url': _safe_back(request, request.GET.get('next'), default_back),
     })
+
+
+def _deposit_for_change(request, pk):
+    collection = get_object_or_404(DepositCollection.all_objects.select_related('tenant__partition__villa'), pk=pk, tenant__in=selectors.tenants_visible_to(request.user))
+    villa = collection.tenant.partition.villa
+    if villa.is_sold:
+        raise PermissionDenied('Cannot change advance collections of a sold villa.')
+    if not (request.user.is_owner or selectors.can_manage_villa(request.user, villa)):
+        raise PermissionDenied('You cannot change this advance collection.')
+    return collection, reverse('tenancy:detail', args=[collection.tenant_id])
+
+@login_required
+def deposit_void(request, pk):
+    collection, back = _deposit_for_change(request, pk)
+    back = _safe_back(request, request.GET.get('next'), back)
+    if collection.is_voided:
+        messages.info(request, 'This advance collection is already cancelled.')
+        return redirect(back)
+    if request.method == 'POST':
+        form = ReasonForm(request.POST)
+        if form.is_valid():
+            try:
+                void_deposit(collection=collection, voided_by=request.user, reason=form.cleaned_data['reason'])
+            except DomainError as exc:
+                form.add_error(None, str(exc))
+            else:
+                messages.success(request, f'Advance collection of QAR {collection.amount} cancelled. It is pending again.')
+                return redirect(back)
+    else:
+        form = ReasonForm()
+    return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Cancel advance collection of QAR {collection.amount}?', 'message': 'The record is kept and marked cancelled (never deleted). The amount is removed from income and becomes pending again.', 'submit_label': 'Cancel collection', 'cancel_url': back})
+
+@login_required
+def deposit_correct(request, pk):
+    collection, back = _deposit_for_change(request, pk)
+    back = _safe_back(request, request.GET.get('next'), back)
+    if collection.is_voided:
+        messages.info(request, 'A cancelled collection cannot be corrected.')
+        return redirect(back)
+    if request.method == 'POST':
+        form = DepositCorrectionForm(request.POST)
+        if form.is_valid():
+            d = form.cleaned_data
+            try:
+                correct_deposit(collection=collection, new_amount=d['amount'], voided_by=request.user, reason=d['reason'], method=d['method'], collected_at=d['collected_at'])
+            except DomainError as exc:
+                form.add_error(None, str(exc))
+            else:
+                messages.success(request, f'Advance collection corrected to QAR {d["amount"]}. The original is kept as cancelled.')
+                return redirect(back)
+    else:
+        form = DepositCorrectionForm(initial={'amount': collection.amount, 'method': collection.method, 'collected_at': collection.collected_at})
+    return render(request, 'components/form_page.html', {'form': form, 'title': f'Correct advance collection — {collection.tenant.name}', 'submit_label': 'Save correction', 'cancel_url': back})
 
 
 def _safe_back(request, target, default):

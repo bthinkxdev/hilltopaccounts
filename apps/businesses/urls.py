@@ -15,6 +15,7 @@ urlpatterns = [
     path('partners/shares/<int:pk>/edit/', views.partner_share_edit, name='partner_share_edit'),
     path('partners/shares/<int:pk>/delete/', views.partner_share_delete, name='partner_share_delete'),
     path('partners/<int:partner_pk>/payouts/new/', views.partner_payout_create, name='partner_payout_create'),
-    path('partners/payouts/<int:pk>/delete/', views.partner_payout_delete, name='partner_payout_delete'),
+    path('partners/payouts/<int:pk>/void/', views.partner_payout_void, name='partner_payout_void'),
+    path('partners/payouts/<int:pk>/correct/', views.partner_payout_correct, name='partner_payout_correct'),
     path('villas/<int:villa_pk>/payout-partners/', views.villa_partner_payout_batch, name='villa_partner_payout_batch'),
 ]

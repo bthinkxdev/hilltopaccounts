@@ -17,9 +17,10 @@ from apps.shared.periods import period_context
 from apps.audit import services as audit_services
 from apps.audit.models import Action
 from apps.villas.models import Villa
-from .forms import ArchiveReasonForm, BusinessForm, PartnerForm, PartnerPayoutForm, PartnerShareForm
+from apps.shared.forms import ReasonForm
+from .forms import ArchiveReasonForm, BusinessForm, PartnerForm, PartnerPayoutCorrectionForm, PartnerPayoutForm, PartnerShareForm
 from .models import Partner, PartnerPayout, PartnerVillaShare
-from .services import archive_business, create_business, unarchive_business
+from .services import archive_business, correct_payout, create_business, unarchive_business, void_payout
 
 @login_required
 def business_list(request):
@@ -293,7 +294,7 @@ def partner_detail(request, pk):
         ).select_related('partner')
     )
     split = profit_split(invoices=invoices, expenses=expenses, deposits=deposits, start=period['period_start'], end=period['period_end'], shares=all_shares_for_villas)
-    payout_history = list(partner.payouts.select_related('villa').order_by('-paid_on', '-created_at'))
+    payout_history = list(PartnerPayout.all_objects.filter(partner=partner).select_related('villa', 'voided_by').order_by('-paid_on', '-created_at'))
     period_payouts = [p for p in payout_history if p.period_year == period['year'] and (not is_month or p.period_month == period['month'])]
     period_paid_amount = sum((p.amount for p in period_payouts), Decimal('0.00'))
 
@@ -436,8 +437,10 @@ def partner_payout_create(request, partner_pk):
     villa = get_object_or_404(Villa, pk=villa_id) if villa_id else None
     if not villa and partner.villa_shares.count() == 1:
         villa = partner.villa_shares.first().villa
-    year = int(request.GET.get('year') or request.POST.get('year') or date.today().year)
-    month = int(request.GET.get('month') or request.POST.get('month') or date.today().month)
+    from apps.shared.periods import selected_year_month
+    sel_year, sel_month = selected_year_month(request)
+    year = int(request.GET.get('year') or request.POST.get('year') or sel_year)
+    month = int(request.GET.get('month') or request.POST.get('month') or sel_month)
     initial_amount = request.GET.get('amount')
     if initial_amount:
         try:
@@ -507,25 +510,52 @@ def partner_payout_create(request, partner_pk):
 
 
 @login_required
-@require_POST
-def partner_payout_delete(request, pk):
+def partner_payout_void(request, pk):
     if not request.user.is_owner:
-        raise PermissionDenied('Only the owner can delete payouts.')
-    payout = get_object_or_404(PartnerPayout, pk=pk)
-    partner_pk = payout.partner_id
-    amt, partner_name, yr, mo = str(payout.amount), payout.partner.name, payout.period_year, payout.period_month
-    v_obj = payout.villa
-    payout.delete()
-    audit_services.log(
-        user=request.user,
-        action=Action.PARTNER_PAYOUT_DELETED,
-        villa=v_obj,
-        business=v_obj.business if v_obj else None,
-        old_value={'partner': partner_name, 'amount': amt, 'period': f'{yr}-{mo:02d}'},
-        reason=f'Deleted payout record of QAR {amt} to {partner_name} for {yr}-{mo:02d}'
-    )
-    messages.success(request, 'Payout record deleted.')
-    return redirect('businesses:partner_detail', pk=partner_pk)
+        raise PermissionDenied('Only the owner can void payouts.')
+    payout = get_object_or_404(PartnerPayout.all_objects.select_related('partner', 'villa'), pk=pk)
+    back = reverse('businesses:partner_detail', args=[payout.partner_id])
+    if payout.is_voided:
+        messages.info(request, 'This payout is already voided.')
+        return redirect(back)
+    if request.method == 'POST':
+        form = ReasonForm(request.POST)
+        if form.is_valid():
+            try:
+                void_payout(payout=payout, voided_by=request.user, reason=form.cleaned_data['reason'])
+            except DomainError as exc:
+                form.add_error(None, str(exc))
+            else:
+                messages.success(request, f'Payout of QAR {payout.amount} voided. That amount now counts as unpaid again.')
+                return redirect(back)
+    else:
+        form = ReasonForm()
+    return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Void payout of QAR {payout.amount} to {payout.partner.name}?', 'message': 'The record is kept and marked voided (never deleted). The amount will no longer count as paid.', 'submit_label': 'Void payout', 'cancel_url': back})
+
+
+@login_required
+def partner_payout_correct(request, pk):
+    if not request.user.is_owner:
+        raise PermissionDenied('Only the owner can correct payouts.')
+    payout = get_object_or_404(PartnerPayout.all_objects.select_related('partner', 'villa'), pk=pk)
+    back = reverse('businesses:partner_detail', args=[payout.partner_id])
+    if payout.is_voided:
+        messages.info(request, 'A voided payout cannot be corrected.')
+        return redirect(back)
+    if request.method == 'POST':
+        form = PartnerPayoutCorrectionForm(request.POST)
+        if form.is_valid():
+            d = form.cleaned_data
+            try:
+                correct_payout(payout=payout, voided_by=request.user, reason=d['reason'], amount=d['amount'], paid_on=d['paid_on'], payment_method=d['payment_method'])
+            except DomainError as exc:
+                form.add_error(None, str(exc))
+            else:
+                messages.success(request, f'Payout corrected to QAR {d["amount"]}. The original is kept as voided.')
+                return redirect(back)
+    else:
+        form = PartnerPayoutCorrectionForm(initial={'amount': payout.amount, 'paid_on': payout.paid_on, 'payment_method': payout.payment_method})
+    return render(request, 'components/form_page.html', {'form': form, 'title': f'Correct payout — {payout.partner.name} ({payout.period_year}-{payout.period_month:02d})', 'submit_label': 'Save correction', 'cancel_url': back})
 
 
 @login_required
@@ -534,8 +564,10 @@ def villa_partner_payout_batch(request, villa_pk):
         raise PermissionDenied('Only the owner can record partner payouts.')
     villa = get_object_or_404(selectors.villas_visible_to(request.user), pk=villa_pk)
     today = date.today()
-    year = int(request.GET.get('year') or request.POST.get('year') or today.year)
-    month = int(request.GET.get('month') or request.POST.get('month') or today.month)
+    from apps.shared.periods import selected_year_month
+    sel_year, sel_month = selected_year_month(request)
+    year = int(request.GET.get('year') or request.POST.get('year') or sel_year)
+    month = int(request.GET.get('month') or request.POST.get('month') or sel_month)
 
     start = date(year, month, 1)
     end = date(year, month, calendar.monthrange(year, month)[1])

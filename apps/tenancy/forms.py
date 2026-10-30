@@ -113,3 +113,14 @@ class DepositCollectForm(forms.Form):
 class MoveOutForm(forms.Form):
     move_out_date = forms.DateField(widget=forms.DateInput(attrs={'type': 'date'}))
     reason = forms.CharField(widget=forms.Textarea(attrs={'rows': 2}), required=False)
+
+
+class DepositCorrectionForm(forms.Form):
+    amount = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12, label='Correct amount (QAR)')
+    method = forms.ChoiceField(choices=DepositCollection.Method.choices, label='Payment Method')
+    collected_at = forms.DateField(widget=forms.DateInput(attrs={'type': 'date'}), label='Collection Date')
+    reason = forms.CharField(widget=forms.Textarea(attrs={'rows': 2}), help_text='Recorded in the audit trail.')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['collected_at'].widget.attrs['max'] = date.today().isoformat()

@@ -6,6 +6,8 @@ urlpatterns = [
     path('<int:pk>/', views.tenant_detail, name='detail'),
     path('<int:pk>/edit/', views.tenant_edit, name='edit'),
     path('<int:pk>/deposit/', views.tenant_deposit_edit, name='deposit_edit'),
+    path('deposits/<int:pk>/void/', views.deposit_void, name='deposit_void'),
+    path('deposits/<int:pk>/correct/', views.deposit_correct, name='deposit_correct'),
     path('<int:pk>/move-out/', views.tenant_move_out, name='move_out'),
     path('partitions/<int:partition_pk>/move-in/', views.tenant_create, name='create'),
 ]

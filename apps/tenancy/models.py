@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.conf import settings
 from django.db import models
+from apps.shared.managers import LiveManager
 
 class Tenant(models.Model):
 
@@ -68,10 +69,9 @@ class Tenant(models.Model):
 
 
 class DepositCollection(models.Model):
-    """One collection of a tenant's advance (security deposit). Never edited; the tenant's deposit_paid is their sum.
-
-    An advance is a refundable liability, not income, so it never appears in income or profit.
-    """
+    """One collection of a tenant's advance (security deposit). Never edited; the tenant's deposit_paid is the sum
+    of the live (not voided) collections. A wrong entry is voided with a reason, never deleted, and `objects` hides
+    voided rows from every total. The advance counts as income in the month it was collected."""
 
     class Method(models.TextChoices):
         CASH = ('cash', 'Cash')
@@ -84,6 +84,16 @@ class DepositCollection(models.Model):
     collected_at = models.DateField()
     collected_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
     created_at = models.DateTimeField(auto_now_add=True)
+    voided_at = models.DateTimeField(null=True, blank=True)
+    voided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name='+')
+    void_reason = models.TextField(blank=True)
+
+    objects = LiveManager()
+    all_objects = models.Manager()
+
+    @property
+    def is_voided(self):
+        return self.voided_at is not None
 
     class Meta:
         ordering = ['-collected_at', '-id']

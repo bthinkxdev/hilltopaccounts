@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from django.db import transaction
+from django.utils import timezone
 from apps.audit import services as audit_services
 from apps.audit.models import Action
 from apps.shared.exceptions import DomainError
@@ -62,6 +63,50 @@ def collect_deposit(*, tenant: Tenant, amount, method, collected_by, collected_a
         collection = _record_deposit(locked, amount=amount, method=method, collected_at=collected_at, collected_by=collected_by)
     tenant.refresh_from_db()
     return collection
+
+def void_deposit(*, collection: DepositCollection, voided_by, reason, _action=Action.DEPOSIT_COLLECTION_VOIDED) -> DepositCollection:
+    """Cancel a wrongly recorded advance collection. The row is kept (marked voided, with who/when/why) and drops out of
+    the tenant's received amount, income, profit and cash totals. Refused once the cash is part of a live handover."""
+    from apps.cash.models import CashHandover
+    reason = (reason or '').strip()
+    if not reason:
+        raise DomainError('A reason is required to cancel an advance collection.')
+    with transaction.atomic():
+        locked = DepositCollection.all_objects.select_for_update().select_related('tenant__partition__villa__business').get(pk=collection.pk)
+        if locked.is_voided:
+            raise DomainError('This advance collection is already cancelled.')
+        villa = locked.tenant.partition.villa
+        if villa.is_sold:
+            raise DomainError(f'Cannot change advance collections of sold villa “{villa.name}”.')
+        if locked.handovers.filter(status=CashHandover.Status.CONFIRMED).exists():
+            raise DomainError('This advance is part of a confirmed cash handover and cannot be cancelled directly.')
+        if locked.handovers.filter(status=CashHandover.Status.SUBMITTED).exists():
+            raise DomainError('This advance is part of a pending cash handover. Reject the handover first.')
+        tenant = Tenant.objects.select_for_update().get(pk=locked.tenant_id)
+        old_paid = tenant.deposit_paid
+        locked.voided_at = timezone.now()
+        locked.voided_by = voided_by
+        locked.void_reason = reason
+        locked.save(update_fields=['voided_at', 'voided_by', 'void_reason'])
+        tenant.deposit_paid = max(Decimal('0.00'), old_paid - locked.amount)
+        tenant.save(update_fields=['deposit_paid', 'deposit_status', 'updated_at'])
+        audit_services.log(user=voided_by, action=_action, obj=locked, business=villa.business, villa=villa, old_value={'voided': False, 'amount': str(locked.amount), 'collected_at': str(locked.collected_at), 'method': locked.method, 'tenant_deposit_paid': str(old_paid)}, new_value={'voided': True, 'tenant_deposit_paid': str(tenant.deposit_paid)}, reason=reason)
+    collection.voided_at, collection.voided_by, collection.void_reason = locked.voided_at, voided_by, reason
+    return collection
+
+def correct_deposit(*, collection: DepositCollection, new_amount, voided_by, reason, method=None, collected_at=None) -> DepositCollection:
+    """Fix a wrong amount/method/date: void the original and record the replacement in one transaction."""
+    if new_amount is None or new_amount <= 0:
+        raise DomainError('Enter the corrected advance amount.')
+    collected_at = collected_at or collection.collected_at
+    if collected_at > date.today():
+        raise DomainError('Collection date cannot be in the future.')
+    with transaction.atomic():
+        void_deposit(collection=collection, voided_by=voided_by, reason=f'corrected: {reason}', _action=Action.DEPOSIT_COLLECTION_CORRECTED)
+        locked = Tenant.objects.select_for_update().select_related('partition__villa__business').get(pk=collection.tenant_id)
+        if new_amount > locked.deposit_pending:
+            raise DomainError(f'Only QAR {locked.deposit_pending} of the advance can be collected after cancelling this entry.')
+        return _record_deposit(locked, amount=new_amount, method=method or collection.method, collected_at=collected_at, collected_by=collection.collected_by)
 
 def update_tenant(*, tenant: Tenant, updated_by, **fields) -> Tenant:
     if tenant.partition.villa.is_sold:

@@ -97,9 +97,10 @@ def income_payments(invoice_queryset, start: date, end: date):
     return Payment.objects.filter(invoice__in=live, is_cancelled=False)
 
 def income_deposits(deposit_queryset, start: date, end: date):
-    """Advance (deposit) collections that are income of the period. An advance is not rent for a month, so it is
-    income of the month it was collected in."""
-    return deposit_queryset.filter(collected_at__gte=start, collected_at__lte=end)
+    """Advance (deposit) collections that are income of the period. Like rent, an advance belongs to the month it is
+    FOR — the month the tenancy starts (move-in) — never the day it was collected. An advance collected today for a
+    tenant who moved in last month is last month's income."""
+    return deposit_queryset.filter(tenant__move_in_date__gte=start, tenant__move_in_date__lte=end)
 
 def _total(qs) -> Decimal:
     return qs.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
@@ -112,7 +113,7 @@ def outstanding_billed_between(invoice_queryset, start: date, end: date) -> Deci
 def period_profit_loss(invoice_queryset, expense_queryset, start: date, end: date, *, deposits) -> dict:
     """The one authoritative Income − Expenses = Profit/Loss calculation for any scope and period.
 
-    Income = rent for the period's months + advance collected in the period. `deposits` is the DepositCollection
+    Income = rent for the period's months + the advance of tenancies starting in the period (whenever collected). `deposits` is the DepositCollection
     queryset of the same scope (required, so no page can silently leave the advance out).
     """
     from apps.expenses.selectors import unpaid, valid_expense_total

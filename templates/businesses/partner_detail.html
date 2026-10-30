@@ -134,13 +134,14 @@
     <div class="card card--tight">
       {% if payout_history %}
         {% for payout in payout_history %}
-          <div class="partner-row">
+          <div class="partner-row"{% if payout.is_voided %} style="opacity: .6;"{% endif %}>
             <div class="partner-row__main">
-              <div class="list-row__title">QAR {{ payout.amount|floatformat:"2g" }} via {{ payout.get_payment_method_display }}</div>
+              <div class="list-row__title">{% if payout.is_voided %}<s>QAR {{ payout.amount|floatformat:"2g" }}</s> <span class="pill pill--neutral">Voided</span>{% else %}QAR {{ payout.amount|floatformat:"2g" }}{% endif %} via {{ payout.get_payment_method_display }}</div>
               <div class="list-row__meta">
                 Period: <b>{{ payout.period_year }}-{{ payout.period_month|stringformat:"02d" }}</b>
                 {% if payout.villa %} · Villa: {{ payout.villa.name }}{% endif %}
                 {% if payout.notes %} · {{ payout.notes }}{% endif %}
+                {% if payout.is_voided %}<br>Voided {{ payout.voided_at|date:"j M Y" }} by {{ payout.voided_by.first_name|default:payout.voided_by.username }}: {{ payout.void_reason }}{% endif %}
               </div>
             </div>
             <div class="partner-row__side">
@@ -148,7 +149,12 @@
                 <div style="font-weight: 500; font-size: 13px;">{{ payout.paid_on|date:"j M Y" }}</div>
                 <div class="list-row__meta" style="font-size: 11px;">By {{ payout.created_by.first_name|default:payout.created_by.username }}</div>
               </div>
-
+              {% if request.user.is_owner and not payout.is_voided %}
+              <div style="margin-top: 4px;">
+                <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_payout_correct' payout.pk %}">Correct</a>
+                <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_payout_void' payout.pk %}">Void</a>
+              </div>
+              {% endif %}
             </div>
           </div>
         {% endfor %}
