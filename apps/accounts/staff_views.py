@@ -4,7 +4,11 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from apps.shared.forms import ReasonForm
+from django.db.models import Sum
+from apps.billing.models import Payment
 from apps.shared.pagination import paginate_queryset
+from apps.shared.periods import period_context
+from apps.tenancy.models import DepositCollection
 from . import selectors
 from .models import Assignment, User
 from .services import assign_accountant, assign_business_manager, assign_villa_staff, create_user, disable_user, enable_user, remove_assignment
@@ -12,7 +16,7 @@ from .staff_forms import AssignmentForm, StaffCreateForm, StaffPasswordChangeFor
 
 def _owner_only(user):
     if not user.is_owner:
-        raise PermissionDenied('Only the Owner can manage staff and assignments.')
+        raise PermissionDenied('Only the Admin can manage staff and assignments.')
 
 @login_required
 def staff_list(request):
@@ -22,9 +26,17 @@ def staff_list(request):
     if q:
         qs = qs.filter(username__icontains=q)
     page_obj = paginate_queryset(request, qs.order_by('username'))
+    period = period_context(request)
+    start, end = period['period_start'], period['period_end']
+    ids = [u.pk for u in page_obj]
+    # What each person collected for the selected month (rent for that month, advances of tenants who moved in then).
+    collected = {r['collected_by']: r['t'] for r in Payment.objects.filter(collected_by__in=ids, is_cancelled=False, invoice__billing_period_start__range=(start, end)).order_by().values('collected_by').annotate(t=Sum('amount'))}
+    for r in DepositCollection.objects.filter(collected_by__in=ids, tenant__move_in_date__range=(start, end)).order_by().values('collected_by').annotate(t=Sum('amount')):
+        collected[r['collected_by']] = collected.get(r['collected_by'], 0) + r['t']
     for u in page_obj:
         u.role_labels = selectors.role_labels_for(u)
-    return render(request, 'accounts/staff_list.html', {'page_obj': page_obj, 'q': q, 'breadcrumbs': [('Staff', None)]})
+        u.collected_in_period = collected.get(u.pk, 0)
+    return render(request, 'accounts/staff_list.html', {**period, 'page_obj': page_obj, 'q': q, 'breadcrumbs': [('Staff', None)]})
 
 @login_required
 def staff_create(request):

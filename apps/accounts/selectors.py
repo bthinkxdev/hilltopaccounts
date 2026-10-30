@@ -118,12 +118,12 @@ def can_manage_villas_and_tenants(user) -> bool:
 
 def role_labels_for(user) -> list[str]:
     if user.is_owner:
-        return ['Owner']
+        return ['Admin']
     roles = Assignment.objects.filter(user=user).values_list('role', flat=True).distinct()
     return [Assignment.Role(role).label for role in roles]
 
 def can_manage_villa(user, villa) -> bool:
-    """Owner, the villa's Business Manager, or Villa Staff / Partner assigned to that villa — object-scoped, never global."""
+    """Admin, the villa's Business Manager, or Villa Staff / Partner assigned to that villa — object-scoped, never global."""
     if is_field_staff(user) and (villa.is_archived or villa.business.is_archived):
         return False
     if user.is_owner:
@@ -160,7 +160,7 @@ def manageable_villas(user) -> QuerySet[Villa]:
     return Villa.objects.filter(Q(business_id__in=managed) | Q(pk__in=staffed))
 
 def can_view_villa_financials(user, villa) -> bool:
-    """Profit/loss and activity for one villa: Owner, its Business Manager, or an Accountant/Partner scoped to it."""
+    """Profit/loss and activity for one villa: Admin, its Business Manager, or an Accountant/Partner scoped to it."""
     if user.is_owner:
         return True
     return Assignment.objects.filter(user=user).filter(
@@ -170,7 +170,7 @@ def can_view_villa_financials(user, villa) -> bool:
     ).exists()
 
 def financial_villas(user) -> QuerySet[Villa]:
-    """Villas whose income/expense/profit this user may see: Owner, the Business Manager, or a scoped Accountant/Partner."""
+    """Villas whose income/expense/profit this user may see: Admin, the Business Manager, or a scoped Accountant/Partner."""
     if user.is_owner:
         return Villa.objects.all()
     rows = Assignment.objects.filter(user=user, role__in=[Assignment.Role.BUSINESS_MANAGER, Assignment.Role.ACCOUNTANT, Assignment.Role.PARTNER])

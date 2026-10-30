@@ -26,6 +26,8 @@ class PartitionChoiceField(forms.ModelChoiceField):
         return f"{obj.name} (Vacant)"
 
 class ExpenseForm(forms.Form):
+    FREQUENCY_CHOICES = [('one_time', 'One time'), ('monthly', 'Monthly repeated')]
+    frequency = forms.ChoiceField(choices=FREQUENCY_CHOICES, initial='one_time', required=False, widget=forms.RadioSelect, label='Expense type', help_text='One time: a single bill on the date below. Monthly repeated: comes every month from the date below (villa rent, electricity, Wi-Fi…).')
     villa = forms.ModelChoiceField(queryset=Villa.objects.none(), empty_label='Select a villa…', widget=forms.Select())
     partition = PartitionChoiceField(queryset=Partition.objects.none(), required=False, empty_label='Whole villa (no specific partition)', widget=_TaggedSelect(data_attr='data-villa', instance_attr='villa_id'))
     name = forms.CharField(max_length=100, label='Expense', widget=forms.TextInput(attrs={'list': 'expense-names', 'autocomplete': 'off', 'placeholder': 'e.g. Electricity'}))
@@ -36,10 +38,15 @@ class ExpenseForm(forms.Form):
     description = forms.CharField(required=False, label='Notes', widget=forms.Textarea(attrs={'rows': 2}))
     reference = forms.CharField(required=False, max_length=100)
     attachment = forms.FileField(required=False)
+    auto_debit = forms.BooleanField(required=False, label='Auto-debit from the admin account on the due date', help_text='Monthly repeated only.')
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = user
+        if user is not None and not user.is_owner:
+            from apps.accounts import selectors as access
+            if not any(access.is_business_manager_of(user, v.business) for v in access.manageable_villas(user).select_related('business')):
+                self.fields.pop('auto_debit', None)
         if user is not None:
             from apps.accounts import selectors
             villas = selectors.manageable_villas(user).filter(is_sold=False)
@@ -63,7 +70,12 @@ class ExpenseForm(forms.Form):
             self.add_error('partition', "This partition doesn't belong to the selected villa.")
         if partition and cleaned.get('name', '').strip().lower() in ('villa rent', 'villa owner rent'):
             self.add_error('name', "Villa rent is a whole-villa expense, not a partition expense.")
-        if cleaned.get('mark_paid') and not cleaned.get('payment_method'):
+        if cleaned.get('frequency') == 'monthly':
+            if partition:
+                self.add_error('partition', 'A monthly repeated expense belongs to the whole villa, not one partition.')
+            if cleaned.get('mark_paid'):
+                self.add_error('mark_paid', 'Tick each month off as paid on the villa page once it is generated.')
+        elif cleaned.get('mark_paid') and not cleaned.get('payment_method'):
             self.add_error('payment_method', 'Choose how this was paid.')
         return cleaned
 
@@ -76,7 +88,7 @@ class RecurringExpenseForm(forms.Form):
     name = forms.CharField(max_length=100, label='Expense', widget=forms.TextInput(attrs={'list': 'expense-names', 'autocomplete': 'off', 'placeholder': 'e.g. Villa owner rent'}))
     amount = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12, widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01'}))
     due_day = forms.IntegerField(min_value=1, max_value=28, initial=1, widget=forms.HiddenInput(), required=False)
-    auto_debit = forms.BooleanField(required=False, label='Auto-debit from the owner account on the due date')
+    auto_debit = forms.BooleanField(required=False, label='Auto-debit from the admin account on the due date')
 
     def __init__(self, *args, user=None, can_auto_debit=None, **kwargs):
         super().__init__(*args, **kwargs)

@@ -47,7 +47,7 @@ def archive_villa(*, villa: Villa, archived_by, reason='') -> Villa:
 
 def sell_villa(*, villa: Villa, sold_by, **fields) -> Villa:
     if not sold_by.is_owner:
-        raise PermissionDenied('Only the Owner can sell a villa.')
+        raise PermissionDenied('Only the Admin can sell a villa.')
     if villa.is_sold:
         raise DomainError(f'Villa “{villa.name}” is already marked as sold.')
     with transaction.atomic():
@@ -119,7 +119,7 @@ def unarchive_partition(*, partition: Partition, unarchived_by) -> Partition:
 
 
 def add_photo(*, villa, image, uploaded_by, partition=None, caption='') -> Photo:
-    """Owner, the villa's Business Manager and its assigned Villa Staff may add photos."""
+    """Admin, the villa's Business Manager and its assigned Villa Staff may add photos."""
     if not access_selectors.can_manage_villa(uploaded_by, villa):
         raise PermissionDenied('You cannot add photos to this villa.')
     validate_photo(image)

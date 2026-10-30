@@ -5,7 +5,7 @@ from apps.businesses.forms import ArchiveReasonForm
 from apps.businesses.models import Business
 from .models import Partition, Villa
 
-# The fixed monthly costs every villa has. Each is optional at creation and can be set later by the Owner.
+# The fixed monthly costs every villa has. Each is optional at creation and can be set later by the Admin.
 FIXED_EXPENSE_DEFAULTS = [('fixed_villa_rent', 'Villa rent', 'owner'), ('fixed_electricity', 'Electricity', 'staff'), ('fixed_wifi', 'Wi-Fi', 'staff'), ('fixed_cleaning', 'Cleaning', 'staff'), ('fixed_maintenance', 'Maintenance', 'staff')]
 
 class VillaForm(forms.Form):

@@ -56,7 +56,7 @@ def business_detail(request, pk):
 @login_required
 def business_create(request):
     if not request.user.is_owner:
-        raise PermissionDenied('Only the Owner can create a business.')
+        raise PermissionDenied('Only the Admin can create a business.')
     if request.method == 'POST':
         form = BusinessForm(request.POST)
         if form.is_valid():
@@ -71,7 +71,7 @@ def business_create(request):
 def business_archive(request, pk):
     business = get_object_or_404(selectors.businesses_visible_to(request.user), pk=pk)
     if not request.user.is_owner:
-        raise PermissionDenied('Only the Owner can archive a business.')
+        raise PermissionDenied('Only the Admin can archive a business.')
     if request.method == 'POST':
         form = ArchiveReasonForm(request.POST)
         if form.is_valid():
@@ -91,7 +91,7 @@ def business_archive(request, pk):
 def business_unarchive(request, pk):
     business = get_object_or_404(selectors.businesses_visible_to(request.user), pk=pk)
     if not request.user.is_owner:
-        raise PermissionDenied('Only the Owner can unarchive a business.')
+        raise PermissionDenied('Only the Admin can unarchive a business.')
     if request.method == 'POST':
         unarchive_business(business=business, unarchived_by=request.user)
         messages.success(request, f'Business “{business.name}” unarchived.')
@@ -101,7 +101,7 @@ def business_unarchive(request, pk):
 @login_required
 def partner_list(request):
     if not request.user.is_owner:
-        raise PermissionDenied('Only the owner can view partners.')
+        raise PermissionDenied('Only the admin can view partners.')
     status, q = request.GET.get('status', 'active'), request.GET.get('q', '').strip()
     qs = Partner.objects.all().prefetch_related('villa_shares__villa')
     if status in ('active', 'inactive'):
@@ -162,12 +162,12 @@ def partner_list(request):
         else:
             v_partner_pct = v_total_partner_pct
             v_partner_cut = v_split['partner_cut']
-            v_partner_names = ", ".join([f"{s.partner.name} ({s.percentage}%)" for s in v_all_shares]) if v_all_shares else "None (100% Owner)"
+            v_partner_names = ", ".join([f"{s.partner.name} ({s.percentage}%)" for s in v_all_shares]) if v_all_shares else "None (100% Admin)"
         owner_villa_breakdown.append({
             'villa_pk': v.pk,
             'villa_name': v.name,
             'pct': max(Decimal('0.00'), Decimal('100.00') - v_total_partner_pct),
-            'cut': v_split['owner_share'],  # the owner keeps the rest and carries a loss-making villa's loss
+            'cut': v_split['owner_share'],  # the admin keeps the rest and carries a loss-making villa's loss
             'net': v_split['net'],
             'expenses': pnl.get(v.pk, {}).get('expenses', Decimal('0.00')),
             'partner_cut': v_partner_cut,
@@ -210,7 +210,7 @@ def partner_list(request):
     keep = [(k, v) for k, v in (('q', q), ('status', status if status != 'active' else ''), ('villa', villa_id if villa_id else ''), ('partner', partner_id if partner_id else ''), ('tab', tab if tab != 'all' else '')) if v]
     breadcrumbs = [('Profit Sharing', reverse('businesses:partner_list'))]
     if tab == 'owner':
-        breadcrumbs.append(('Owner Profit Statement', None))
+        breadcrumbs.append(('Admin Profit Statement', None))
     elif tab == 'partners':
         breadcrumbs.append(('Partners & Payouts', None))
     else:
@@ -238,7 +238,7 @@ def partner_list(request):
 @login_required
 def partner_form(request, pk=None):
     if not request.user.is_owner:
-        raise PermissionDenied('Only the owner can manage partners.')
+        raise PermissionDenied('Only the admin can manage partners.')
     partner = get_object_or_404(Partner, pk=pk) if pk else None
     if request.method == 'POST':
         form = PartnerForm(request.POST, instance=partner)
@@ -276,7 +276,7 @@ partner_edit = partner_form
 @login_required
 def partner_detail(request, pk):
     if not request.user.is_owner:
-        raise PermissionDenied('Only the owner can view partner details.')
+        raise PermissionDenied('Only the admin can view partner details.')
     from .selectors import EMPTY_VILLA_SPLIT, partner_balance, profit_split
     partner = get_object_or_404(Partner, pk=pk)
     period = period_context(request, allow_future=True)
@@ -301,7 +301,7 @@ def partner_detail(request, pk):
     for s in shares:
         v = pnl.get(s.villa_id, billing_selectors.EMPTY_PROFIT_LOSS)
         s.villa_income, s.villa_expenses, s.villa_net = v['income'], v['expenses'], v['net']
-        # An inactive partner earns nothing; their percentage goes back to the owner.
+        # An inactive partner earns nothing; their percentage goes back to the admin.
         s.cut = split['by_share'].get(s.pk, Decimal('0.00')) if partner.is_active else Decimal('0.00')
         s.co_partners = [ps for ps in all_shares_for_villas if ps.villa_id == s.villa_id and ps.partner_id != partner.pk]
         for cp in s.co_partners:
@@ -346,7 +346,7 @@ def partner_detail(request, pk):
 @login_required
 def partner_share_create(request, partner_pk):
     if not request.user.is_owner:
-        raise PermissionDenied('Only the owner can assign shares.')
+        raise PermissionDenied('Only the admin can assign shares.')
     partner = get_object_or_404(Partner, pk=partner_pk)
     if request.method == 'POST':
         form = PartnerShareForm(request.POST, partner=partner)
@@ -380,7 +380,7 @@ def partner_share_create(request, partner_pk):
 @require_POST
 def partner_share_edit(request, pk):
     if not request.user.is_owner:
-        raise PermissionDenied('Only the owner can edit shares.')
+        raise PermissionDenied('Only the admin can edit shares.')
     share = get_object_or_404(PartnerVillaShare, pk=pk)
     try:
         old_pct = str(share.percentage)
@@ -411,7 +411,7 @@ def partner_share_edit(request, pk):
 @require_POST
 def partner_share_delete(request, pk):
     if not request.user.is_owner:
-        raise PermissionDenied('Only the owner can remove shares.')
+        raise PermissionDenied('Only the admin can remove shares.')
     share = get_object_or_404(PartnerVillaShare, pk=pk)
     partner_pk, villa_name = share.partner_id, share.villa.name
     villa_obj, partner_obj, pct = share.villa, share.partner, str(share.percentage)
@@ -431,7 +431,7 @@ def partner_share_delete(request, pk):
 @login_required
 def partner_payout_create(request, partner_pk):
     if not request.user.is_owner:
-        raise PermissionDenied('Only the owner can record payouts.')
+        raise PermissionDenied('Only the admin can record payouts.')
     partner = get_object_or_404(Partner, pk=partner_pk)
     villa_id = request.GET.get('villa') or request.POST.get('villa')
     villa = get_object_or_404(Villa, pk=villa_id) if villa_id else None
@@ -512,7 +512,7 @@ def partner_payout_create(request, partner_pk):
 @login_required
 def partner_payout_void(request, pk):
     if not request.user.is_owner:
-        raise PermissionDenied('Only the owner can void payouts.')
+        raise PermissionDenied('Only the admin can void payouts.')
     payout = get_object_or_404(PartnerPayout.all_objects.select_related('partner', 'villa'), pk=pk)
     back = reverse('businesses:partner_detail', args=[payout.partner_id])
     if payout.is_voided:
@@ -536,7 +536,7 @@ def partner_payout_void(request, pk):
 @login_required
 def partner_payout_correct(request, pk):
     if not request.user.is_owner:
-        raise PermissionDenied('Only the owner can correct payouts.')
+        raise PermissionDenied('Only the admin can correct payouts.')
     payout = get_object_or_404(PartnerPayout.all_objects.select_related('partner', 'villa'), pk=pk)
     back = reverse('businesses:partner_detail', args=[payout.partner_id])
     if payout.is_voided:
@@ -561,7 +561,7 @@ def partner_payout_correct(request, pk):
 @login_required
 def villa_partner_payout_batch(request, villa_pk):
     if not request.user.is_owner:
-        raise PermissionDenied('Only the owner can record partner payouts.')
+        raise PermissionDenied('Only the admin can record partner payouts.')
     villa = get_object_or_404(selectors.villas_visible_to(request.user), pk=villa_pk)
     today = date.today()
     from apps.shared.periods import selected_year_month

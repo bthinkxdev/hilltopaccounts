@@ -39,7 +39,7 @@ def _expense_candidates(user, today):
         yield Candidate(kind, f'{kind}:{expense.pk}', f'{expense.category} {"overdue" if overdue else "due " + ("today" if expense.due_date == today else "soon")} — QAR {expense.amount}', f'{where} · due {expense.due_date:%d %b %Y}', url)
 
 def _verification_candidates(user, today):
-    """Expenses staff marked paid that the Owner / Business Manager still has to verify as received."""
+    """Expenses staff marked paid that the Admin / Business Manager still has to verify as received."""
     scope = selectors.ManageScope(user)
     if not (scope.is_owner or scope.admin_business_ids):
         return
@@ -108,7 +108,7 @@ def sync_for_user(user, today=None) -> None:
             Notification.objects.filter(pk__in=resolve).update(resolved_at=now)
 
 def notify_collection_recorded(payment) -> None:
-    """Event notification: tell the Owner and the villa's Business Managers that money came in (never the actor)."""
+    """Event notification: tell the Admin and the villa's Business Managers that money came in (never the actor)."""
     invoice = payment.invoice
     villa = invoice.villa
     recipients = User.objects.filter(is_active=True).filter(Q(is_owner=True) | Q(assignments__role=Assignment.Role.BUSINESS_MANAGER, assignments__business_id=villa.business_id)).exclude(pk=payment.created_by_id).distinct()

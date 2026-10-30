@@ -295,7 +295,7 @@ def villa_detail(request, pk):
             s.is_fully_paid = (s.paid_amount >= s.cut and s.cut > 0)
             s.is_partial = (0 < s.paid_amount < s.cut)
         context['villa_partner_shares'] = shares
-        # The owner keeps the rest and bears any loss, so owner + partners always equals the net profit.
+        # The admin keeps the rest and bears any loss, so admin + partners always equals the net profit.
         context['villa_owner_share'] = {'percentage': max(Decimal('0.00'), Decimal('100.00') - total_partner_pct), 'cut': split['owner_share']}
         context['has_unhanded_cash'] = month_unhanded_cash > 0
         context['has_unpaid_partners'] = is_month and any(s.remaining > 0 for s in shares) and not context['has_unhanded_cash']
@@ -341,7 +341,7 @@ def villa_detail(request, pk):
 def villa_create(request):
     manageable_businesses = selectors.businesses_managed_by(request.user).filter(is_archived=False)
     if not manageable_businesses.exists():
-        raise PermissionDenied("You don't manage any business yet — ask the Owner to assign you one.")
+        raise PermissionDenied("You don't manage any business yet — ask the Admin to assign you one.")
     business_id = request.GET.get('business') or request.POST.get('business')
     initial = {}
     if business_id:
@@ -444,7 +444,7 @@ def villa_unarchive(request, pk):
 def villa_sell(request, pk):
     villa = get_object_or_404(selectors.villas_visible_to(request.user), pk=pk)
     if not request.user.is_owner:
-        raise PermissionDenied('Only the Owner can mark a villa as sold.')
+        raise PermissionDenied('Only the Admin can mark a villa as sold.')
     form = VillaSellForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         try:
@@ -530,7 +530,7 @@ def partition_detail(request, pk):
     for p in partition_photos:
         p.can_delete = selectors.can_delete_photo(request.user, p) and not villa.is_sold
     active_charges = list(Charge.objects.filter(partition=partition, is_active=True).filter(Q(end_date__isnull=True) | Q(end_date__gt=today))) if current_tenant else []
-    can_add_charge = (not villa.is_sold) and (ChargeType.objects.filter(is_active=True).exclude(id__in={c.charge_type_id for c in active_charges}).exists() if current_tenant else False)
+    can_add_charge = (not villa.is_sold) and current_tenant is not None  # a new charge type can always be typed in
     context = {'partition': partition, 'villa': villa, 'current_tenant': current_tenant, 'past_tenants': past_tenants, 'rent': billing_selectors.rent_schedule(partition, today) if current_tenant else None, 'charges': active_charges, 'can_add_charge': can_add_charge, 'invoices': invoices, 'recent_expenses': recent_expenses, 'photos': partition_photos, 'can_manage': selectors.can_manage_villa(request.user, villa) and not villa.is_sold, 'can_archive': (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)) and not villa.is_sold, 'can_delete_photos': (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)) and not villa.is_sold, 'can_view_financials': can_view_financials, 'keep': [], 'breadcrumbs': [('Villas', reverse('villas:villa_list')), (villa.name, reverse('villas:villa_detail', args=[villa.pk])), (partition.name, None)], **period}
     if can_view_financials:
         context['pnl'] = billing_selectors.period_profit_loss(all_invoices, expenses, start, end, deposits=selectors.deposits_visible_to(request.user).filter(tenant__partition=partition))
@@ -622,7 +622,7 @@ def partition_edit(request, pk):
 def partition_archive(request, pk):
     partition = get_object_or_404(selectors.partitions_visible_to(request.user), pk=pk)
     if not (request.user.is_owner or selectors.is_business_manager_of(request.user, partition.villa.business)):
-        raise PermissionDenied('Only the Owner or Business Manager can archive this partition.')
+        raise PermissionDenied('Only the Admin or Business Manager can archive this partition.')
     if request.method == 'POST':
         form = ArchiveReasonForm(request.POST)
         if form.is_valid():
@@ -641,7 +641,7 @@ def partition_archive(request, pk):
 def partition_unarchive(request, pk):
     partition = get_object_or_404(selectors.partitions_visible_to(request.user), pk=pk)
     if not (request.user.is_owner or selectors.is_business_manager_of(request.user, partition.villa.business)):
-        raise PermissionDenied('Only the Owner or Business Manager can unarchive this partition.')
+        raise PermissionDenied('Only the Admin or Business Manager can unarchive this partition.')
     if request.method == 'POST':
         try:
             unarchive_partition(partition=partition, unarchived_by=request.user)

@@ -3,14 +3,14 @@
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>{% if tab == 'owner' %}Owner Profit Statement{% elif tab == 'partners' %}Partners &amp; Payouts{% else %}Partners &amp; Profit Sharing{% endif %}</h1>
+      <h1>{% if tab == 'owner' %}Admin Profit Statement{% elif tab == 'partners' %}Partners &amp; Payouts{% else %}Partners &amp; Profit Sharing{% endif %}</h1>
       <div class="page-header__meta">{% if tab == 'owner' %}Your villa-by-villa profit earnings for {{ period_label }} · amounts in QAR{% elif tab == 'partners' %}Partner shares and payout records for {{ period_label }} · amounts in QAR{% else %}Profit sharing across villas for {{ period_label }} · amounts in QAR{% endif %}</div>
     </div>
     {% if user.is_owner and tab != 'owner' %}<a class="btn btn--primary" href="{% url 'businesses:partner_create' %}">+ Add Partner</a>{% endif %}
   </div>
 
   <div style="display: flex; gap: var(--space-2); margin-bottom: var(--space-3); flex-wrap: wrap;">
-    <a class="btn {% if tab == 'owner' %}btn--primary{% else %}btn--ghost{% endif %}" href="?tab=owner&period={{ period }}&year={{ year }}&month={{ month }}{% if filter_villa %}&villa={{ filter_villa.pk }}{% endif %}{% if filter_partner %}&partner={{ filter_partner.pk }}{% endif %}">Owner Profit Statement</a>
+    <a class="btn {% if tab == 'owner' %}btn--primary{% else %}btn--ghost{% endif %}" href="?tab=owner&period={{ period }}&year={{ year }}&month={{ month }}{% if filter_villa %}&villa={{ filter_villa.pk }}{% endif %}{% if filter_partner %}&partner={{ filter_partner.pk }}{% endif %}">Admin Profit Statement</a>
     <a class="btn {% if tab == 'partners' %}btn--primary{% else %}btn--ghost{% endif %}" href="?tab=partners&period={{ period }}&year={{ year }}&month={{ month }}{% if filter_villa %}&villa={{ filter_villa.pk }}{% endif %}{% if filter_partner %}&partner={{ filter_partner.pk }}{% endif %}">Partners &amp; Payouts</a>
     <a class="btn {% if tab == 'all' %}btn--primary{% else %}btn--ghost{% endif %}" href="?tab=all&period={{ period }}&year={{ year }}&month={{ month }}{% if filter_villa %}&villa={{ filter_villa.pk }}{% endif %}{% if filter_partner %}&partner={{ filter_partner.pk }}{% endif %}">Overview</a>
   </div>
@@ -53,9 +53,9 @@
         <div class="kpi__value {% if total_net >= 0 %}kpi__value--success{% else %}kpi__value--danger{% endif %}">QAR {{ total_net|floatformat:"2g" }}</div>
       </div>
       <div class="kpi kpi--ic-wallet">
-        <div class="kpi__label">{% if filter_villa %}Owner Share ({{ owner_pct|floatformat:"1g" }}%){% else %}Total Owner Share{% endif %}</div>
+        <div class="kpi__label">{% if filter_villa %}Admin Share ({{ owner_pct|floatformat:"1g" }}%){% else %}Total Admin Share{% endif %}</div>
         <div class="kpi__value {% if total_owner_cut > 0 %}kpi__value--success{% elif total_owner_cut < 0 %}kpi__value--danger{% endif %}">QAR {{ total_owner_cut|floatformat:"2g" }}</div>
-        {% if total_owner_cut < 0 %}<div class="list-row__meta">owner carries the loss</div>{% endif %}
+        {% if total_owner_cut < 0 %}<div class="list-row__meta">admin carries the loss</div>{% endif %}
       </div>
       <div class="kpi kpi--ic-user">
         <div class="kpi__label">{% if filter_partner %}{{ filter_partner.name }} Share{% else %}Total Partners Share{% endif %}</div>
@@ -66,15 +66,15 @@
 
   {% if tab != 'partners' and not q and selected_status != "inactive" and user.is_owner %}
     <div class="card card--tight" id="owner-share">
-      <div class="card__title">Owner Profit Breakdown by Villa — {{ period_label }}</div>
+      <div class="card__title">Admin Profit Breakdown by Villa — {{ period_label }}</div>
       {% if owner_villa_breakdown %}
         {% for b in owner_villa_breakdown %}
           <div class="partner-row" style="background: rgba(59, 130, 246, 0.04); border-left: 3px solid var(--accent-primary, #3b82f6); padding-left: var(--space-3); padding-right: var(--space-3); border-radius: var(--radius-sm); margin-bottom: var(--space-2);">
             <div class="partner-row__main">
               <a class="list-row__title" href="{% url 'villas:villa_detail' b.villa_pk %}?period={{ period }}&year={{ year }}&month={{ month }}" style="font-weight: 600;">{{ b.villa_name }}</a>
               <div class="list-row__meta">
-                Villa Net Profit: <b>QAR {{ b.net|floatformat:"2g" }}</b> · Expenses: <b>QAR {{ b.expenses|floatformat:"2g" }}</b> · Owner Retained: <b>{{ b.pct|floatformat:"0g" }}%</b>
-                {% if b.partner_pct %} · Partners: {{ b.partner_names }} (QAR {{ b.partner_cut|floatformat:"2g" }}){% else %} · No partners (100% owner){% endif %}
+                Villa Net Profit: <b>QAR {{ b.net|floatformat:"2g" }}</b> · Expenses: <b>QAR {{ b.expenses|floatformat:"2g" }}</b> · Admin Retained: <b>{{ b.pct|floatformat:"0g" }}%</b>
+                {% if b.partner_pct %} · Partners: {{ b.partner_names }} (QAR {{ b.partner_cut|floatformat:"2g" }}){% else %} · No partners (100% admin){% endif %}
               </div>
             </div>
             <div class="partner-row__side">
@@ -82,7 +82,7 @@
                 <div style="font-weight: 700; font-size: 15px; color: {% if b.cut > 0 %}var(--success, #22c55e){% elif b.cut < 0 %}var(--danger, #ef4444){% else %}var(--text-secondary){% endif %};">
                   QAR {{ b.cut|floatformat:"2g" }}
                 </div>
-                <div class="list-row__meta" style="font-size: 12px;">{% if b.cut < 0 %}Owner loss{% else %}Owner profit{% endif %}</div>
+                <div class="list-row__meta" style="font-size: 12px;">{% if b.cut < 0 %}Admin loss{% else %}Admin profit{% endif %}</div>
               </div>
               <div class="partner-row__actions">
                 <span class="pill pill--neutral" style="font-size: 11px;">{{ b.pct|floatformat:"0g" }}%</span>
@@ -91,7 +91,7 @@
           </div>
         {% endfor %}
         <div style="display: flex; justify-content: space-between; align-items: center; padding: var(--space-2) var(--space-3); font-weight: 700; border-top: 1px solid var(--border-color, #333); margin-top: var(--space-2);">
-          <div>Total Owner {% if total_owner_cut < 0 %}Loss{% else %}Profit{% endif %}</div>
+          <div>Total Admin {% if total_owner_cut < 0 %}Loss{% else %}Profit{% endif %}</div>
           <div style="color: {% if total_owner_cut < 0 %}var(--danger, #ef4444){% else %}var(--success, #22c55e){% endif %}; font-size: 16px;">QAR {{ total_owner_cut|floatformat:"2g" }}</div>
         </div>
       {% else %}

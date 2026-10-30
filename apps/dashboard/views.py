@@ -136,7 +136,7 @@ class HomeView(LoginRequiredMixin, TemplateView):
                 overdue_total = sum((billing_selectors.invoice_outstanding(i) for i in overdue_rent), start=Decimal('0.00'))
                 needs_attention.append({'label': 'Overdue tenant rent', 'count': len(overdue_rent), 'meta': f'QAR {overdue_total} to collect', 'url': reverse('billing:payment_list') + '?tab=pending#arrears'})
 
-            # Bills this staff member may pay from collected cash: everything unpaid in their villas except owner
+            # Bills this staff member may pay from collected cash: everything unpaid in their villas except admin
             # auto-debits and the villa (landlord) rent — the same rule as the Pay button.
             staff_bills = selectors.expenses_visible_to(user).filter(status='active', paid_on__isnull=True).exclude(recurring__auto_debit=True).exclude(category__name__iregex=selectors.LANDLORD_RENT_REGEX)
             staff_bills_due = staff_bills.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
@@ -269,7 +269,7 @@ def _get_financial_export_data(request):
     partner_breakdown_rows = []
     tot_partner = Decimal('0.00')
     owner_cut = Decimal('0.00')
-    admin_label = 'Admin Profit Share' if is_partner else 'Owner Profit Share'
+    admin_label = 'Admin Profit Share' if is_partner else 'Admin Profit Share'
 
     if show_profit_share:
         from apps.businesses.models import PartnerVillaShare
@@ -290,12 +290,12 @@ def _get_financial_export_data(request):
             for p_name, v_list in partner_villas_map.items()
         ]
 
-        owner_cut = split['owner_share']  # owner keeps the rest and carries any loss: owner + partners = net
+        owner_cut = split['owner_share']  # admin keeps the rest and carries any loss: admin + partners = net
 
         rows.extend([
             [],
             [f'{sec}. PROFIT SHARE', 'Amount (QAR)'],
-            ['Net Profit (Owner + Partners)', f"{split['net']:.2f}"],
+            ['Net Profit (Admin + Partners)', f"{split['net']:.2f}"],
             [admin_label, f"{owner_cut:.2f}"],
             ['Total Partners Share', f"{tot_partner:.2f}"],
         ])
@@ -310,7 +310,7 @@ def _get_financial_export_data(request):
         if partner_breakdown_rows:
             rows.extend(partner_breakdown_rows)
         else:
-            rows.append(['No active partner shares', '100% Admin' if is_partner else '100% Owner'])
+            rows.append(['No active partner shares', '100% Admin' if is_partner else '100% Admin'])
 
     villa_rows = []
     if not target_villa:

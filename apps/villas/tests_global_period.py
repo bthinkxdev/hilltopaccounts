@@ -91,3 +91,90 @@ class EveryRoleGetsTheSwitcherTests(VillaStatsBase):
                 r = self.client.get(url)
                 self.assertContains(r, 'data-period-switch', msg_prefix=f'{username} {url}')
                 self.assertContains(r, f'Showing data for <strong>{LAST_MONTH:%B %Y}</strong>', msg_prefix=f'{username} {url}')
+
+
+class QaRegressionTests(VillaStatsBase):
+    """The four QA failures: every page follows the navbar month, a villa expense can be dated in a past month, and a
+    charge can be added to an existing tenant even though the only charge type is Rent."""
+
+    def setUp(self):
+        super().setUp()
+        self.login('owner')
+        self.client.get(reverse('villas:villa_list'), {'period': 'month', 'year': LAST_MONTH.year, 'month': LAST_MONTH.month})
+
+    def test_cash_handover_staff_and_audit_pages_follow_the_selected_month(self):
+        for url in (reverse('cash:handover_list'), reverse('accounts:staff_list'), reverse('audit:list')):
+            r = self.client.get(url)
+            self.assertContains(r, f'Showing data for <strong>{LAST_MONTH:%B %Y}</strong>', msg_prefix=url)
+            self.assertNotContains(r, 'period-switch--idle', msg_prefix=url)
+
+    def test_handover_is_listed_under_the_month_of_its_cash(self):
+        from apps.cash.models import CashHandover
+        self.login('staff')
+        self.collect(self.p1, LAST_MONTH)
+        from apps.billing.models import Payment
+        self.client.post(reverse('cash:handover_submit'), {'payments': [p.pk for p in Payment.objects.filter(collected_by=self.staff)]})
+        h = CashHandover.objects.first()
+        self.assertIsNotNone(h)
+        self.login('owner')
+        listed = lambda m: [x.pk for x in self.client.get(reverse('cash:handover_list'), {'period': 'month', 'year': m.year, 'month': m.month}).context['page_obj']]
+        self.assertIn(h.pk, listed(LAST_MONTH))
+
+    def test_villa_page_add_expense_opens_a_dated_expense_in_the_selected_month(self):
+        r = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]))
+        self.assertContains(r, reverse('expenses:create_for_villa', args=[self.villa.pk]))
+        r = self.client.get(reverse('expenses:create_for_villa', args=[self.villa.pk]))
+        self.assertEqual(r.context['form'].initial['date'], LAST_MONTH)
+
+    def test_expense_can_be_added_for_a_past_month(self):
+        from apps.expenses.models import Expense
+        r = self.client.post(reverse('expenses:create_for_villa', args=[self.villa.pk]), {'villa': self.villa.pk, 'name': 'Cleaning', 'amount': '50.00', 'date': LAST_MONTH.isoformat()})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(Expense.objects.get(villa=self.villa).date, LAST_MONTH)
+
+    def test_charge_can_be_added_to_a_tenant_who_moved_in_earlier(self):
+        from apps.billing.models import Charge, ChargeType
+        ChargeType.objects.exclude(name='Rent').delete()
+        url = reverse('billing:charge_create', args=[self.p1.pk])
+        self.assertContains(self.client.get(reverse('villas:partition_detail', args=[self.p1.pk])), url)
+        self.assertEqual(self.client.get(url).status_code, 200)
+        r = self.client.post(url, {'new_charge_type': 'Electricity', 'amount': '75.00', 'frequency': 'monthly', 'start_date': LAST_MONTH.isoformat()})
+        self.assertEqual(r.status_code, 302, getattr(r, 'context', None) and r.context['form'].errors)
+        self.assertTrue(Charge.objects.filter(partition=self.p1, charge_type__name='Electricity').exists())
+        # the same type again is refused, and Rent cannot be added as a charge
+        r = self.client.post(url, {'new_charge_type': 'electricity', 'amount': '10', 'frequency': 'monthly', 'start_date': LAST_MONTH.isoformat()})
+        self.assertEqual(r.status_code, 200)
+        r = self.client.post(url, {'new_charge_type': 'Rent', 'amount': '10', 'frequency': 'monthly', 'start_date': LAST_MONTH.isoformat()})
+        self.assertEqual(r.status_code, 200)
+
+    def test_villa_page_lists_one_time_expenses_with_the_bulk_pay_option(self):
+        for name, partition in (('Water tanker', ''), ('Door lock', self.p1.pk)):
+            self.client.post(reverse('expenses:create_for_villa', args=[self.villa.pk]), {'villa': self.villa.pk, 'partition': partition, 'name': name, 'amount': '80.00', 'date': LAST_MONTH.isoformat()})
+        r = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]))
+        self.assertEqual(sorted(e.category.name for e in r.context['one_off_expenses']), ['Door lock', 'Water tanker'])
+        self.assertContains(r, 'One-time expenses')
+        self.assertContains(r, 'Whole villa')
+        self.assertContains(r, 'name="expense_ids"')  # the select-to-pay checkboxes are back for whole-villa expenses
+
+    def test_add_expense_can_be_monthly_repeated_from_a_past_month(self):
+        from apps.expenses.models import Expense, RecurringExpense
+        url = reverse('expenses:create_for_villa', args=[self.villa.pk])
+        self.assertContains(self.client.get(url), 'name="frequency"')
+        r = self.client.post(url, {'frequency': 'monthly', 'villa': self.villa.pk, 'name': 'Wi-Fi', 'amount': '300.00', 'date': LAST_MONTH.isoformat()})
+        self.assertEqual(r.status_code, 302, getattr(r, 'context', None) and r.context['form'].errors)
+        rec = RecurringExpense.objects.get(villa=self.villa, category__name='Wi-Fi')
+        self.assertEqual(rec.first_period, LAST_MONTH.replace(day=1))
+        # it shows in the selected month's checklist and not in an earlier month
+        self.assertEqual([x['template'].pk for x in self.page(LAST_MONTH)['fixed_rows']], [rec.pk])
+        earlier = (LAST_MONTH.replace(day=1) - __import__('datetime').timedelta(days=1)).replace(day=1)
+        self.assertEqual(self.page(earlier)['fixed_rows'], [])
+        # a one-time expense is untouched by the monthly choice
+        self.client.post(url, {'frequency': 'one_time', 'villa': self.villa.pk, 'name': 'Door lock', 'amount': '80', 'date': LAST_MONTH.isoformat()})
+        self.assertEqual(Expense.objects.filter(villa=self.villa, recurring__isnull=True, category__name='Door lock').count(), 1)
+
+    def test_monthly_expense_cannot_be_a_partition_expense_or_a_duplicate(self):
+        url = reverse('expenses:create_for_villa', args=[self.villa.pk])
+        base = {'frequency': 'monthly', 'villa': self.villa.pk, 'name': 'Cleaning', 'amount': '100', 'date': LAST_MONTH.isoformat()}
+        self.assertEqual(self.client.post(url, {**base, 'partition': self.p1.pk}).status_code, 200)
+        self.assertEqual(self.client.post(url, base).status_code, 302)
+        self.assertEqual(self.client.post(url, base).status_code, 200)

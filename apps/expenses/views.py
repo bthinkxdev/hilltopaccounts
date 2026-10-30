@@ -136,6 +136,23 @@ def _expense_form_context(request, form, villa_pk, visible_expenses):
     cancel_url = reverse('villas:partition_detail', args=[partition]) if partition else (reverse('villas:villa_detail', args=[villa_pk]) if villa_pk else reverse('expenses:list'))
     return {'form': form, 'title': 'Add Expense', 'cancel_url': cancel_url, 'expense_form': True, 'expense_names': expense_selectors.used_expense_names(visible_expenses), 'suggest_url': reverse('expenses:suggest')}
 
+def _create_monthly(request, form, data, villa_pk, visible_expenses):
+    """The 'Monthly repeated' choice of the add-expense form: sets up a fixed monthly expense of the villa, starting
+    with the month of the chosen date; earlier months are never touched."""
+    villa, start = data['villa'], data['date']
+    category = get_or_create_category(name=data['name'])
+    if RecurringExpense.objects.filter(villa=villa, category=category).exists():
+        form.add_error('name', f'{category.name} is already a monthly expense of this villa — edit it on the villa page instead.')
+    else:
+        try:
+            create_recurring_expense(villa=villa, category=category, amount=data['amount'], due_day=min(start.day, 28), auto_debit=data.get('auto_debit', False), start_period=start, created_by=request.user)
+        except (PermissionDenied, DomainError) as exc:
+            form.add_error(None, str(exc))
+        else:
+            messages.success(request, f'Monthly expense “{category.name}” added to {villa.name} from {start:%B %Y}.')
+            return redirect(reverse('villas:villa_detail', args=[villa.pk]) + f'?period=month&year={start.year}&month={start.month}#fixed-expenses')
+    return render(request, 'components/form_page.html', _expense_form_context(request, form, villa_pk, visible_expenses))
+
 @login_required
 def expense_create(request, villa_pk=None):
     if villa_pk is not None:
@@ -166,6 +183,9 @@ def expense_create(request, villa_pk=None):
         form = ExpenseForm(request.POST, request.FILES, user=request.user)
         if form.is_valid():
             data = form.cleaned_data
+            if data.pop('frequency') == 'monthly':
+                return _create_monthly(request, form, data, villa_pk, visible_expenses)
+            data.pop('auto_debit', None)
             paid = data.pop('mark_paid')
             category = get_or_create_category(name=data.pop('name'))
             if paid:
@@ -184,7 +204,7 @@ def expense_create(request, villa_pk=None):
     else:
         from apps.shared.periods import selected_year_month
         sel_year, sel_month = selected_year_month(request)
-        initial = {'villa': preselected, 'date': date.today() if (sel_year, sel_month) == (date.today().year, date.today().month) else date(sel_year, sel_month, 1)}
+        initial = {'frequency': 'monthly' if request.GET.get('type') == 'monthly' else 'one_time', 'villa': preselected, 'date': date.today() if (sel_year, sel_month) == (date.today().year, date.today().month) else date(sel_year, sel_month, 1)}
         partition_id = request.GET.get('partition', '')
         if partition_id.isdigit():
             partition = Partition.objects.filter(pk=partition_id, villa__in=manageable).first()
@@ -283,7 +303,7 @@ def _villa_for_fixed_expenses(request, villa_pk):
     if villa.is_sold:
         raise PermissionDenied('This villa has been sold. Fixed expenses cannot be configured.')
     if not (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business) or selectors.is_villa_staff_of(request.user, villa)):
-        raise PermissionDenied('Only the Owner, Business Manager, or assigned Villa Staff can set fixed expenses.')
+        raise PermissionDenied('Only the Admin, Business Manager, or assigned Villa Staff can set fixed expenses.')
     return villa
 
 @login_required
@@ -380,7 +400,7 @@ def expense_batch(request, action='paid'):
 @login_required
 @require_POST
 def expense_quick_paid(request, pk):
-    """One tap: 'Paid'. Staff-paid money awaits the owner's verification; the owner's own payment is final."""
+    """One tap: 'Paid'. Staff-paid money awaits the admin's verification; the admin's own payment is final."""
     expense = get_object_or_404(selectors.expenses_visible_to(request.user).select_related('villa', 'business', 'category', 'recurring'), pk=pk)
     if not can_pay_expense(request.user, expense):
         raise PermissionDenied('You cannot settle this expense.')
@@ -390,13 +410,13 @@ def expense_quick_paid(request, pk):
     except DomainError as exc:
         messages.error(request, str(exc))
     else:
-        messages.success(request, f'{expense.category} marked paid.' if is_admin else f'{expense.category} marked paid — the owner will verify it.')
+        messages.success(request, f'{expense.category} marked paid.' if is_admin else f'{expense.category} marked paid — the admin will verify it.')
     return redirect(_back_to(request, reverse('expenses:list')))
 
 @login_required
 @require_POST
 def expense_verify(request, pk):
-    """One tap: the Owner / Business Manager confirms a staff-paid expense as received."""
+    """One tap: the Admin / Business Manager confirms a staff-paid expense as received."""
     expense = get_object_or_404(selectors.expenses_visible_to(request.user).select_related('villa', 'business', 'category'), pk=pk)
     try:
         verify_expense(expense=expense, verified_by=request.user)

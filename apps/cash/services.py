@@ -17,7 +17,7 @@ def submit_cash_handover(*, staff, payments, submitted_by, notes='', expenses=()
     """
     from apps.tenancy.models import DepositCollection
     if staff.is_owner:
-        raise DomainError('Owner collections go straight to owner funds and are not handed over.')
+        raise DomainError('Admin collections go straight to admin funds and are not handed over.')
     payments = list(payments)
     expenses = list(expenses)
     deposits = list(deposits)

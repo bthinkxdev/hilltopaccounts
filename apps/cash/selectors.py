@@ -37,7 +37,7 @@ def total_staff_paid_expenses(staff) -> Decimal:
     return staff_paid_expenses(staff).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
 
 def outstanding_cash_for(staff) -> Decimal:
-    """Cash the staff member still holds: collected, minus what they spent on owner business, minus what the owner confirmed."""
+    """Cash the staff member still holds: collected, minus what they spent on admin business, minus what the admin confirmed."""
     return total_collected(staff) - total_staff_paid_expenses(staff) - total_confirmed_handed_over(staff)
 
 
@@ -56,7 +56,7 @@ def staff_accountability(viewer, year, month) -> list[dict]:
     villas_by_staff = {}
     for a in assignments:
         villas_by_staff.setdefault(a.user_id, []).append(a.villa)
-    # Anyone who is not the owner and collected cash here must hand it over (manager, partner…) — not only villa staff.
+    # Anyone who is not the admin and collected cash here must hand it over (manager, partner…) — not only villa staff.
     collectors = set(Payment.objects.filter(method=Payment.Method.CASH, is_cancelled=False, collected_by__is_owner=False, invoice__partition__villa__in=scope).values_list('collected_by', 'invoice__partition__villa'))
     collectors |= set(_cash_deposits().filter(collected_by__is_owner=False, tenant__partition__villa__in=scope).values_list('collected_by', 'tenant__partition__villa'))
     extra_villas = {v.pk: v for v in Villa.objects.filter(pk__in={vid for _, vid in collectors})}
@@ -88,7 +88,7 @@ def staff_accountability(viewer, year, month) -> list[dict]:
 
 
 def cash_with_owner(villas=None) -> dict:
-    """Cash that is in the owner's hands: cash the owner collected directly, plus what the owner confirmed receiving
+    """Cash that is in the admin's hands: cash the admin collected directly, plus what the admin confirmed receiving
     from staff handovers. Staff-paid expenses are already netted off those handovers."""
     zero = Decimal('0.00')
     payments = Payment.objects.filter(method=Payment.Method.CASH, is_cancelled=False, collected_by__is_owner=True)
@@ -104,9 +104,9 @@ def cash_with_owner(villas=None) -> dict:
 
 def unhanded_staff_cash_for_month(villa, year: int, month: int) -> Decimal:
     """Cash staff collected that is income of this villa for one month (its rent, or advance collected in it) and
-    that the owner has not yet confirmed receiving.
+    that the admin has not yet confirmed receiving.
 
-    Profit of a month can be shared once that month's cash is in owner hands — cash for other months does not block it.
+    Profit of a month can be shared once that month's cash is in admin hands — cash for other months does not block it.
     """
     from apps.billing.selectors import income_deposits, income_payments, period_bounds
     from apps.billing.models import Invoice
@@ -118,8 +118,8 @@ def unhanded_staff_cash_for_month(villa, year: int, month: int) -> Decimal:
 def villa_cash_position(villa) -> dict:
     """Where the cash collected in one villa is: still with staff, handed over, or spent on its expenses.
 
-    holding = staff cash collected − expenses staff paid − what the owner confirmed receiving from staff handovers.
-    Cash collected by an owner is already in owner hands; every other collector must hand it over
+    holding = staff cash collected − expenses staff paid − what the admin confirmed receiving from staff handovers.
+    Cash collected by an admin is already in admin hands; every other collector must hand it over
     (the same rule submit_cash_handover enforces).
     """
     zero = Decimal('0.00')
@@ -129,7 +129,7 @@ def villa_cash_position(villa) -> dict:
     spent = Expense.objects.filter(villa=villa, status=Expense.Status.ACTIVE, paid_by=PaidBy.STAFF, paid_on__isnull=False).aggregate(t=Sum('amount'))['t'] or zero
 
     def handed(status):
-        """This villa's part of the handovers in a status. A confirmed handover may be short (owner confirmed less
+        """This villa's part of the handovers in a status. A confirmed handover may be short (admin confirmed less
         than declared): the villa's part is scaled by confirmed/declared and the gap stays with the staff."""
         total, short = zero, zero
         handovers = CashHandover.objects.filter(status=status).filter(Q(payments__invoice__partition__villa=villa) | Q(deposits__tenant__partition__villa=villa) | Q(expenses__villa=villa)).distinct().prefetch_related('payments__invoice__partition', 'deposits__tenant__partition', 'expenses')

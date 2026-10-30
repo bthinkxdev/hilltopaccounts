@@ -69,7 +69,8 @@
           {% if rent.upcoming %} · <strong>QAR {{ rent.upcoming|floatformat:"2" }}/mo from {{ rent.upcoming_from|date:"F Y" }}</strong>{% endif %}
           {% if current_tenant.deposit > 0 %} · Advance QAR {{ current_tenant.deposit|floatformat:"2" }} ({{ current_tenant.deposit_paid|floatformat:"2" }} received{% if current_tenant.deposit_pending %}, {{ current_tenant.deposit_pending|floatformat:"2" }} pending{% endif %}){% else %} · No advance{% endif %}
         </span>
-        {% if can_manage and not villa.is_archived and not villa.business.is_archived and not villa.is_sold %}<a class="btn btn--ghost" href="{% url 'tenancy:move_out' current_tenant.pk %}">Move out &amp; mark vacant</a>{% endif %}
+        {% if can_manage and not villa.is_archived and not villa.business.is_archived and not villa.is_sold %}<a class="btn btn--primary" href="{% url 'billing:payment_list' %}?tab=all&period=month&year={{ year }}&month={{ month }}&villa={{ villa.pk }}&q={{ current_tenant.name|urlencode }}">Collect rent</a>
+        <a class="btn btn--ghost" href="{% url 'tenancy:move_out' current_tenant.pk %}">Move out &amp; mark vacant</a>{% endif %}
       </div>
     {% elif partition.status == 'archived' or villa.is_archived or villa.business.is_archived or villa.is_sold %}
       <div class="empty-state">

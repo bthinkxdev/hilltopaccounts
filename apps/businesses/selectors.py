@@ -34,8 +34,8 @@ def profit_split(*, invoices, expenses, deposits, start: date, end: date, shares
     """Who gets the profit — or carries the loss — of a period, per villa and in total. Every page uses this.
 
     Everything goes by the shares: each villa's net (profit or loss) is split by its partners' percentages, and the
-    owner keeps the remaining percentage. A partner's share of a loss is negative. Partners only share in the
-    villas they hold shares in, so a loss elsewhere never touches them. Owner + partners always equals the net.
+    admin keeps the remaining percentage. A partner's share of a loss is negative. Partners only share in the
+    villas they hold shares in, so a loss elsewhere never touches them. Admin + partners always equals the net.
     """
     from collections import defaultdict
     from django.db.models import Sum

@@ -100,7 +100,7 @@
             {% endif %}
             <div class="expense-row__main">
               <div class="expense-row__top">
-                <span class="expense-row__category">{{ expense.category }}</span>
+                <span class="expense-row__category">{{ expense.category }}</span>{% if expense.recurring_id %} <span class="pill pill--neutral">Monthly</span>{% endif %}
                 <span class="expense-row__amount">QAR {{ expense.amount|floatformat:"2" }}</span>
               </div>
               <div class="expense-row__meta">

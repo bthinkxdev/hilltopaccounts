@@ -74,7 +74,7 @@
   <div class="sec-h">4. Profit Share</div>
   <table class="tbl">
     <tr><th>Description</th><th class="r" width="30%">Amount (QAR)</th></tr>
-    <tr><td>Net Profit (Owner + Partners)</td><td class="r">{{ distributable|floatformat:2 }}</td></tr>
+    <tr><td>Net Profit (Admin + Partners)</td><td class="r">{{ distributable|floatformat:2 }}</td></tr>
     <tr><td>{{ admin_label }}</td><td class="r">{{ owner_cut|floatformat:2 }}</td></tr>
     <tr class="bold"><td>Total Partners Share</td><td class="r">{{ tot_partner|floatformat:2 }}</td></tr>
   </table>
@@ -85,7 +85,7 @@
     {% for row in partner_breakdown_rows %}
     <tr><td><b>{{ row.0 }}</b></td><td>{{ row.1 }}</td></tr>
     {% empty %}
-    <tr><td colspan="2" style="color: #64748b; font-style: italic;">No active partner shares ({% if is_partner %}100% Admin{% else %}100% Owner{% endif %})</td></tr>
+    <tr><td colspan="2" style="color: #64748b; font-style: italic;">No active partner shares ({% if is_partner %}100% Admin{% else %}100% Admin{% endif %})</td></tr>
     {% endfor %}
   </table>
   {% endif %}

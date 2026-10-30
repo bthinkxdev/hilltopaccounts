@@ -18,7 +18,7 @@ from apps.tenancy.models import Tenant
 from . import selectors as billing_selectors
 from .forms import ChargeForm, InvoiceGenerateForm, PaymentCorrectionForm, PaymentForm
 from .models import Charge, ChargeType, Invoice
-from .services import collect_rent, cancel_charge, cancel_invoice, cancel_payment, correct_payment, create_charge, generate_monthly_invoice, record_payment
+from .services import collect_rent, cancel_charge, cancel_invoice, cancel_payment, correct_payment, create_charge, generate_monthly_invoice, get_or_create_charge_type, record_payment
 
 def _can_manage(user, villa):
     if villa.is_sold:
@@ -32,11 +32,6 @@ def charge_create(request, partition_pk):
         raise PermissionDenied('Cannot add charges to a sold villa.')
     if not _can_manage(request.user, partition.villa):
         raise PermissionDenied('You cannot add a charge to this partition.')
-    today = date.today()
-    active_type_ids = Charge.objects.filter(partition=partition, is_active=True).filter(Q(end_date__isnull=True) | Q(end_date__gt=today)).values_list('charge_type_id', flat=True)
-    if not ChargeType.objects.filter(is_active=True).exclude(id__in=active_type_ids).exists():
-        messages.info(request, 'All available charges have already been added.')
-        return redirect('villas:partition_detail', pk=partition.pk)
     rent_type = ChargeType.objects.filter(name__iexact='Rent', is_active=True).first()
     current_tenant = partition.current_tenant
     assigned_rent = (current_tenant.monthly_rent if current_tenant else None) or partition.rent
@@ -44,7 +39,10 @@ def charge_create(request, partition_pk):
         form = ChargeForm(request.POST, partition=partition)
         if form.is_valid():
             try:
-                charge = create_charge(partition=partition, created_by=request.user, **form.cleaned_data)
+                data = dict(form.cleaned_data)
+                if data['charge_type'].pk is None:
+                    data['charge_type'] = get_or_create_charge_type(name=data['charge_type'].name)
+                charge = create_charge(partition=partition, created_by=request.user, **data)
                 messages.success(request, f'Charge “{charge.charge_type}” added.')
                 return redirect('villas:partition_detail', pk=partition.pk)
             except DomainError as exc:

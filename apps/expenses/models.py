@@ -16,10 +16,10 @@ class ExpenseCategory(models.Model):
 
 class PaidBy(models.TextChoices):
     STAFF = ('staff', 'Staff — from collected cash')
-    OWNER = ('owner', 'Owner — own account')
+    OWNER = ('owner', 'Admin — own account')
 
 class RecurringExpense(models.Model):
-    """A fixed monthly expense of one villa (owner rent, electricity, Wi-Fi, maintenance, villa service…).
+    """A fixed monthly expense of one villa (admin rent, electricity, Wi-Fi, maintenance, villa service…).
 
     Each month it produces one ordinary Expense, so all totals, due dates and audit keep flowing through one engine.
     """
@@ -28,8 +28,9 @@ class RecurringExpense(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     due_day = models.PositiveSmallIntegerField(default=1, help_text='Day of the month it falls due (1–28).')
     paid_by = models.CharField(max_length=10, choices=PaidBy.choices, default=PaidBy.OWNER)
-    auto_debit = models.BooleanField(default=False, help_text='Debited automatically from the owner account on the due date.')
+    auto_debit = models.BooleanField(default=False, help_text='Debited automatically from the admin account on the due date.')
     is_active = models.BooleanField(default=True)
+    start_period = models.DateField(null=True, blank=True, help_text='First month it applies to (the 1st). Empty = the month it was set up.')
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
     updated_at = models.DateTimeField(auto_now=True)
@@ -46,8 +47,11 @@ class RecurringExpense(models.Model):
 
     @property
     def first_period(self):
-        """First month this fixed expense applies to: the month it was set up. Earlier months are never touched."""
+        """First month this fixed expense applies to: the month picked when it was added (else the month it was set up).
+        Earlier months are never touched."""
         from django.utils import timezone
+        if self.start_period:
+            return self.start_period.replace(day=1)
         created = timezone.localdate(self.created_at) if self.created_at else timezone.localdate()
         return created.replace(day=1)
 
@@ -76,7 +80,7 @@ class Expense(models.Model):
     payment_method = models.CharField(max_length=20, choices=Method.choices, blank=True)
     paid_by = models.CharField(max_length=10, choices=PaidBy.choices, default=PaidBy.OWNER)
     paid_by_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+', null=True, blank=True)
-    verified_at = models.DateTimeField(null=True, blank=True, help_text='When the Owner / Business Manager confirmed the payment as received/valid.')
+    verified_at = models.DateTimeField(null=True, blank=True, help_text='When the Admin / Business Manager confirmed the payment as received/valid.')
     verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+', null=True, blank=True)
     recurring = models.ForeignKey(RecurringExpense, on_delete=models.PROTECT, related_name='expenses', null=True, blank=True)
     period = models.DateField(null=True, blank=True, help_text='First day of the month a recurring expense belongs to.')

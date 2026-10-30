@@ -12,7 +12,7 @@
     <div class="quick-actions">
       {% if can_manage and not villa.is_sold %}
         {% if not villa.is_archived %}
-          <a class="btn btn--primary" href="{% url 'expenses:recurring_create' villa.pk %}">+ Add Expense</a>
+          <a class="btn btn--primary" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>
           {% if can_add_partition %}<a class="btn btn--ghost" href="{% url 'villas:partition_create' villa.pk %}">+ Partition</a>{% endif %}
           <a class="btn btn--ghost" href="{% url 'villas:villa_photo_add' villa.pk %}">+ Photo</a>
           {% if is_admin %}
@@ -21,7 +21,7 @@
             <a class="btn btn--ghost" href="{% url 'villas:villa_archive' villa.pk %}">Archive</a>
           {% endif %}
         {% else %}
-          {% if user.is_owner and not villa.is_sold %}<a class="btn btn--primary" href="{% url 'expenses:recurring_create' villa.pk %}">+ Add Expense</a>{% endif %}
+          {% if user.is_owner and not villa.is_sold %}<a class="btn btn--primary" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>{% endif %}
           {% if is_admin and not villa.is_sold %}
             <form method="post" action="{% url 'villas:villa_unarchive' villa.pk %}" style="display:inline;">
               {% csrf_token %}
@@ -161,11 +161,11 @@
     <div class="grid--kpi grid--kpi-compact">
       <div class="kpi"><div class="kpi__label">Cash collected (rent + advance)</div><div class="kpi__value">{{ cash.collected|floatformat:"2g" }}</div></div>
       <div class="kpi"><div class="kpi__label">Cash paid by staff</div><div class="kpi__value kpi__value--danger">{{ cash.spent_by_staff|floatformat:"2g" }}</div></div>
-      <div class="kpi"><div class="kpi__label">Received by owner</div><div class="kpi__value kpi__value--success">{{ cash.received_by_owner|floatformat:"2g" }}</div></div>
+      <div class="kpi"><div class="kpi__label">Received by admin</div><div class="kpi__value kpi__value--success">{{ cash.received_by_owner|floatformat:"2g" }}</div></div>
     </div>
     <div class="stat-line">
       <span>Still with staff <b>{{ cash.holding|floatformat:"2g" }}</b></span>
-      {% if cash.awaiting_confirmation %}<span>Handed over, awaiting owner <b>{{ cash.awaiting_confirmation|floatformat:"2g" }}</b></span>{% endif %}
+      {% if cash.awaiting_confirmation %}<span>Handed over, awaiting admin <b>{{ cash.awaiting_confirmation|floatformat:"2g" }}</b></span>{% endif %}
       {% if cash.short_in_handovers %}<span style="color: var(--danger);">Short in confirmed handovers <b>{{ cash.short_in_handovers|floatformat:"2g" }}</b> (still with staff)</span>{% endif %}
       <a href="{% url 'cash:handover_list' %}">Handovers &rarr;</a>
     </div>
@@ -311,8 +311,8 @@
       {% if owner_fixed_templates %}
         <div class="card card--tight">
           <div class="card__title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
-            <span>Owner Fixed Expenses</span>
-            <span class="pill pill--neutral">Paid by Owner</span>
+            <span>Admin Fixed Expenses</span>
+            <span class="pill pill--neutral">Paid by Admin</span>
           </div>
           {% for fixed in owner_fixed_templates %}
             <div class="list-row list-row--compact">
@@ -351,9 +351,9 @@
         </form>
         <div class="card card--tight batch-section" id="batch-section-owner">
           <div class="card__title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2); flex-wrap: wrap; gap: var(--space-2);">
-            <span>Owner Expenses (e.g. Villa Rent)</span>
+            <span>Admin Expenses (e.g. Villa Rent)</span>
             <div style="display: flex; align-items: center; gap: var(--space-2);">
-              <span class="pill pill--neutral">Paid by Owner</span>
+              <span class="pill pill--neutral">Paid by Admin</span>
               <div class="batch-bar" style="display: none; align-items: center; gap: var(--space-2);">
                 <button type="submit" form="batch-form-owner" formaction="{% url 'expenses:batch_paid' %}" class="btn btn--primary btn--sm batch-pay-btn" style="display: none;">Mark Paid</button>
                 <span class="batch-sep" style="display: none; font-size: 13px; color: var(--text-secondary); margin: 0 2px;">or</span>
@@ -455,7 +455,7 @@
         </div>
       </div>
     {% endif %}
-    {% if can_admin_fixed %}<div class="quick-actions" style="margin-top: var(--space-2);"><a class="btn btn--ghost btn--sm" href="{% url 'expenses:recurring_create' villa.pk %}">+ Add villa expense</a></div>{% endif %}
+    {% if can_admin_fixed %}<div class="quick-actions" style="margin-top: var(--space-2);"><a class="btn btn--ghost btn--sm" href="{% url 'expenses:create_for_villa' villa.pk %}?type=monthly">+ Add monthly expense</a></div>{% endif %}
 
     <div class="batch-section" id="batch-section-partition">
       <form method="post" id="batch-form-partition" style="display: none;">
@@ -463,7 +463,7 @@
         <input type="hidden" name="next" value="{{ request.get_full_path }}#partition-expenses">
       </form>
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: var(--space-3); margin-bottom: var(--space-2); flex-wrap: wrap; gap: var(--space-2);">
-        <div class="detail-section__title" id="partition-expenses" style="margin: 0;">Partition expenses — {{ period_label }}</div>
+        <div class="detail-section__title" id="partition-expenses" style="margin: 0;">One-time expenses — {{ period_label }}</div>
         <div class="batch-bar" style="display: none; align-items: center; gap: var(--space-2);">
           <button type="submit" form="batch-form-partition" formaction="{% url 'expenses:batch_paid' %}" class="btn btn--primary btn--sm batch-pay-btn" style="display: none;">Mark Paid</button>
           <span class="batch-sep" style="display: none; font-size: 13px; color: var(--text-secondary); margin: 0 2px;">or</span>
@@ -472,27 +472,9 @@
       </div>
       <div class="card card--tight">
         {% for expense in one_off_expenses %}
-          <div class="list-row list-row--compact">
-            {% if expense.can_verify and expense.awaiting_verification %}
-              <input type="checkbox" name="expense_ids" value="{{ expense.pk }}" form="batch-form-partition" class="bulk-cb" data-type="verify" onchange="updateBatch()" style="margin-right: var(--space-2); cursor: pointer;" title="Select to verify">
-            {% elif expense.can_pay and not expense.paid_on %}
-              <input type="checkbox" name="expense_ids" value="{{ expense.pk }}" form="batch-form-partition" class="bulk-cb" data-type="pay" onchange="updateBatch()" style="margin-right: var(--space-2); cursor: pointer;" title="Select to pay">
-            {% endif %}
-            <div class="list-row__main">
-              <span class="list-row__title">{{ expense.category }} — {{ expense.amount|floatformat:"2g" }}</span>
-              <div class="list-row__meta">{% if expense.partition %}{{ expense.partition.name }} · {% endif %}{{ expense.date|date:"d M" }}{% if expense.due_date %} · due {{ expense.due_date|date:"d M" }}{% endif %} · {% if expense.paid_on and expense.paid_by_user %}Paid by {% if expense.paid_by_user == request.user %}you{% else %}{{ expense.paid_by_user.get_full_name|default:expense.paid_by_user.username }}{% endif %}{% else %}{{ expense.get_paid_by_display }}{% endif %}{% if expense.created_by %} · created by {{ expense.created_by.get_full_name|default:expense.created_by.username }}{% endif %}</div>
-            </div>
-            {% if expense.due_state == "paid" %}<span class="pill pill--success">Paid</span>
-            {% elif expense.due_state == "verify" %}<span class="pill pill--warning">Paid — to verify</span>
-            {% elif expense.due_state == "overdue" %}<span class="pill pill--danger">Overdue</span>
-            {% elif expense.due_state == "today" %}<span class="pill pill--warning">Due today</span>
-            {% elif expense.due_state == "upcoming" %}<span class="pill pill--neutral">Upcoming</span>
-            {% elif expense.due_state == "unpaid" %}<span class="pill pill--neutral">Unpaid</span>
-            {% else %}<span class="pill pill--neutral">{{ expense.get_status_display }}</span>{% endif %}
-            {% include "components/expense_actions.html" %}
-          </div>
+          {% include "villas/_one_off_expense_row.html" with batch=True %}
         {% empty %}
-          <div class="empty-state"><div class="empty-state__title">No partition expenses in {{ period_label }}.</div>{% if can_manage and not villa.is_archived and not villa.is_sold %}<a class="btn btn--primary btn--sm" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>{% endif %}</div>
+          <div class="empty-state"><div class="empty-state__title">No one-time expenses in {{ period_label }}.</div>{% if can_manage and not villa.is_archived and not villa.is_sold %}<a class="btn btn--primary btn--sm" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>{% endif %}</div>
         {% endfor %}
         <a class="btn btn--ghost btn--sm" href="{% url 'expenses:list' %}?villa={{ villa.pk }}">All expenses for this villa</a>
       </div>

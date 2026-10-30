@@ -49,6 +49,28 @@
 {% if expense_form %}
   <script>
   (function () {
+    // Expense type: a monthly repeated expense belongs to the whole villa and is paid month by month on the villa page.
+    var radios = document.querySelectorAll('input[name="frequency"]');
+    if (!radios.length) return;
+    var hideWhenMonthly = ['{{ form.partition.id_for_label }}', '{{ form.mark_paid.id_for_label }}', '{{ form.payment_method.id_for_label }}', '{{ form.attachment.id_for_label }}', '{{ form.reference.id_for_label }}'];
+    var autoDebit = '{{ form.auto_debit.id_for_label }}';
+    var dateInput = document.getElementById('{{ form.date.id_for_label }}');
+    var dateLabel = dateInput && document.querySelector('label[for="' + dateInput.id + '"]');
+    var baseLabel = dateLabel ? dateLabel.innerHTML : '';
+    function row(id) { var el = id && document.getElementById(id); return el && el.closest('.field'); }
+    function apply() {
+      var checked = document.querySelector('input[name="frequency"]:checked');
+      var monthly = !!checked && checked.value === 'monthly';
+      hideWhenMonthly.forEach(function (id) { var r = row(id); if (r) r.style.display = monthly ? 'none' : ''; });
+      var a = row(autoDebit); if (a) a.style.display = monthly ? '' : 'none';
+      if (dateLabel) dateLabel.innerHTML = monthly ? 'Starts from <span class="field__required">*</span>' : baseLabel;
+    }
+    Array.prototype.forEach.call(radios, function (r) { r.addEventListener('change', apply); });
+    apply();
+  })();
+  </script>
+  <script>
+  (function () {
     var villa = document.getElementById('{{ form.villa.id_for_label }}');
     var partition = document.getElementById('{{ form.partition.id_for_label }}');
     var name = document.getElementById('{{ form.name.id_for_label }}');

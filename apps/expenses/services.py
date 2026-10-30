@@ -31,7 +31,7 @@ def _snapshot(expense: Expense) -> dict:
     return {f: str(getattr(expense, f)) for f in TRACKED_FIELDS}
 
 def can_pay_expense(user, expense: Expense) -> bool:
-    """Auto-debit or landlord rent expenses are settled by the Owner or the villa's Business Manager; other villa expenses by anyone on the villa."""
+    """Auto-debit or landlord rent expenses are settled by the Admin or the villa's Business Manager; other villa expenses by anyone on the villa."""
     if user.is_owner:
         return True
     if expense.recurring_id is not None and getattr(expense.recurring, 'auto_debit', False):
@@ -44,17 +44,17 @@ def can_pay_expense(user, expense: Expense) -> bool:
 
 
 def _is_admin(user, business) -> bool:
-    """Owner, or the Business Manager of that business — the people who confirm that money was really paid/received."""
+    """Admin, or the Business Manager of that business — the people who confirm that money was really paid/received."""
     return user.is_owner or selectors.is_business_manager_of(user, business)
 
 def _record_payment_fields(expense: Expense, *, paid_on, payment_method, payer, admin: bool) -> None:
     """Apply a payment to the expense object. An admin paying is final (verified, and owner-paid);
-    a staff member paying leaves it awaiting the owner's verification."""
+    a staff member paying leaves it awaiting the admin's verification."""
     expense.paid_on = paid_on
     expense.payment_method = payment_method
     expense.paid_by_user = payer
     if admin:
-        expense.paid_by = PaidBy.OWNER  # the owner side actually paid it, whoever it was meant for
+        expense.paid_by = PaidBy.OWNER  # the admin side actually paid it, whoever it was meant for
         expense.verified_at = timezone.now()
         expense.verified_by = payer
     else:
@@ -72,7 +72,7 @@ def create_expense(*, villa, category, amount, date, created_by, partition=None,
         raise PermissionDenied('You cannot add expenses to this villa.')
     with transaction.atomic():
         # Nobody picks "paid by": an unpaid expense sits with the side of whoever recorded it, and moves to whoever
-        # actually pays it (owner side for the Owner / Business Manager, staff side — from collected cash — otherwise).
+        # actually pays it (admin side for the Admin / Business Manager, staff side — from collected cash — otherwise).
         fields.setdefault('paid_by', PaidBy.OWNER if _is_admin(created_by, villa.business) else PaidBy.STAFF)
         expense = Expense(business=villa.business, villa=villa, partition=partition, category=category, amount=amount, date=date, created_by=created_by, **fields)
         if expense.paid_on is not None:
@@ -101,16 +101,16 @@ def mark_expense_paid(*, expense: Expense, paid_on, payment_method, marked_by) -
     with transaction.atomic():
         locked = Expense.objects.select_for_update().select_related('villa', 'business').get(pk=expense.pk)
         if not can_pay_expense(marked_by, locked):
-            raise PermissionDenied('Only the Owner or Business Manager can settle an expense paid from the owner account.')
+            raise PermissionDenied('Only the Admin or Business Manager can settle an expense paid from the admin account.')
         admin = _is_admin(marked_by, locked.business)
-        return _settle(locked, paid_on=paid_on, payment_method=payment_method, actor=marked_by, payer=marked_by, admin=admin, reason='marked paid' if admin else 'marked paid by staff — awaiting owner verification')
+        return _settle(locked, paid_on=paid_on, payment_method=payment_method, actor=marked_by, payer=marked_by, admin=admin, reason='marked paid' if admin else 'marked paid by staff — awaiting admin verification')
 
 def verify_expense(*, expense: Expense, verified_by, reason='verified as paid and received') -> Expense:
-    """The Owner / Business Manager confirms a staff-paid expense really happened."""
+    """The Admin / Business Manager confirms a staff-paid expense really happened."""
     with transaction.atomic():
         locked = Expense.objects.select_for_update().select_related('villa', 'business').get(pk=expense.pk)
         if not _is_admin(verified_by, locked.business):
-            raise PermissionDenied('Only the Owner or the Business Manager can verify an expense.')
+            raise PermissionDenied('Only the Admin or the Business Manager can verify an expense.')
         if locked.status != Expense.Status.ACTIVE or locked.paid_on is None:
             raise ExpenseNotPayable('Only an active, paid expense can be verified.')
         if locked.verified_at is not None:
@@ -124,7 +124,7 @@ def verify_expense(*, expense: Expense, verified_by, reason='verified as paid an
     return locked
 
 def verify_expenses_in_confirmed_handover(*, handover, confirmed_by) -> int:
-    """Confirming a handover confirms the expenses the staff netted off it: the owner has accepted those payments.
+    """Confirming a handover confirms the expenses the staff netted off it: the admin has accepted those payments.
 
     Called only from cash.services.confirm_cash_handover, which has already authorised the confirmer.
     """
@@ -213,19 +213,19 @@ def _recurring_snapshot(recurring: RecurringExpense) -> dict:
 
 def _require_fixed_expense_admin(user, villa):
     if not (user.is_owner or selectors.is_business_manager_of(user, villa.business) or selectors.is_villa_staff_of(user, villa)):
-        raise PermissionDenied('Only the Owner, Business Manager, or assigned Villa Staff can set a villa\'s fixed expenses.')
+        raise PermissionDenied('Only the Admin, Business Manager, or assigned Villa Staff can set a villa\'s fixed expenses.')
 
-def create_recurring_expense(*, villa, category, amount, due_day, created_by, paid_by=None, auto_debit=False) -> RecurringExpense:
+def create_recurring_expense(*, villa, category, amount, due_day, created_by, paid_by=None, auto_debit=False, start_period=None) -> RecurringExpense:
     if villa.is_sold:
         raise DomainError(f'Cannot add fixed expenses to sold villa “{villa.name}”.')
     _require_fixed_expense_admin(created_by, villa)
     admin = _is_admin(created_by, villa.business)
     auto_debit = bool(auto_debit) and admin
     if paid_by is None:
-        # Who normally pays it follows who sets it up; an auto-debit is always the owner account.
+        # Who normally pays it follows who sets it up; an auto-debit is always the admin account.
         paid_by = PaidBy.OWNER if (admin or auto_debit) else PaidBy.STAFF
     with transaction.atomic():
-        recurring = RecurringExpense(villa=villa, category=category, amount=amount, due_day=due_day, paid_by=paid_by, auto_debit=auto_debit, created_by=created_by)
+        recurring = RecurringExpense(villa=villa, category=category, amount=amount, due_day=due_day, paid_by=paid_by, auto_debit=auto_debit, start_period=start_period.replace(day=1) if start_period else None, created_by=created_by)
         recurring.full_clean()
         recurring.save()
         audit_services.log(user=created_by, action=Action.EXPENSE_CREATED, obj=recurring, business=villa.business, villa=villa, new_value=_recurring_snapshot(recurring), reason='fixed monthly expense set up')
@@ -249,7 +249,7 @@ def update_recurring_expense(*, recurring: RecurringExpense, updated_by, **field
     _require_fixed_expense_admin(updated_by, recurring.villa)
     if 'auto_debit' in fields:
         if not _is_admin(updated_by, recurring.villa.business):
-            fields.pop('auto_debit')  # only the owner side can debit the owner account
+            fields.pop('auto_debit')  # only the admin side can debit the admin account
         elif fields['auto_debit']:
             fields['paid_by'] = PaidBy.OWNER
     if recurring.is_active and any(f in fields and fields[f] != getattr(recurring, f) for f in ('amount', 'paid_by')):

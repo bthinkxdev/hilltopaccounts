@@ -18,6 +18,7 @@
         <div class="list-row">
           <a class="list-row__title" href="{% url 'accounts:staff_detail' u.pk %}">{{ u.get_full_name|default:u.username }}</a>
           <span class="list-row__meta">{{ u.last_login|date:"d M Y H:i"|default:"Never signed in" }}</span>
+          {% if u.collected_in_period %}<span class="list-row__meta">Collected for {{ period_label }}: <strong>QAR {{ u.collected_in_period|floatformat:"2g" }}</strong></span>{% endif %}
           {% if not u.is_active %}<span class="pill pill--neutral">Inactive</span>
           {% else %}{% for label in u.role_labels %}<span class="pill pill--neutral">{{ label }}</span>{% endfor %}{% endif %}
           {% if u.is_active %}

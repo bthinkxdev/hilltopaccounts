@@ -1,7 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from datetime import date
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -18,6 +18,11 @@ from .services import confirm_cash_handover, reject_cash_handover, submit_cash_h
 @login_required
 def handover_list(request):
     qs = accounts_selectors.cash_handovers_visible_to(request.user).select_related('staff')
+    period = period_context(request)
+    # A handover belongs to the month of the cash in it (the rent month, the tenant's move-in month for an advance, the
+    # expense month) as well as to the month it was handed over in.
+    start, end = period['period_start'], period['period_end']
+    qs = qs.filter(Q(submitted_at__date__range=(start, end)) | Q(payments__invoice__billing_period_start__range=(start, end)) | Q(deposits__tenant__move_in_date__range=(start, end)) | Q(expenses__date__range=(start, end))).distinct()
     status = request.GET.get('status', '')
     if status:
         qs = qs.filter(status=status)
@@ -25,9 +30,9 @@ def handover_list(request):
     is_owner = request.user.is_owner
     my_unclaimed = [] if is_owner else list(selectors.unclaimed_cash_payments(request.user)) + list(selectors.unclaimed_cash_deposits(request.user))
     can_confirm = accounts_selectors.can_confirm_cash_handovers(request.user)
-    context = {'page_obj': page_obj, 'status': status, 'status_choices': CashHandover.Status.choices, 'is_owner': is_owner, 'can_view_accountability': can_confirm, 'breadcrumbs': [('Cash Handover', None)]}
+    context = {'page_obj': page_obj, 'status': status, 'status_choices': CashHandover.Status.choices, 'is_owner': is_owner, 'can_view_accountability': can_confirm, 'breadcrumbs': [('Cash Handover', None)], **period}
     if not is_owner:
-        # The owner's own collections are already owner funds, so "my cash" only applies to everyone else.
+        # The admin's own collections are already admin funds, so "my cash" only applies to everyone else.
         context.update(my_outstanding_cash=selectors.outstanding_cash_for(request.user), my_pending_amount=selectors.pending_handover_amount(request.user), my_unclaimed_payments=my_unclaimed, my_expenses_paid=selectors.total_staff_paid_expenses(request.user))
     if is_owner:
         context['owner_cash'] = selectors.cash_with_owner()
@@ -103,9 +108,9 @@ def handover_reject(request, pk):
 
 @login_required
 def staff_accountability(request):
-    """Owner / Business Manager overview: for each staff member, collected, spent, handed over, still holding, rent pending."""
+    """Admin / Business Manager overview: for each staff member, collected, spent, handed over, still holding, rent pending."""
     if not accounts_selectors.can_view_financial_kpis(request.user):
-        raise PermissionDenied('Only the Owner, Business Managers and Accountants can see staff accountability.')
+        raise PermissionDenied('Only the Admin, Business Managers and Accountants can see staff accountability.')
     period = period_context(request, allow_future=True)
     rows = selectors.staff_accountability(request.user, period['year'], period['month'])
     context = {'rows': rows, 'keep': [], 'breadcrumbs': [('Cash Handover', reverse('cash:handover_list')), ('Staff accountability', None)], **period}

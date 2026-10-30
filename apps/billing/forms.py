@@ -5,7 +5,8 @@ from django.db.models import Q
 from .models import Charge, ChargeType, Payment
 
 class ChargeForm(forms.Form):
-    charge_type = forms.ModelChoiceField(queryset=ChargeType.objects.filter(is_active=True), empty_label='Select a charge type…')
+    charge_type = forms.ModelChoiceField(queryset=ChargeType.objects.filter(is_active=True), empty_label='Select a charge type…', required=False)
+    new_charge_type = forms.CharField(required=False, max_length=100, label='Or a new charge type', help_text='Not in the list? Type its name, e.g. Electricity, Water, Wi-Fi.')
     description = forms.CharField(required=False, max_length=255)
     amount = forms.DecimalField(min_value=Decimal('0'), decimal_places=2, max_digits=12)
     frequency = forms.ChoiceField(choices=[('monthly', 'Monthly'), ('one_time', 'One-time')], initial='monthly')
@@ -21,6 +22,25 @@ class ChargeForm(forms.Form):
             active_ids = Charge.objects.filter(partition=partition, is_active=True).filter(Q(end_date__isnull=True) | Q(end_date__gt=today)).values_list('charge_type_id', flat=True)
             types = types.exclude(id__in=active_ids)
         self.fields['charge_type'].queryset = types
+        self.partition = partition
+
+    def clean(self):
+        cleaned = super().clean()
+        name = ' '.join((cleaned.pop('new_charge_type', '') or '').split())
+        if name and cleaned.get('charge_type') is None:
+            if name.lower() == 'rent':
+                self.add_error('new_charge_type', 'Rent is set on the tenant, not as a charge.')
+            else:
+                existing = ChargeType.objects.filter(name__iexact=name).first()
+                cleaned['charge_type'] = existing or ChargeType(name=name)
+        elif cleaned.get('charge_type') is None:
+            self.add_error('charge_type', 'Choose a charge type or type a new one.')
+        charge_type = cleaned.get('charge_type')
+        if charge_type is not None and charge_type.pk and self.partition is not None:
+            today = date.today()
+            if Charge.objects.filter(partition=self.partition, charge_type=charge_type, is_active=True).filter(Q(end_date__isnull=True) | Q(end_date__gt=today)).exists():
+                self.add_error('charge_type' if 'charge_type' in self.data else 'new_charge_type', f'{charge_type.name} is already an active charge on this partition.')
+        return cleaned
 
 class NewChargeTypeForm(forms.Form):
     name = forms.CharField(max_length=100)

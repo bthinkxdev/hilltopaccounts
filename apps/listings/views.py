@@ -41,7 +41,7 @@ def _brand(extra=None):
     return ctx
 
 def contact_for(partition):
-    """The villa's staff first, then the business manager, then an owner: whoever has a phone number."""
+    """The villa's staff first, then the business manager, then an admin: whoever has a phone number."""
     villa = partition.villa
     tiers = [
         User.objects.filter(is_active=True, assignments__role=Assignment.Role.VILLA_STAFF, assignments__villa=villa),
