@@ -130,10 +130,11 @@ def tenant_create(request, partition_pk):
                 from django.db import transaction
                 with transaction.atomic():
                     rent_paid = form.cleaned_data.pop('rent_paid', 0)
+                    rent_method = form.cleaned_data.pop('rent_method', None) or form.cleaned_data.get('deposit_method', 'cash')
                     tenant = create_tenant(partition=partition, created_by=request.user, **form.cleaned_data)
                     if rent_paid:
                         from apps.billing.services import collect_rent
-                        collect_rent(partition=partition, year=tenant.move_in_date.year, month=tenant.move_in_date.month, method=form.cleaned_data.get('deposit_method', 'cash'), collected_by=request.user, amount=rent_paid, collected_at=min(tenant.move_in_date, date.today()))
+                        collect_rent(partition=partition, year=tenant.move_in_date.year, month=tenant.move_in_date.month, method=rent_method, collected_by=request.user, amount=rent_paid, collected_at=min(tenant.move_in_date, date.today()))
             except DomainError as exc:
                 form.add_error(None, str(exc))
             else:
