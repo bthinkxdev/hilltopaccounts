@@ -14,6 +14,8 @@
   document.addEventListener("click", function (e) {
     var btn = e.target.closest("a.btn--ghost");
     if (!btn || btn.textContent.trim() !== "Cancel") return;
+    // A popup's Cancel only closes the popup (modal.js); it must not also send the page back.
+    if (e.defaultPrevented || btn.hasAttribute("data-modal-cancel") || btn.closest("dialog")) return;
     if (document.referrer && document.referrer.indexOf(window.location.host) !== -1) {
       var refPath = document.referrer.split("?")[0].replace(/\/+$/, "");
       var curPath = window.location.href.split("?")[0].replace(/\/+$/, "");

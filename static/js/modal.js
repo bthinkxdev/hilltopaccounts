@@ -112,7 +112,10 @@
   }
 
   function setSubmitting(form, on) {
-    Array.prototype.forEach.call(form.querySelectorAll("button[type=submit], input[type=submit]"), function (b) { b.disabled = on; });
+    Array.prototype.forEach.call(form.querySelectorAll("button[type=submit], input[type=submit]"), function (b) {
+      b.disabled = on;
+      if (!on && b.dataset.originalText) b.textContent = b.dataset.originalText; // app.js swaps it for "Please wait…"
+    });
     form.classList.toggle("is-submitting", on);
   }
 
