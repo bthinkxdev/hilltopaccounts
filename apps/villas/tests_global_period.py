@@ -178,3 +178,11 @@ class QaRegressionTests(VillaStatsBase):
         self.assertEqual(self.client.post(url, {**base, 'partition': self.p1.pk}).status_code, 200)
         self.assertEqual(self.client.post(url, base).status_code, 302)
         self.assertEqual(self.client.post(url, base).status_code, 200)
+
+    def test_cash_handover_audit_and_staff_accept_a_future_month_without_the_current_month_warning(self):
+        from datetime import date
+        nxt = date(date.today().year + (date.today().month == 12), date.today().month % 12 + 1, 1)
+        for url in (reverse('cash:handover_list'), reverse('audit:list'), reverse('accounts:staff_list')):
+            r = self.client.get(url, {'period': 'month', 'year': nxt.year, 'month': nxt.month}, follow=True)
+            self.assertEqual((r.context['year'], r.context['month']), (nxt.year, nxt.month), url)
+            self.assertNotContains(r, 'Future periods are not available', msg_prefix=url)

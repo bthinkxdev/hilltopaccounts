@@ -16,7 +16,7 @@ def audit_list(request):
     action = request.GET.get('action', '')
     if action:
         qs = qs.filter(action=action)
-    period = period_context(request)
+    period = period_context(request, allow_future=True)
     qs = qs.filter(timestamp__date__range=(period['period_start'], period['period_end']))
     page_obj = paginate_queryset(request, qs.order_by('-timestamp'), per_page=50)
     return render(request, 'audit/list.html', {**period, 'page_obj': page_obj, 'q': q, 'action': action, 'action_choices': Action.choices, 'breadcrumbs': [('Audit Log', None)]})

@@ -26,7 +26,7 @@ def staff_list(request):
     if q:
         qs = qs.filter(username__icontains=q)
     page_obj = paginate_queryset(request, qs.order_by('username'))
-    period = period_context(request)
+    period = period_context(request, allow_future=True)
     start, end = period['period_start'], period['period_end']
     ids = [u.pk for u in page_obj]
     # What each person collected for the selected month (rent for that month, advances of tenants who moved in then).

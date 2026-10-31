@@ -18,7 +18,7 @@ from .services import confirm_cash_handover, reject_cash_handover, submit_cash_h
 @login_required
 def handover_list(request):
     qs = accounts_selectors.cash_handovers_visible_to(request.user).select_related('staff')
-    period = period_context(request)
+    period = period_context(request, allow_future=True)
     # A handover belongs to the month of the cash in it (the rent month, the tenant's move-in month for an advance, the
     # expense month) as well as to the month it was handed over in.
     start, end = period['period_start'], period['period_end']
