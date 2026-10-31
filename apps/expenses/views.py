@@ -13,12 +13,12 @@ from apps.shared.exceptions import DomainError
 from apps.villas.models import Partition, Villa
 from apps.shared.forms import ReasonForm
 from apps.shared.pagination import paginate_queryset
-from apps.shared.periods import period_context
+from apps.shared.periods import period_context, selected_month_start
 from . import selectors as expense_selectors
-from .forms import ExpenseForm, MarkPaidForm, RecurringExpenseForm, ReviseExpenseForm
+from .forms import ExpenseForm, MarkPaidForm, PayAheadForm, RecurringExpenseForm, ReviseExpenseForm
 from .models import Expense, PaidBy, RecurringExpense
 from .selectors import DueBucket
-from .services import (cancel_expense, can_pay_expense, create_expense, create_recurring_expense, deactivate_recurring_expense, get_or_create_category, mark_expense_paid,
+from .services import (cancel_expense, can_pay_expense, create_expense, create_recurring_expense, pay_fixed_expense_ahead, deactivate_recurring_expense, get_or_create_category, mark_expense_paid,
                        reverse_expense, revise_unpaid_expense, update_recurring_expense, verify_expense)
 
 def _can_manage_expense(user, expense):
@@ -49,6 +49,9 @@ def expense_list(request):
         period.update(period='all', period_label='All time', period_start=date(2000, 1, 1), period_end=date(today.year + 10, 12, 31))
     period['allow_all_period'] = True
     start, end = period['period_start'], period['period_end']
+    if period['period'] == 'month':
+        from .services import ensure_fixed_expenses
+        ensure_fixed_expenses(villa_ids=list(selectors.villas_visible_to(request.user).filter(is_sold=False).values_list('pk', flat=True)), year=period['year'], month=period['month'])
 
     visible = selectors.expenses_visible_to(request.user)
     qs = visible.select_related('business', 'villa', 'partition', 'category', 'paid_by_user').filter(date__gte=start, date__lte=end)
@@ -111,7 +114,18 @@ def expense_list(request):
     if payable:
         keep.append(('payable', '1'))
 
+    # A monthly repeated expense is only recorded when its month begins, so a later month would look empty here. Show what is
+    # scheduled for it instead (read-only: nothing is created until it is paid ahead or the month starts).
+    scheduled = []
+    if period['period'] == 'month' and (period['year'], period['month']) > (today.year, today.month) and status == Expense.Status.ACTIVE and not (due or staff_id or payable):
+        for villa in villas.filter(pk=villa_id) if villa_id.isdigit() else villas:
+            rows, _ = expense_selectors.fixed_expense_checklist(villa, period['year'], period['month'], today)
+            can_pay = scope.can_manage_villa(villa.pk, villa.business_id)
+            scheduled += [{'villa': villa, 'template': r['template'], 'amount': r['amount'], 'due_date': r['due_date'], 'can_pay': can_pay} for r in rows if r['status'] == expense_selectors.FixedStatus.NOT_CREATED]
+
     context = {
+        'scheduled': scheduled,
+        'scheduled_total': sum((s['amount'] for s in scheduled), 0),
         'page_obj': page_obj,
         'status': status,
         'due': due,
@@ -248,6 +262,26 @@ def expense_mark_paid(request, pk):
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Mark paid — {expense.category} (QAR {expense.amount})', 'submit_label': 'Mark Paid', 'cancel_url': reverse('expenses:list')})
 
 @login_required
+def recurring_pay_ahead(request, pk, year, month):
+    recurring = get_object_or_404(RecurringExpense.objects.select_related('villa', 'villa__business', 'category'), pk=pk, villa__in=selectors.villas_visible_to(request.user))
+    if not 1 <= month <= 12:
+        raise Http404
+    back = reverse('villas:villa_detail', args=[recurring.villa_id]) + f'?period=month&year={year}&month={month}#villa-expenses'
+    if request.method == 'POST':
+        form = PayAheadForm(request.POST, scheduled=recurring.amount)
+        if form.is_valid():
+            try:
+                pay_fixed_expense_ahead(recurring=recurring, year=year, month=month, marked_by=request.user, **form.cleaned_data)
+            except (DomainError, PermissionDenied) as exc:
+                form.add_error(None, str(exc))
+            else:
+                messages.success(request, f'{recurring.category} for {date(year, month, 1):%B %Y} paid.')
+                return redirect(back)
+    else:
+        form = PayAheadForm(initial={'amount': recurring.amount, 'paid_on': date.today(), 'payment_method': Expense.Method.CASH}, scheduled=recurring.amount)
+    return render(request, 'components/form_page.html', {'form': form, 'title': f'Pay ahead — {recurring.category}, {date(year, month, 1):%B %Y}', 'submit_label': 'Pay', 'cancel_url': back})
+
+@login_required
 def expense_cancel(request, pk):
     expense = get_object_or_404(selectors.expenses_visible_to(request.user), pk=pk)
     if not (request.user.is_owner or selectors.is_business_manager_of(request.user, expense.business)):
@@ -319,7 +353,7 @@ def recurring_create(request, villa_pk):
             if RecurringExpense.objects.filter(villa=villa, category=category).exists():
                 form.add_error('name', f'{category.name} is already a fixed expense of this villa — edit it instead.')
             else:
-                create_recurring_expense(villa=villa, category=category, amount=data['amount'], due_day=data['due_day'], auto_debit=data.get('auto_debit', False), created_by=request.user)
+                create_recurring_expense(villa=villa, category=category, amount=data['amount'], due_day=data['due_day'], auto_debit=data.get('auto_debit', False), start_period=selected_month_start(request), created_by=request.user)
                 messages.success(request, f'Fixed expense “{category.name}” added to {villa.name}.')
                 return redirect(back)
     else:

@@ -65,6 +65,12 @@ def selected_year_month(request, today=None) -> tuple[int, int]:
     return year, month
 
 
+def selected_month_start(request, today=None) -> date:
+    """The first day of the month picked in the navbar: where a monthly expense created now begins."""
+    year, month = selected_year_month(request, today)
+    return date(year, month, 1)
+
+
 def navbar_period(request) -> dict:
     """The global period shown in the navbar. `aware` is False on pages that are deliberately not month-based."""
     today = date.today()

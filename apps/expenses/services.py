@@ -1,6 +1,7 @@
 import calendar
 import re
 from datetime import date as date_type, timedelta
+from decimal import Decimal
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -229,7 +230,20 @@ def create_recurring_expense(*, villa, category, amount, due_day, created_by, pa
         recurring.full_clean()
         recurring.save()
         audit_services.log(user=created_by, action=Action.EXPENSE_CREATED, obj=recurring, business=villa.business, villa=villa, new_value=_recurring_snapshot(recurring), reason='fixed monthly expense set up')
+        _generate_months_up_to_now(recurring, created_by)
     return recurring
+
+def _generate_months_up_to_now(recurring: RecurringExpense, actor) -> None:
+    """Records every month from the expense's first month up to this one together with the expense itself, so every page
+    and total has them at once (a start in a past month is filled in, not left for whichever page is opened first).
+    Nothing before the first month, and nothing for a month that has not begun."""
+    if not recurring.is_active:
+        return
+    this_month = date_type.today().replace(day=1)
+    period = recurring.first_period
+    while period <= this_month:
+        _create_fixed_expense(recurring, period, actor)  # None when that month already exists
+        period = (period + timedelta(days=32)).replace(day=1)
 
 def _freeze_past_months(recurring: RecurringExpense) -> None:
     """Generate every past month (from its first month up to last month) with the current terms, so a later change
@@ -264,6 +278,7 @@ def update_recurring_expense(*, recurring: RecurringExpense, updated_by, **field
         new_value = _recurring_snapshot(recurring)
         if new_value != old_value:
             audit_services.log(user=updated_by, action=Action.EXPENSE_UPDATED, obj=recurring, business=recurring.villa.business, villa=recurring.villa, old_value=old_value, new_value=new_value, reason='fixed monthly expense changed')
+        _generate_months_up_to_now(recurring, updated_by)
     return recurring
 
 def deactivate_recurring_expense(*, recurring: RecurringExpense, updated_by, reason='') -> RecurringExpense:
@@ -301,6 +316,37 @@ def _create_fixed_expense(recurring: RecurringExpense, period, generated_by):
     except IntegrityError:
         return None  # another request created it first
     return expense
+
+MAX_PAY_AHEAD_MONTHS = 12
+
+def pay_fixed_expense_ahead(*, recurring: RecurringExpense, year, month, paid_on, payment_method, marked_by, amount=None) -> Expense:
+    """Pay a monthly repeated expense before its month starts (e.g. next quarter's villa rent).
+
+    Normally a month's record is only created when the month begins. Here it is created now, exactly as it would be then
+    (same fixed amount, due date and month), and paid in the same transaction: either both happen or neither. The expense
+    stays in its own month for every total; only the payment itself is dated today. `amount` overrides the scheduled amount
+    for that month only (recorded in the audit log as an update); the monthly expense keeps its own amount.
+    """
+    period = date_type(year, month, 1)
+    this_month = date_type.today().replace(day=1)
+    if not recurring.is_active:
+        raise DomainError(f'“{recurring.category}” is no longer a monthly expense of this villa.')
+    if recurring.villa.is_sold:
+        raise DomainError(f'Cannot pay expenses of sold villa “{recurring.villa.name}”.')
+    if period < recurring.first_period:
+        raise DomainError(f'“{recurring.category}” starts in {recurring.first_period:%B %Y}; earlier months do not apply.')
+    months_ahead = (period.year - this_month.year) * 12 + period.month - this_month.month
+    if months_ahead > MAX_PAY_AHEAD_MONTHS:
+        raise DomainError(f'Expenses can be paid at most {MAX_PAY_AHEAD_MONTHS} months ahead.')
+    with transaction.atomic():
+        expense = Expense.objects.filter(recurring=recurring, period=period).first() or _create_fixed_expense(recurring, period, marked_by)
+        if expense is None:  # another request created it first
+            expense = Expense.objects.get(recurring=recurring, period=period)
+        if amount is not None and Decimal(str(amount)) != expense.amount:
+            if Decimal(str(amount)) <= 0:
+                raise DomainError('The amount must be greater than zero.')
+            expense = update_expense(expense=expense, updated_by=marked_by, amount=Decimal(str(amount)))
+        return mark_expense_paid(expense=expense, paid_on=paid_on, payment_method=payment_method, marked_by=marked_by)
 
 def _generate_for_period(*, villa, year, month, generated_by) -> list[Expense]:
     period = date_type(year, month, 1)

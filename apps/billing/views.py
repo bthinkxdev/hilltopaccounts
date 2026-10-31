@@ -55,7 +55,7 @@ def charge_create(request, partition_pk):
             initial['start_date'] = date.today()
         form = ChargeForm(initial=initial, partition=partition)
 
-    prefix = [('Villas', reverse('villas:villa_list'))] if selectors.is_field_staff(request.user) else [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk]))]
+    prefix = [('Villas', reverse('villas:villa_list'))] if not request.user.is_owner else [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk]))]
     breadcrumbs = prefix + [
         (partition.villa.name, reverse('villas:villa_detail', args=[partition.villa.pk])),
         (partition.name, reverse('villas:partition_detail', args=[partition.pk])),

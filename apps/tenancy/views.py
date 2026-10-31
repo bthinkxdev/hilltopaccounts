@@ -49,7 +49,7 @@ def tenant_detail(request, pk):
         unbilled = billing_selectors.unbilled_charges_by_partition([tenant.partition_id], today.year, today.month)[tenant.partition_id] or (tenant.monthly_rent if not invoices.exists() else Decimal('0.00'))
     balance = sum((inv.computed_outstanding for inv in invoices), start=Decimal('0.00')) + unbilled
     partition = tenant.partition
-    prefix = [('Villas', reverse('villas:villa_list'))] if selectors.is_field_staff(request.user) else [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk]))]
+    prefix = [('Villas', reverse('villas:villa_list'))] if not request.user.is_owner else [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk]))]
     return render(request, 'tenancy/detail.html', {
         'tenant': tenant,
         'invoices': invoices,
@@ -92,7 +92,7 @@ def tenant_edit(request, pk):
     else:
         form = TenantForm(initial=model_to_dict(tenant), editing=True)
 
-    prefix = [('Villas', reverse('villas:villa_list'))] if selectors.is_field_staff(request.user) else [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk]))]
+    prefix = [('Villas', reverse('villas:villa_list'))] if not request.user.is_owner else [('Businesses', reverse('businesses:list')), (partition.villa.business.name, reverse('businesses:detail', args=[partition.villa.business.pk]))]
     breadcrumbs = prefix + [
         (partition.villa.name, reverse('villas:villa_detail', args=[partition.villa.pk])),
         (partition.name, reverse('villas:partition_detail', args=[partition.pk])),

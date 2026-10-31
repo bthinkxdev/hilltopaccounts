@@ -24,6 +24,8 @@ from .services import archive_business, correct_payout, create_business, unarchi
 
 @login_required
 def business_list(request):
+    if not request.user.is_owner:
+        raise PermissionDenied('Businesses are an Admin-only section.')
     status = request.GET.get('status', 'active')
     if status == 'archived':
         qs = selectors.businesses_visible_to(request.user).filter(is_archived=True)
@@ -41,6 +43,8 @@ def business_list(request):
 
 @login_required
 def business_detail(request, pk):
+    if not request.user.is_owner:
+        raise PermissionDenied('Businesses are an Admin-only section.')
     business = get_object_or_404(selectors.businesses_visible_to(request.user), pk=pk)
     villas = selectors.villas_visible_to(request.user).filter(business=business, is_archived=False, is_sold=False)
     period = period_context(request, allow_future=True)

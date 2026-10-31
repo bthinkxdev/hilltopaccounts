@@ -84,6 +84,18 @@ class MarkPaidForm(forms.Form):
     payment_method = forms.ChoiceField(choices=Expense.Method.choices, label='Method')
 
 
+class PayAheadForm(MarkPaidForm):
+    """Pay a monthly repeated expense before its month: the amount is prefilled with the scheduled one and may be changed
+    for this month only (the monthly expense itself keeps its amount)."""
+    amount = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12, label='Amount (QAR)', widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01'}))
+    field_order = ['amount', 'paid_on', 'payment_method']
+
+    def __init__(self, *args, scheduled=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if scheduled is not None:
+            self.fields['amount'].help_text = f'Scheduled: QAR {scheduled:,.2f}. A different amount applies to this month only.'
+
+
 class RecurringExpenseForm(forms.Form):
     name = forms.CharField(max_length=100, label='Expense', widget=forms.TextInput(attrs={'list': 'expense-names', 'autocomplete': 'off', 'placeholder': 'e.g. Villa owner rent'}))
     amount = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12, widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01'}))

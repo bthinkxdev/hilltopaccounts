@@ -16,7 +16,7 @@ businesses:partner_payout_create businesses:partner_payout_void businesses:partn
 businesses:villa_partner_payout_batch
 cash:handover_confirm cash:handover_reject cash:handover_submit
 expenses:cancel expenses:create expenses:create_for_villa expenses:mark_paid expenses:recurring_create
-expenses:recurring_edit expenses:recurring_stop expenses:reverse expenses:revise
+expenses:recurring_edit expenses:recurring_pay_ahead expenses:recurring_stop expenses:reverse expenses:revise
 tenancy:create tenancy:deposit_correct tenancy:deposit_edit tenancy:deposit_void tenancy:edit tenancy:move_out
 villas:partition_archive villas:partition_create villas:partition_edit villas:partition_photo_add villas:photo_delete
 villas:villa_archive villas:villa_create villas:villa_edit villas:villa_photo_add villas:villa_sell

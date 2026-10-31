@@ -143,6 +143,23 @@
     </div>
   {% endif %}
 
+  {% if scheduled %}
+    <div class="detail-section__title" style="margin-top: var(--space-4);">Scheduled monthly expenses — {{ period_label }}</div>
+    <p class="list-row__meta" style="margin-bottom: var(--space-2);">Monthly repeated expenses that come due in this month. They are recorded when the month begins, or now if you pay ahead, and are not in the totals above until then. Scheduled: <strong>QAR {{ scheduled_total|floatformat:"2g" }}</strong></p>
+    <div class="card card--tight">
+      {% for item in scheduled %}
+        <div class="list-row list-row--compact">
+          <div class="list-row__main">
+            <span class="list-row__title">{{ item.template.category }} — {{ item.amount|floatformat:"2g" }}</span>
+            <div class="list-row__meta">{{ item.villa.name }} · due {{ item.due_date|date:"d M Y" }} · {{ item.template.get_paid_by_display }}</div>
+          </div>
+          <span class="pill pill--neutral">Upcoming</span>
+          {% if item.can_pay and not item.villa.is_sold %}<a class="btn btn--ghost btn--sm" data-modal href="{% url 'expenses:recurring_pay_ahead' item.template.pk year month %}">Pay ahead</a>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
   {% include "components/pagination.html" %}
 {% endblock %}
 

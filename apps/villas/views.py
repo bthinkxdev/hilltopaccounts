@@ -15,7 +15,7 @@ from apps.businesses.models import Business
 from apps.shared.exceptions import DomainError
 from apps.shared.forms import ReasonForm
 from apps.shared.pagination import paginate_queryset
-from apps.shared.periods import period_context
+from apps.shared.periods import period_context, selected_month_start
 from django.db import transaction
 from apps.expenses.services import (create_recurring_expense, deactivate_recurring_expense,
                                     get_or_create_category, update_expense, update_recurring_expense)
@@ -359,7 +359,7 @@ def villa_create(request):
                     if selectors.is_business_manager_of(request.user, business):
                         for label, amount, paid_by in fixed_amounts:
                             if amount:
-                                create_recurring_expense(villa=villa, category=get_or_create_category(name=label), amount=amount, due_day=1, paid_by=paid_by, created_by=request.user)
+                                create_recurring_expense(villa=villa, category=get_or_create_category(name=label), amount=amount, due_day=1, paid_by=paid_by, start_period=selected_month_start(request), created_by=request.user)
                 messages.success(request, f'Villa “{villa.name}” created.')
                 return redirect('villas:villa_detail', pk=villa.pk)
             except ValidationError as exc:
@@ -369,7 +369,7 @@ def villa_create(request):
         form = VillaForm(business_queryset=manageable_businesses, initial=initial)
     return render(request, 'components/form_page.html', {'form': form, 'title': 'Add Villa', 'cancel_url': reverse('villas:villa_list'), 'breadcrumbs': [('Villas', reverse('villas:villa_list')), ('New Villa', None)]})
 
-def _sync_fixed_expenses(villa, user, data):
+def _sync_fixed_expenses(villa, user, data, start_period=None):
     existing = {r.category.name.lower(): r for r in RecurringExpense.objects.filter(villa=villa).select_related('category')}
     for field, label, paid_by in FIXED_EXPENSE_DEFAULTS:
         amount = data.pop(field, None)
@@ -378,7 +378,7 @@ def _sync_fixed_expenses(villa, user, data):
             if rec:
                 update_recurring_expense(recurring=rec, updated_by=user, amount=amount, is_active=True)
             else:
-                create_recurring_expense(villa=villa, category=get_or_create_category(name=label), amount=amount, due_day=1, paid_by=paid_by, created_by=user)
+                create_recurring_expense(villa=villa, category=get_or_create_category(name=label), amount=amount, due_day=1, paid_by=paid_by, start_period=start_period, created_by=user)
         elif rec and rec.is_active:
             deactivate_recurring_expense(recurring=rec, updated_by=user, reason='Removed in villa edit')
 
@@ -393,7 +393,7 @@ def villa_edit(request, pk):
             data = dict(form.cleaned_data)
             try:
                 with transaction.atomic():
-                    _sync_fixed_expenses(villa, request.user, data)
+                    _sync_fixed_expenses(villa, request.user, data, start_period=selected_month_start(request))
                     update_villa(villa=villa, updated_by=request.user, **data)
                 messages.success(request, f'Villa “{villa.name}” updated.')
                 return redirect('villas:villa_detail', pk=villa.pk)
@@ -562,7 +562,7 @@ def partition_create(request, villa_pk=None):
     cancel_url = reverse('villas:villa_detail', args=[villa.pk]) if villa else reverse('villas:partition_list')
     breadcrumbs = [('Partitions', reverse('villas:partition_list')), ('New Partition', None)]
     if villa:
-        breadcrumbs = [('Businesses', reverse('businesses:list')), (villa.business.name, reverse('businesses:detail', args=[villa.business.pk])), (villa.name, reverse('villas:villa_detail', args=[villa.pk])), ('New Partition', None)]
+        breadcrumbs = ([('Businesses', reverse('businesses:list')), (villa.business.name, reverse('businesses:detail', args=[villa.business.pk]))] if request.user.is_owner else [('Villas', reverse('villas:villa_list'))]) + [(villa.name, reverse('villas:villa_detail', args=[villa.pk])), ('New Partition', None)]
     return render(request, 'components/form_page.html', {'form': form, 'title': 'Add Partition', 'cancel_url': cancel_url, 'breadcrumbs': breadcrumbs})
 
 @login_required
@@ -603,9 +603,7 @@ def partition_edit(request, pk):
         }, villa=villa, partition=partition)
         form.fields.pop('villa', None)
     cancel_url = reverse('villas:partition_detail', args=[partition.pk])
-    breadcrumbs = [
-        ('Businesses', reverse('businesses:list')),
-        (villa.business.name, reverse('businesses:detail', args=[villa.business.pk])),
+    breadcrumbs = ([('Businesses', reverse('businesses:list')), (villa.business.name, reverse('businesses:detail', args=[villa.business.pk]))] if request.user.is_owner else [('Villas', reverse('villas:villa_list'))]) + [
         (villa.name, reverse('villas:villa_detail', args=[villa.pk])),
         (partition.name, reverse('villas:partition_detail', args=[partition.pk])),
         ('Edit Partition', None),

@@ -29,6 +29,9 @@ class HomeView(LoginRequiredMixin, TemplateView):
         staff_view = selectors.is_field_staff(user)
         from apps.billing.services import ensure_rent_invoices
         ensure_rent_invoices(villa_ids=selectors.villas_visible_to(user).filter(is_sold=False).values_list('pk', flat=True))
+        from apps.expenses.services import ensure_fixed_expenses
+        from datetime import date as _today
+        ensure_fixed_expenses(villa_ids=list(selectors.villas_visible_to(user).filter(is_sold=False).values_list('pk', flat=True)), year=_today.today().year, month=_today.today().month)
         ctx['staff_view'] = staff_view
         ctx['businesses'] = businesses
         ctx['villas'] = villas
@@ -186,7 +189,7 @@ def global_search(request):
     if q:
         user = request.user
         if not selectors.is_field_staff(user):
-            results['businesses'] = selectors.businesses_visible_to(user).filter(name__icontains=q)[:10]
+            results['businesses'] = selectors.businesses_visible_to(user).filter(name__icontains=q)[:10] if user.is_owner else []
             results['villas'] = selectors.villas_visible_to(user).filter(name__icontains=q)[:10]
             results['partitions'] = selectors.partitions_visible_to(user).filter(name__icontains=q)[:10]
         else:

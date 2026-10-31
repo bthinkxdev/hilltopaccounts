@@ -369,8 +369,9 @@ class FixedExpenseChecklistTests(FieldworkBase):
 
     def test_every_month_lists_all_fixed_expenses_with_paid_status(self):
         self.set_up_fixed_expenses()
-        self.assertFalse(Expense.objects.exists())
-        # Opening the month is all it takes: the five fixed expenses are there, the auto-debited rent already paid.
+        # Setting them up already records this month, so every page and total has them at once.
+        self.assertEqual(Expense.objects.filter(villa=self.villa).count(), 5)
+        # Opening the month adds nothing more and settles the auto-debited rent.
         rows, totals = self._rows(YEAR, MONTH)
         self.assertEqual(Expense.objects.filter(villa=self.villa).count(), 5)
         self.assertEqual(rows['Villa owner rent']['status'], 'paid')

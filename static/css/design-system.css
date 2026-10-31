@@ -2165,3 +2165,14 @@ body.modal-loading { cursor: progress; }
   .action-modal__body { padding: var(--space-4); }
 }
 @media (prefers-reduced-motion: reduce) { .action-modal { animation: none; } }
+
+
+/* Month / year control: longer, using the free space of the top bar (phones keep the compact layout). */
+@media (min-width: 561px) {
+  .topbar__search { flex: 1 1 220px; max-width: 340px; }
+  .period-switch { flex: 1 1 420px; max-width: 600px; padding: 5px 8px 5px 14px; gap: 8px; }
+  .period-switch .psel { flex: 1 1 0; min-width: 0; }
+  .period-switch .psel--month { flex-grow: 1.5; }
+  .period-switch .psel__button { width: 100%; min-height: 36px; padding: 0 14px; font-size: 15px; justify-content: space-between; }
+  .period-switch .period-switch__today { min-height: 32px; padding: 0 16px; font-size: 13px; }
+}

@@ -133,7 +133,7 @@
   {% endif %}
 
   <div class="grid grid--2">
-    {% if not staff_view %}<div class="card">
+    {% if user.is_owner %}<div class="card">
       <div class="card__title">Businesses</div>
       {% if businesses %}
         {% for business in businesses %}

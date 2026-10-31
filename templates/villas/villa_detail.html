@@ -385,7 +385,7 @@
               {% elif row.status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
               {% elif row.status == "reversed" %}<span class="pill pill--neutral">Reversed</span>
               {% else %}<span class="pill pill--neutral">Upcoming</span>{% endif %}
-              {% if row.expense %}{% include "components/expense_actions.html" with expense=row.expense %}{% endif %}
+              {% if row.expense %}{% include "components/expense_actions.html" with expense=row.expense %}{% elif row.status == "not_created" and can_manage and not villa.is_sold %}<a class="btn btn--ghost btn--sm" data-modal href="{% url 'expenses:recurring_pay_ahead' row.template.pk year month %}">Pay ahead</a>{% endif %}
             </div>
           {% endfor %}
         </div>
@@ -433,7 +433,7 @@
               {% elif row.status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
               {% elif row.status == "reversed" %}<span class="pill pill--neutral">Reversed</span>
               {% else %}<span class="pill pill--neutral">Upcoming</span>{% endif %}
-              {% if row.expense %}{% include "components/expense_actions.html" with expense=row.expense %}{% endif %}
+              {% if row.expense %}{% include "components/expense_actions.html" with expense=row.expense %}{% elif row.status == "not_created" and can_manage and not villa.is_sold %}<a class="btn btn--ghost btn--sm" data-modal href="{% url 'expenses:recurring_pay_ahead' row.template.pk year month %}">Pay ahead</a>{% endif %}
             </div>
           {% endfor %}
         </div>
