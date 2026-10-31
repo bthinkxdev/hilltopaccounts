@@ -327,3 +327,43 @@ class MonthlyExpenseStartsInTheSelectedMonthTests(VillaStatsBase):
         self.client.post(url, {'name': 'Cleaning', 'amount': '90'})
         from apps.expenses.models import RecurringExpense
         self.assertEqual(RecurringExpense.objects.get(villa=self.villa, category__name='Cleaning').first_period, self.next_month)
+
+
+class VillaPendingTests(VillaStatsBase):
+    """The villa's Pending card: the real outstanding rent and advance up to the current month, whatever month is selected."""
+
+    def setUp(self):
+        super().setUp()
+        self.login('owner')
+
+    def pending(self, **period):
+        return self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]), period).context['pending']
+
+    def test_pending_is_the_unpaid_rent_up_to_now_and_ignores_the_selected_month(self):
+        from datetime import date
+        from .tests_villa_stats import NEXT_MONTH
+        p = self.pending()
+        self.assertGreater(p['rent_total'], 0)
+        self.assertTrue(all((r['year'], r['month']) <= (date.today().year, date.today().month) for r in p['rent']))  # nothing from a later month
+        for month in (NEXT_MONTH, LAST_MONTH):
+            q = self.pending(period='month', year=month.year, month=month.month)
+            self.assertEqual(q['total'], p['total'], month)
+
+    def test_collecting_through_the_existing_rules_reduces_it(self):
+        before = self.pending()
+        self.collect(self.p1, LAST_MONTH)
+        after = self.pending()
+        self.assertLess(after['rent_total'], before['rent_total'])
+        self.assertNotIn((self.p1.pk, LAST_MONTH.month), [(r['partition'].pk, r['month']) for r in after['rent']])
+
+    def test_a_pending_advance_is_listed_with_its_pay_now(self):
+        from apps.tenancy.services import update_tenant
+        tenant = self.p1.current_tenant
+        update_tenant(tenant=tenant, updated_by=self.owner, deposit=3000)
+        p = self.pending()
+        self.assertEqual([a['pending'] for a in p['advance'] if a['tenant'].pk == tenant.pk], [3000])
+        r = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]))
+        self.assertContains(r, 'id="pending-modal"')
+        self.assertContains(r, reverse('tenancy:deposit_edit', args=[tenant.pk]))
+        self.assertContains(r, reverse('billing:rent_collect', args=[self.p1.pk]))
+        self.assertContains(r, 'Pay now')

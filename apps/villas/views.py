@@ -254,6 +254,7 @@ def villa_detail(request, pk):
         'owner_one_off': owner_one_off,
         'staff_one_off': staff_one_off,
         'cash': cash_selectors.villa_cash_position(villa),
+        'pending': billing_selectors.pending_collections(villa, today),
         'to_verify': expenses_selectors.due_summary(expenses, today)['verify'] if is_admin else None,
         'past_tenants': past_tenants,
         'keep': [],

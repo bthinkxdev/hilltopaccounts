@@ -238,6 +238,36 @@ def unbilled_charges_details_by_partition(partition_pks, year: int, month: int, 
         res[c.partition_id].append({'name': name, 'amount': c.amount})
     return res
 
+def pending_collections(villa, today=None) -> dict:
+    """Everything still to be collected for a villa as of today: unpaid rent of every month from move-in up to the current
+    month, and the advance still pending on active tenants. It is the real outstanding amount: it does not depend on the
+    month chosen in the navbar, and a later month's rent is not pending yet."""
+    from apps.tenancy.models import Tenant
+    today = today or date.today()
+    this_month = today.replace(day=1)
+    invoices = with_computed_totals(Invoice.objects.filter(partition__villa=villa, is_cancelled=False, billing_period_start__lte=this_month)).select_related('partition', 'tenant').prefetch_related('items').order_by('partition__name', 'billing_period_start', 'id')
+    zero = Decimal('0.00')
+    rent = []
+    for inv in invoices:
+        balance = inv._total - inv._paid
+        if balance <= 0:
+            continue
+        items = list(inv.items.all())
+        rent.append({
+            'invoice': inv, 'partition': inv.partition, 'tenant': inv.tenant,
+            'year': inv.billing_period_start.year, 'month': inv.billing_period_start.month, 'label': inv.billing_period_start.strftime('%B %Y'),
+            'total': inv._total, 'paid': inv._paid, 'balance': balance,
+            'rent_amount': next((i.amount for i in items if i.description.strip().lower() == 'rent'), inv._total),
+            'charges': [{'name': i.description, 'amount': i.amount} for i in items],
+            'overdue': inv.due_date < today,
+            'collectable': inv.tenant.status == Tenant.Status.ACTIVE,  # a moved-out tenant's balance is recorded against its invoice
+        })
+    advance = [{'tenant': t, 'partition': t.partition, 'deposit': t.deposit, 'paid': t.deposit_paid, 'pending': t.deposit_pending}
+               for t in Tenant.objects.filter(partition__villa=villa, status=Tenant.Status.ACTIVE).select_related('partition').order_by('partition__name') if t.deposit_pending > 0]
+    rent_total = sum((r['balance'] for r in rent), zero)
+    advance_total = sum((a['pending'] for a in advance), zero)
+    return {'rent': rent, 'advance': advance, 'rent_total': rent_total, 'advance_total': advance_total, 'total': rent_total + advance_total, 'count': len(rent) + len(advance), 'as_of_label': this_month.strftime('%B %Y')}
+
 def prior_unpaid_invoices_by_partition(partition_pks, start_date, tenant_by_partition=None):
     from collections import defaultdict
     prior_invs = Invoice.objects.filter(

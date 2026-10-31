@@ -2176,3 +2176,9 @@ body.modal-loading { cursor: progress; }
   .period-switch .psel__button { width: 100%; min-height: 36px; padding: 0 14px; font-size: 15px; justify-content: space-between; }
   .period-switch .period-switch__today { min-height: 32px; padding: 0 16px; font-size: 13px; }
 }
+
+
+/* A KPI tile that opens something (e.g. the pending list) */
+button.kpi { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+button.kpi:hover, button.kpi:focus-visible { border-color: var(--accent); outline: none; }
+.kpi__sub { margin-top: 2px; font-size: 12px; color: var(--text-secondary); }

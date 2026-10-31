@@ -162,6 +162,11 @@
       <div class="kpi"><div class="kpi__label">Cash collected (rent + advance)</div><div class="kpi__value">{{ cash.collected|floatformat:"2g" }}</div></div>
       <div class="kpi"><div class="kpi__label">Cash paid by staff</div><div class="kpi__value kpi__value--danger">{{ cash.spent_by_staff|floatformat:"2g" }}</div></div>
       <div class="kpi"><div class="kpi__label">Received by admin</div><div class="kpi__value kpi__value--success">{{ cash.received_by_owner|floatformat:"2g" }}</div></div>
+      <button type="button" class="kpi" onclick="document.getElementById('pending-modal').showModal()" aria-haspopup="dialog">
+        <div class="kpi__label">Pending (rent + advance)</div>
+        <div class="kpi__value {% if pending.total %}kpi__value--warning{% else %}kpi__value--success{% endif %}">{{ pending.total|floatformat:"2g" }}</div>
+        <div class="kpi__sub">Till {{ pending.as_of_label }} · {% if pending.count %}tap to see what is pending{% else %}nothing pending{% endif %}</div>
+      </button>
     </div>
     <div class="stat-line">
       <span>Still with staff <b>{{ cash.holding|floatformat:"2g" }}</b></span>
@@ -170,6 +175,77 @@
       <a href="{% url 'cash:handover_list' %}">Handovers &rarr;</a>
     </div>
   </div>
+
+
+  <dialog id="pending-modal" aria-labelledby="pending-modal-title" style="width: calc(100% - var(--space-6)); max-width: 640px; max-height: 86vh; overflow: auto; padding: var(--space-5);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-3);">
+      <div>
+        <h3 id="pending-modal-title" style="margin: 0; font-size: 17px; font-weight: 700;">Pending — {{ villa.name }}</h3>
+        <div class="list-row__meta">What is still to be collected, up to {{ pending.as_of_label }}. It does not depend on the month selected above.</div>
+      </div>
+      <button type="button" class="btn btn--ghost btn--sm" onclick="document.getElementById('pending-modal').close()">Close</button>
+    </div>
+    <div class="grid--kpi grid--kpi-compact" style="margin-bottom: var(--space-3);">
+      <div class="kpi"><div class="kpi__label">Rent pending</div><div class="kpi__value kpi__value--warning">{{ pending.rent_total|floatformat:"2g" }}</div></div>
+      <div class="kpi"><div class="kpi__label">Advance pending</div><div class="kpi__value kpi__value--warning">{{ pending.advance_total|floatformat:"2g" }}</div></div>
+      <div class="kpi"><div class="kpi__label">Total pending</div><div class="kpi__value">{{ pending.total|floatformat:"2g" }}</div></div>
+    </div>
+
+    {% if pending.rent %}
+      <div class="detail-section__title">Rent pending</div>
+      <div class="card card--tight" style="margin-bottom: var(--space-3);">
+        {% for item in pending.rent %}
+          <div class="list-row list-row--compact">
+            <div class="list-row__main">
+              <span class="list-row__title">{{ item.partition.name }} · {{ item.tenant.name }}{% if not item.collectable %} <span class="pill pill--neutral">Moved out</span>{% endif %}</span>
+              <div class="list-row__meta">Rent for {{ item.label }} · QAR {{ item.balance|floatformat:"2g" }} pending{% if item.paid %} (QAR {{ item.paid|floatformat:"2g" }} of {{ item.total|floatformat:"2g" }} paid){% endif %}</div>
+            </div>
+            {% if item.overdue %}<span class="pill pill--danger">Overdue</span>{% else %}<span class="pill pill--neutral">Due</span>{% endif %}
+            {% if can_manage %}
+              {% if item.collectable %}
+                <button class="btn btn--primary btn--sm" type="button"
+                  data-action-url="{% url 'billing:rent_collect' item.partition.pk %}"
+                  data-partition="{{ item.partition.name }}" data-tenant="{{ item.tenant.name }}"
+                  data-year="{{ item.year }}" data-month="{{ item.month }}" data-period-label="{{ item.label }}"
+                  data-rent="{{ item.rent_amount }}" data-due="{{ item.total }}" data-paid="{{ item.paid }}" data-balance="{{ item.balance }}"
+                  data-charges='[{% for c in item.charges %}{"name":"{{ c.name|escapejs }}","amount":{{ c.amount }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
+                  data-prior-unpaid="[]"
+                  onclick="document.getElementById('pending-modal').close(); openRentCollectModal(this)">Pay now</button>
+              {% else %}
+                <a class="btn btn--primary btn--sm" data-modal href="{% url 'billing:payment_record' item.invoice.pk %}">Pay now</a>
+              {% endif %}
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if pending.advance %}
+      <div class="detail-section__title">Advance pending</div>
+      <div class="card card--tight" style="margin-bottom: var(--space-3);">
+        {% for a in pending.advance %}
+          <div class="list-row list-row--compact">
+            <div class="list-row__main">
+              <span class="list-row__title">{{ a.partition.name }} · {{ a.tenant.name }}</span>
+              <div class="list-row__meta">Advance · QAR {{ a.pending|floatformat:"2g" }} pending{% if a.paid %} (QAR {{ a.paid|floatformat:"2g" }} of {{ a.deposit|floatformat:"2g" }} received){% endif %} · belongs to {{ a.tenant.move_in_date|date:"F Y" }}</div>
+            </div>
+            <span class="pill pill--neutral">Advance</span>
+            {% if can_manage %}
+              <button class="btn btn--primary btn--sm" type="button"
+                data-action-url="{% url 'tenancy:deposit_edit' a.tenant.pk %}"
+                data-partition="{{ a.partition.name }}" data-tenant="{{ a.tenant.name }}"
+                data-deposit="{{ a.deposit }}" data-paid="{{ a.paid }}"
+                onclick="document.getElementById('pending-modal').close(); openDepositModal(event, this)">Pay now</button>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if not pending.count %}
+      <div class="empty-state"><div class="empty-state__title">Nothing is pending.</div><p>All rent up to {{ pending.as_of_label }} and every advance is collected.</p></div>
+    {% endif %}
+  </dialog>
 
   <div class="detail-section" id="partitions">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); flex-wrap: wrap; gap: var(--space-2);">
