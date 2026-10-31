@@ -4,12 +4,12 @@
   <div class="page-header">
     <div>
       <h1>{{ staff.get_full_name|default:staff.username }}</h1>
-      <div class="page-header__meta">{{ staff.email|default:"No email on file" }} · WhatsApp: {% if staff.whatsapp_number %}{{ staff.whatsapp_number }}{% else %}<strong>not set</strong>{% endif %} · <a href="{% url 'accounts:staff_whatsapp_edit' staff.pk %}">Edit</a> · Last login: {{ staff.last_login|date:"d M Y H:i"|default:"Never" }}</div>
+      <div class="page-header__meta">{{ staff.email|default:"No email on file" }} · WhatsApp: {% if staff.whatsapp_number %}{{ staff.whatsapp_number }}{% else %}<strong>not set</strong>{% endif %} · <a href="{% url 'accounts:staff_whatsapp_edit' staff.pk %}" data-modal>Edit</a> · Last login: {{ staff.last_login|date:"d M Y H:i"|default:"Never" }}</div>
     </div>
     <div style="display: flex; gap: var(--space-2); align-items: center;">
-      <a class="btn btn--ghost" href="{% url 'accounts:staff_password_change' staff.pk %}">Change Password</a>
+      <a class="btn btn--ghost" href="{% url 'accounts:staff_password_change' staff.pk %}" data-modal>Change Password</a>
       {% if staff.is_active %}
-        <a class="btn btn--ghost" href="{% url 'accounts:staff_deactivate' staff.pk %}">Deactivate</a>
+        <a class="btn btn--ghost" href="{% url 'accounts:staff_deactivate' staff.pk %}" data-modal>Deactivate</a>
       {% else %}
         <span class="pill pill--neutral">Inactive</span>
         <form method="post" action="{% url 'accounts:staff_activate' staff.pk %}">{% csrf_token %}<button class="btn btn--primary" type="submit">Activate</button></form>
@@ -35,7 +35,7 @@
                 <span style="font-size: 13px; color: var(--text-secondary);">Add partitions</span>
               </div>
             {% endif %}
-            <a class="btn btn--ghost" href="{% url 'accounts:assignment_remove' assignment.pk %}">Remove</a>
+            <a class="btn btn--ghost" href="{% url 'accounts:assignment_remove' assignment.pk %}" data-modal>Remove</a>
           </div>
         {% endfor %}
       {% else %}
@@ -44,7 +44,7 @@
           <p>Assign this person to a business or villa so they can access it.</p>
         </div>
       {% endif %}
-      <a class="btn btn--primary" href="{% url 'accounts:assignment_create' staff.pk %}">+ Add Assignment</a>
+      <a class="btn btn--primary" href="{% url 'accounts:assignment_create' staff.pk %}" data-modal>+ Add Assignment</a>
     </div>
   </div>
 

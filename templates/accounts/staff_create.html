@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends base_template|default:"base.html" %}
 {% block title %}Add Staff or Partner — Hilltop Accounting{% endblock %}
 
 {% block content %}
@@ -99,7 +99,7 @@
 
       <div class="form-actions" style="margin-top: var(--space-5);">
         <button class="btn btn--primary" id="form-submit-btn" type="submit">{{ submit_label|default:"Create Account" }}</button>
-        {% if cancel_url %}<a class="btn btn--ghost" href="{{ cancel_url }}">Cancel</a>{% endif %}
+        {% if cancel_url or is_modal %}<a class="btn btn--ghost" data-modal-cancel href="{{ cancel_url|default:'#' }}">Cancel</a>{% endif %}
       </div>
     </form>
   </div>
@@ -282,13 +282,14 @@ function updatePartnerBadge() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+function initStaffForm() {
   const villaVal = document.getElementById('id_villa').value;
   const partnerVal = document.getElementById('id_partner').value;
   if (villaVal) {
     onModalVillaChange(villaVal, partnerVal);
   }
   updatePartnerBadge();
-});
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initStaffForm); else initStaffForm();
 </script>
 {% endblock %}

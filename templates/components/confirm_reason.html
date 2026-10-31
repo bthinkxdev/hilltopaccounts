@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends base_template|default:"base.html" %}
 {% block title %}{{ title }} — Hilltop Accounting{% endblock %}
 {% block content %}
   <div class="page-header"><h1>{{ title }}</h1></div>
@@ -16,7 +16,7 @@
       </div>
       <div class="form-actions">
         <button class="btn btn--danger" type="submit">{{ submit_label|default:"Confirm" }}</button>
-        {% if cancel_url or request.GET.next %}<a class="btn btn--ghost" href="{{ request.GET.next|default:cancel_url }}">Cancel</a>{% endif %}
+        {% if cancel_url or request.GET.next or is_modal %}<a class="btn btn--ghost" data-modal-cancel href="{{ request.GET.next|default:cancel_url|default:'#' }}">Cancel</a>{% endif %}
       </div>
     </form>
   </div>

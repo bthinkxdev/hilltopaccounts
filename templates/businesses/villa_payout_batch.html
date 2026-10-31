@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends base_template|default:"base.html" %}
 {% block title %}Record Partner Payouts — {{ villa.name }} — Hilltop Accounting{% endblock %}
 {% block content %}
   <div class="page-header">
@@ -6,7 +6,7 @@
       <h1>Record Partner Payouts — {{ villa.name }}</h1>
       <div class="page-header__meta">Profit distribution for {{ month_label }} · Villa Net Profit: <b>QAR {{ net_profit|floatformat:"2g" }}</b></div>
     </div>
-    <a class="btn btn--ghost" href="{% url 'villas:villa_detail' villa.pk %}?period=month&year={{ year }}&month={{ month }}">Cancel</a>
+    <a class="btn btn--ghost" data-modal-cancel href="{% url 'villas:villa_detail' villa.pk %}?period=month&year={{ year }}&month={{ month }}">Cancel</a>
   </div>
 
   <div class="card card--tight" style="margin-bottom: var(--space-4);">
@@ -92,7 +92,7 @@
 
       <div class="form-actions">
         <button class="btn btn--primary" type="submit">Confirm &amp; Record All Payouts (QAR {{ total_unpaid|floatformat:"2g" }})</button>
-        <a class="btn btn--ghost" href="{% url 'villas:villa_detail' villa.pk %}?period=month&year={{ year }}&month={{ month }}">Cancel</a>
+        <a class="btn btn--ghost" data-modal-cancel href="{% url 'villas:villa_detail' villa.pk %}?period=month&year={{ year }}&month={{ month }}">Cancel</a>
       </div>
     </form>
   {% else %}

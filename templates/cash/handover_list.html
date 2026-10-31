@@ -6,7 +6,7 @@
     <div class="quick-actions">
       {% if can_view_accountability %}<a class="btn btn--ghost" href="{% url 'cash:staff_accountability' %}">Staff accountability</a>{% endif %}
       {# Only field staff submit handovers to admin; hidden for admin #}
-      {% if not is_owner and my_unclaimed_payments %}<a class="btn btn--primary" href="{% url 'cash:handover_submit' %}">Submit Handover</a>{% endif %}
+      {% if not is_owner and my_unclaimed_payments %}<a class="btn btn--primary" href="{% url 'cash:handover_submit' %}" data-modal>Submit Handover</a>{% endif %}
     </div>
   </div>
 

@@ -9,9 +9,9 @@
     {% if can_manage and computed_status != "cancelled" %}
       <div class="quick-actions">
         {% if computed_outstanding > 0 %}
-          <a class="btn btn--primary" href="{% url 'billing:payment_record' invoice.pk %}">Record Payment</a>
+          <a class="btn btn--primary" href="{% url 'billing:payment_record' invoice.pk %}" data-modal>Record Payment</a>
         {% endif %}
-        {% if computed_paid == 0 %}<a class="btn btn--ghost" href="{% url 'billing:invoice_cancel' invoice.pk %}">Cancel Invoice</a>{% endif %}
+        {% if computed_paid == 0 %}<a class="btn btn--ghost" href="{% url 'billing:invoice_cancel' invoice.pk %}" data-modal>Cancel Invoice</a>{% endif %}
       </div>
     {% endif %}
   </div>
@@ -61,8 +61,8 @@
               <span class="pill pill--neutral">Cancelled</span>
             {% elif can_manage %}
               <span class="quick-actions" style="margin:0;">
-                {# <a class="btn btn--ghost" href="{% url 'billing:payment_correct' payment.pk %}">Correct</a> #}
-                <a class="btn btn--ghost" href="{% url 'billing:payment_cancel' payment.pk %}">Cancel</a>
+                {# <a class="btn btn--ghost" href="{% url 'billing:payment_correct' payment.pk %}" data-modal>Correct</a> #}
+                <a class="btn btn--ghost" href="{% url 'billing:payment_cancel' payment.pk %}" data-modal>Cancel</a>
               </span>
             {% endif %}
           </div>

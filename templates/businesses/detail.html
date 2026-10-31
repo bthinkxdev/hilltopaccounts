@@ -12,8 +12,8 @@
     {% if user.is_owner %}
       <div class="quick-actions">
         {% if not business.is_archived %}
-          <a class="btn btn--primary" href="{% url 'villas:villa_create' %}?business={{ business.pk }}">+ Add Villa</a>
-          <a class="btn btn--ghost" href="{% url 'businesses:archive' business.pk %}">Archive</a>
+          <a class="btn btn--primary" href="{% url 'villas:villa_create' %}?business={{ business.pk }}" data-modal>+ Add Villa</a>
+          <a class="btn btn--ghost" href="{% url 'businesses:archive' business.pk %}" data-modal>Archive</a>
         {% else %}
           <form method="post" action="{% url 'businesses:unarchive' business.pk %}" style="display:inline;">
             {% csrf_token %}
@@ -70,7 +70,7 @@
           {% else %}
             <div class="empty-state__title">No villas in this business yet.</div>
             <p>Add a villa to start tracking partitions, tenants and billing.</p>
-            {% if user.is_owner %}<a class="btn btn--primary" href="{% url 'villas:villa_create' %}?business={{ business.pk }}">+ Add Villa</a>{% endif %}
+            {% if user.is_owner %}<a class="btn btn--primary" href="{% url 'villas:villa_create' %}?business={{ business.pk }}" data-modal>+ Add Villa</a>{% endif %}
           {% endif %}
         </div>
       {% endif %}

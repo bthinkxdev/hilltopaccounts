@@ -13,13 +13,13 @@
       </div>
     </div>
     <div class="quick-actions" style="display: flex; flex-wrap: wrap; gap: var(--space-2);">
-      <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_edit' partner.pk %}">Edit Partner</a>
-      <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_share_create' partner.pk %}">+ Assign Villa</a>
+      <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_edit' partner.pk %}" data-modal>Edit Partner</a>
+      <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_share_create' partner.pk %}" data-modal>+ Assign Villa</a>
       {% if total_payout > 0 and not is_fully_paid and period == 'month' and shares|length == 1 %}
         {% if any_unhanded_cash %}
           <span class="pill pill--warning" style="display: inline-flex; align-items: center; padding: 6px 12px; font-weight: 600;" title="Cannot distribute profit until staff cash is handed over">Handover Pending</span>
         {% else %}
-          <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?{% if shares|length == 1 %}villa={{ shares.0.villa.pk }}&{% endif %}year={{ year }}&month={{ month }}&amount={{ remaining_payout }}">Record Payout</a>
+          <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?{% if shares|length == 1 %}villa={{ shares.0.villa.pk }}&{% endif %}year={{ year }}&month={{ month }}&amount={{ remaining_payout }}" data-modal>Record Payout</a>
         {% endif %}
       {% endif %}
     </div>
@@ -105,9 +105,9 @@
                   <span class="pill pill--warning" style="font-size: 11px;" title="Staff still hold QAR {{ share.month_unhanded_cash|floatformat:'2g' }} of this month's rent in cash. Handover required before payout.">Handover Required</span>
                 {% elif share.is_partial %}
                   <span class="pill pill--warning" title="Paid QAR {{ share.paid_amount|floatformat:'2g' }}">Paid {{ share.paid_amount|floatformat:"2g" }} · Due {{ share.remaining|floatformat:"2g" }}</span>
-                  {% if period == 'month' %}<a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?villa={{ share.villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.remaining }}">Pay QAR {{ share.remaining|floatformat:"2g" }}</a>{% endif %}
+                  {% if period == 'month' %}<a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?villa={{ share.villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.remaining }}" data-modal>Pay QAR {{ share.remaining|floatformat:"2g" }}</a>{% endif %}
                 {% elif share.cut > 0 %}
-                  {% if period == 'month' %}<a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?villa={{ share.villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.cut }}">Pay</a>{% else %}<span class="pill pill--warning" style="font-size: 11px;">Due — pay by month</span>{% endif %}
+                  {% if period == 'month' %}<a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' partner.pk %}?villa={{ share.villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.cut }}" data-modal>Pay</a>{% else %}<span class="pill pill--warning" style="font-size: 11px;">Due — pay by month</span>{% endif %}
                 {% elif share.cut < 0 %}
                   <span class="pill pill--danger" style="font-size: 11px;">Loss share</span>
                 {% else %}
@@ -123,7 +123,7 @@
         <div class="empty-state">
           <div class="empty-state__title">No villas assigned to {{ partner.name }} yet.</div>
           <p>Assign this partner to one or more villas and set their percentage share.</p>
-          <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_share_create' partner.pk %}">+ Assign Villa Share</a>
+          <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_share_create' partner.pk %}" data-modal>+ Assign Villa Share</a>
         </div>
       {% endif %}
     </div>
@@ -151,8 +151,8 @@
               </div>
               {% if request.user.is_owner and not payout.is_voided %}
               <div style="margin-top: 4px;">
-                <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_payout_correct' payout.pk %}">Correct</a>
-                <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_payout_void' payout.pk %}">Void</a>
+                <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_payout_correct' payout.pk %}" data-modal>Correct</a>
+                <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_payout_void' payout.pk %}" data-modal>Void</a>
               </div>
               {% endif %}
             </div>

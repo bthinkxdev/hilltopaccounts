@@ -2125,3 +2125,43 @@ body.is-loading { cursor: progress; }
   .psel--month .psel__menu { width: min(244px, calc(100vw - 32px)); }
 }
 @media (prefers-reduced-motion: reduce) { .psel.is-open .psel__menu { animation: none; } }
+
+
+/* Action pages shown as a popup (see static/js/modal.js). */
+.action-modal {
+  width: min(640px, calc(100vw - 24px));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  overflow: auto;
+  border-radius: var(--radius-lg, 16px);
+  animation: action-modal-in .18s ease-out;
+}
+.action-modal__body { padding: var(--space-5); }
+.action-modal__close {
+  position: sticky;
+  top: 8px;
+  float: right;
+  margin: 8px 8px 0 0;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-muted, rgba(0, 0, 0, .06));
+  color: var(--text-secondary);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.action-modal__close:hover { color: var(--text-primary); }
+.action-modal .page-header { max-width: none !important; margin: 0 0 var(--space-4) !important; }
+.action-modal .card, .action-modal .card--narrow { max-width: none !important; border: 0; box-shadow: none; padding: 0; background: transparent; }
+.action-modal .form-actions { position: sticky; bottom: 0; background: var(--surface-solid); padding-top: var(--space-3); }
+.action-modal form.is-submitting { opacity: .7; pointer-events: none; }
+body.modal-loading { cursor: progress; }
+@keyframes action-modal-in { from { opacity: 0; transform: translate(-50%, -48%) scale(.98); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+@media (max-width: 600px) {
+  .action-modal { width: calc(100vw - 12px); max-height: calc(100vh - 12px); }
+  .action-modal__body { padding: var(--space-4); }
+}
+@media (prefers-reduced-motion: reduce) { .action-modal { animation: none; } }

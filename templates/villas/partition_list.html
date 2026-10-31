@@ -3,7 +3,7 @@
 {% block content %}
   <div class="page-header">
     <h1>Partitions</h1>
-    {% if can_create_partition %}<a class="btn btn--primary" href="{% url 'villas:partition_create' %}">+ Add Partition</a>{% endif %}
+    {% if can_create_partition %}<a class="btn btn--primary" href="{% url 'villas:partition_create' %}" data-modal>+ Add Partition</a>{% endif %}
   </div>
 
   <form class="filter-bar" method="get">
@@ -43,7 +43,7 @@
       <div class="empty-state">
         <div class="empty-state__title">No partitions match these filters.</div>
         <p>Try clearing the filters, or add a partition from a villa's page.</p>
-        {% if can_create_partition %}<a class="btn btn--primary" href="{% url 'villas:partition_create' %}">+ Add Partition</a>{% endif %}
+        {% if can_create_partition %}<a class="btn btn--primary" href="{% url 'villas:partition_create' %}" data-modal>+ Add Partition</a>{% endif %}
       </div>
     {% endif %}
   </div>

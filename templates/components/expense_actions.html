@@ -5,4 +5,4 @@
 {% if expense.can_verify and expense.awaiting_verification %}
   <form method="post" action="{% url 'expenses:verify' expense.pk %}" class="inline-form">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}#partition-expenses"><button class="btn btn--primary btn--sm" type="submit">Verify expense</button></form>
 {% endif %}
-{% if expense.can_edit %}<a class="btn btn--ghost btn--sm" href="{% url 'expenses:revise' expense.pk %}">Edit</a>{% endif %}
+{% if expense.can_edit %}<a class="btn btn--ghost btn--sm" href="{% url 'expenses:revise' expense.pk %}" data-modal>Edit</a>{% endif %}

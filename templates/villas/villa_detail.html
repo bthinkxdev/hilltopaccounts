@@ -12,16 +12,16 @@
     <div class="quick-actions">
       {% if can_manage and not villa.is_sold %}
         {% if not villa.is_archived %}
-          <a class="btn btn--primary" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>
-          {% if can_add_partition %}<a class="btn btn--ghost" href="{% url 'villas:partition_create' villa.pk %}">+ Partition</a>{% endif %}
-          <a class="btn btn--ghost" href="{% url 'villas:villa_photo_add' villa.pk %}">+ Photo</a>
+          <a class="btn btn--primary" href="{% url 'expenses:create_for_villa' villa.pk %}" data-modal>+ Add Expense</a>
+          {% if can_add_partition %}<a class="btn btn--ghost" href="{% url 'villas:partition_create' villa.pk %}" data-modal>+ Partition</a>{% endif %}
+          <a class="btn btn--ghost" href="{% url 'villas:villa_photo_add' villa.pk %}" data-modal>+ Photo</a>
           {% if is_admin %}
-            <a class="btn btn--ghost" href="{% url 'villas:villa_edit' villa.pk %}">Edit</a>
-            {% if user.is_owner and not villa.is_sold %}<a class="btn btn--ghost" href="{% url 'villas:villa_sell' villa.pk %}">Sold</a>{% endif %}
-            <a class="btn btn--ghost" href="{% url 'villas:villa_archive' villa.pk %}">Archive</a>
+            <a class="btn btn--ghost" href="{% url 'villas:villa_edit' villa.pk %}" data-modal>Edit</a>
+            {% if user.is_owner and not villa.is_sold %}<a class="btn btn--ghost" href="{% url 'villas:villa_sell' villa.pk %}" data-modal>Sold</a>{% endif %}
+            <a class="btn btn--ghost" href="{% url 'villas:villa_archive' villa.pk %}" data-modal>Archive</a>
           {% endif %}
         {% else %}
-          {% if user.is_owner and not villa.is_sold %}<a class="btn btn--primary" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>{% endif %}
+          {% if user.is_owner and not villa.is_sold %}<a class="btn btn--primary" href="{% url 'expenses:create_for_villa' villa.pk %}" data-modal>+ Add Expense</a>{% endif %}
           {% if is_admin and not villa.is_sold %}
             <form method="post" action="{% url 'villas:villa_unarchive' villa.pk %}" style="display:inline;">
               {% csrf_token %}
@@ -74,7 +74,7 @@
             {% elif month_unhanded_cash > 0 %}
               <span class="pill pill--warning" style="font-size: 11px;" title="Staff still hold QAR {{ month_unhanded_cash|floatformat:'2g' }} of {{ period_label }} rent in cash">Handover Pending (QAR {{ month_unhanded_cash|floatformat:"2g" }})</span>
             {% elif has_unpaid_partners and user.is_owner %}
-              <a class="btn btn--primary btn--sm" href="{% url 'businesses:villa_partner_payout_batch' villa.pk %}?year={{ year }}&month={{ month }}">Pay All Partners</a>
+              <a class="btn btn--primary btn--sm" href="{% url 'businesses:villa_partner_payout_batch' villa.pk %}?year={{ year }}&month={{ month }}" data-modal>Pay All Partners</a>
             {% endif %}
           </div>
         </div>
@@ -129,7 +129,7 @@
                     {% if month_unhanded_cash > 0 %}
                       <span class="pill pill--neutral" style="font-size: 11px;" title="Staff hold QAR {{ month_unhanded_cash|floatformat:'2g' }} of this month's cash. Handover required before payout.">Handover Required</span>
                     {% else %}
-                      <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' share.partner.pk %}?villa={{ villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.remaining }}&from=villa">Pay QAR {{ share.remaining|floatformat:"2g" }}</a>
+                      <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' share.partner.pk %}?villa={{ villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.remaining }}&from=villa" data-modal>Pay QAR {{ share.remaining|floatformat:"2g" }}</a>
                     {% endif %}
                   {% endif %}
                 {% elif share.cut > 0 %}
@@ -137,7 +137,7 @@
                     {% if month_unhanded_cash > 0 %}
                       <span class="pill pill--neutral" style="font-size: 11px;" title="Staff hold QAR {{ month_unhanded_cash|floatformat:'2g' }} of this month's cash. Handover required before payout.">Handover Required</span>
                     {% else %}
-                      <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' share.partner.pk %}?villa={{ villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.cut }}&from=villa">Pay</a>
+                      <a class="btn btn--primary btn--sm" href="{% url 'businesses:partner_payout_create' share.partner.pk %}?villa={{ villa.pk }}&year={{ year }}&month={{ month }}&amount={{ share.cut }}&from=villa" data-modal>Pay</a>
                     {% endif %}
                   {% else %}
                     <span class="pill pill--warning" style="font-size: 11px;">Pending Payout</span>
@@ -244,7 +244,7 @@
           {% else %}
             <div class="empty-state__title">No partitions created yet.</div>
             <p>Add a partition to start assigning tenants and collecting rent.</p>
-            {% if can_add_partition %}<a class="btn btn--primary" href="{% url 'villas:partition_create' villa.pk %}">+ Add Partition</a>{% endif %}
+            {% if can_add_partition %}<a class="btn btn--primary" href="{% url 'villas:partition_create' villa.pk %}" data-modal>+ Add Partition</a>{% endif %}
           {% endif %}
         </div>
       </div>
@@ -275,7 +275,7 @@
             {% else %}<span class="pill pill--neutral">Pending</span>{% endif %}
             {% if not row.is_current %}
               <span class="pill pill--neutral">Moved out</span>
-              {% if row.status != "collected" and can_manage and row.invoice %}<a class="btn btn--ghost btn--sm" href="{% url 'billing:payment_record' row.invoice.pk %}">Record payment</a>{% endif %}
+              {% if row.status != "collected" and can_manage and row.invoice %}<a class="btn btn--ghost btn--sm" href="{% url 'billing:payment_record' row.invoice.pk %}" data-modal>Record payment</a>{% endif %}
             {% elif row.status != "collected" and can_manage %}
               <button class="btn btn--primary btn--sm" type="button"
                 data-action-url="{% url 'billing:rent_collect' row.partition.pk %}"
@@ -455,7 +455,7 @@
         </div>
       </div>
     {% endif %}
-    {% if can_admin_fixed %}<div class="quick-actions" style="margin-top: var(--space-2);"><a class="btn btn--ghost btn--sm" href="{% url 'expenses:create_for_villa' villa.pk %}?type=monthly">+ Add monthly expense</a></div>{% endif %}
+    {% if can_admin_fixed %}<div class="quick-actions" style="margin-top: var(--space-2);"><a class="btn btn--ghost btn--sm" href="{% url 'expenses:create_for_villa' villa.pk %}?type=monthly" data-modal>+ Add monthly expense</a></div>{% endif %}
 
     <div class="batch-section" id="batch-section-partition">
       <form method="post" id="batch-form-partition" style="display: none;">
@@ -474,7 +474,7 @@
         {% for expense in one_off_expenses %}
           {% include "villas/_one_off_expense_row.html" with batch=True %}
         {% empty %}
-          <div class="empty-state"><div class="empty-state__title">No one-time expenses in {{ period_label }}.</div>{% if can_manage and not villa.is_archived and not villa.is_sold %}<a class="btn btn--primary btn--sm" href="{% url 'expenses:create_for_villa' villa.pk %}">+ Add Expense</a>{% endif %}</div>
+          <div class="empty-state"><div class="empty-state__title">No one-time expenses in {{ period_label }}.</div>{% if can_manage and not villa.is_archived and not villa.is_sold %}<a class="btn btn--primary btn--sm" href="{% url 'expenses:create_for_villa' villa.pk %}" data-modal>+ Add Expense</a>{% endif %}</div>
         {% endfor %}
         <a class="btn btn--ghost btn--sm" href="{% url 'expenses:list' %}?villa={{ villa.pk }}">All expenses for this villa</a>
       </div>
@@ -492,14 +492,14 @@
           {% for photo in photos %}
             <figure class="gallery__item" style="margin:0;">
               <img src="{% url 'villas:photo_file' photo.pk %}" alt="{{ photo.caption|default:villa.name }}" loading="lazy">
-              <figcaption class="gallery__caption"><span>{{ photo.caption }}</span>{% if photo.can_delete %}<a href="{% url 'villas:photo_delete' photo.pk %}">Remove</a>{% endif %}</figcaption>
+              <figcaption class="gallery__caption"><span>{{ photo.caption }}</span>{% if photo.can_delete %}<a href="{% url 'villas:photo_delete' photo.pk %}" data-modal>Remove</a>{% endif %}</figcaption>
             </figure>
           {% endfor %}
         </div>
       {% else %}
         <div class="empty-state">
           <div class="empty-state__title">No photos of this villa yet.</div>
-          {% if can_manage and not villa.is_archived %}<a class="btn btn--primary btn--sm" href="{% url 'villas:villa_photo_add' villa.pk %}">+ Add Photo</a>{% endif %}
+          {% if can_manage and not villa.is_archived %}<a class="btn btn--primary btn--sm" href="{% url 'villas:villa_photo_add' villa.pk %}" data-modal>+ Add Photo</a>{% endif %}
         </div>
       {% endif %}
     </div>

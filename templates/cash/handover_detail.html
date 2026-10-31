@@ -5,8 +5,8 @@
     <h1>Handover #{{ handover.pk }}</h1>
     {% if can_confirm %}
       <div class="quick-actions">
-        <a class="btn btn--primary" href="{% url 'cash:handover_confirm' handover.pk %}">Confirm</a>
-        <a class="btn btn--ghost" href="{% url 'cash:handover_reject' handover.pk %}">Reject</a>
+        <a class="btn btn--primary" href="{% url 'cash:handover_confirm' handover.pk %}" data-modal>Confirm</a>
+        <a class="btn btn--ghost" href="{% url 'cash:handover_reject' handover.pk %}" data-modal>Reject</a>
       </div>
     {% endif %}
   </div>

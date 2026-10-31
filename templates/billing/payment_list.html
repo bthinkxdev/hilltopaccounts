@@ -263,7 +263,7 @@
                 <div class="collections-btn-group">
                   {% if not row.is_current %}
                     <span class="pill pill--neutral" style="font-size: 11px;">Moved out</span>
-                    {% if row.status != "collected" and row.can_manage and row.invoice %}<a class="btn btn--ghost btn--sm" href="{% url 'billing:payment_record' row.invoice.pk %}">Record payment</a>{% endif %}
+                    {% if row.status != "collected" and row.can_manage and row.invoice %}<a class="btn btn--ghost btn--sm" href="{% url 'billing:payment_record' row.invoice.pk %}" data-modal>Record payment</a>{% endif %}
                   {% elif row.status != "collected" and row.can_manage %}
                     <button class="btn btn--primary btn--sm" type="button"
                       data-action-url="{% url 'billing:rent_collect' row.partition.pk %}"
@@ -387,7 +387,7 @@
         <div class="collections-m-actions">
           {% if not row.is_current %}
             <span class="pill pill--neutral" style="font-size: 11px;">Moved out</span>
-            {% if row.status != "collected" and row.can_manage and row.invoice %}<a class="btn btn--ghost btn--sm collections-m-btn" href="{% url 'billing:payment_record' row.invoice.pk %}">Record payment</a>{% endif %}
+            {% if row.status != "collected" and row.can_manage and row.invoice %}<a class="btn btn--ghost btn--sm collections-m-btn" href="{% url 'billing:payment_record' row.invoice.pk %}" data-modal>Record payment</a>{% endif %}
           {% elif row.status != "collected" and row.can_manage %}
             <button class="btn btn--primary btn--sm collections-m-btn" type="button"
               data-action-url="{% url 'billing:rent_collect' row.partition.pk %}"
@@ -455,7 +455,7 @@
                 onclick="openRentCollectModal(this)">Collect</button>
             {% else %}
               <span class="pill pill--neutral">Moved out</span>
-              <a class="btn btn--ghost btn--sm" href="{% url 'billing:payment_record' row.invoice.pk %}">Record payment</a>
+              <a class="btn btn--ghost btn--sm" href="{% url 'billing:payment_record' row.invoice.pk %}" data-modal>Record payment</a>
             {% endif %}
           {% endif %}
         </div>

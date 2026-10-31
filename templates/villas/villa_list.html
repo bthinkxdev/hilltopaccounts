@@ -6,7 +6,7 @@
       <h1>Villas</h1>
       {% if totals %}<div class="page-header__meta">Income, expenses and profit for {{ period_label }} · amounts in QAR</div>{% endif %}
     </div>
-    {% if can_create_villa %}<a class="btn btn--primary" href="{% url 'villas:villa_create' %}">+ Add Villa</a>{% endif %}
+    {% if can_create_villa %}<a class="btn btn--primary" href="{% url 'villas:villa_create' %}" data-modal>+ Add Villa</a>{% endif %}
   </div>
 
   {% if totals %}
@@ -83,7 +83,7 @@
       <div class="empty-state">
         <div class="empty-state__title">{% if q or selected_business or selected_staff %}No villas match your search.{% else %}No villas yet.{% endif %}</div>
         <p>Add a villa under one of your businesses to get started.</p>
-        {% if can_create_villa %}<a class="btn btn--primary" href="{% url 'villas:villa_create' %}">+ Add Villa</a>{% endif %}
+        {% if can_create_villa %}<a class="btn btn--primary" href="{% url 'villas:villa_create' %}" data-modal>+ Add Villa</a>{% endif %}
       </div>
     </div>
   {% endif %}

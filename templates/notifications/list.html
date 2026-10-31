@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load modal %}
 {% block title %}Notifications — Hilltop Accounting{% endblock %}
 {% block content %}
   <div class="page-header">
@@ -21,7 +22,7 @@
       {% for n in page_obj %}
         <div class="list-row">
           <div>
-            <a class="list-row__title" href="{{ n.url }}">{% if not n.read_at %}<span class="badge-dot" aria-label="Unread">●</span> {% endif %}{{ n.title }}</a>
+            <a class="list-row__title" href="{{ n.url }}"{{ n.url|modal_attr }}>{% if not n.read_at %}<span class="badge-dot" aria-label="Unread">●</span> {% endif %}{{ n.title }}</a>
             <div class="list-row__meta">{{ n.body }}{% if n.body %} · {% endif %}{{ n.created_at|date:"d M Y H:i" }}</div>
           </div>
           {% if not n.read_at %}

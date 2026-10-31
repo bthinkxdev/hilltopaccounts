@@ -3,7 +3,7 @@
 {% block content %}
   <div class="page-header">
     <h1>Staff</h1>
-    <a class="btn btn--primary" href="{% url 'accounts:staff_create' %}">+ Add Staff</a>
+    <a class="btn btn--primary" href="{% url 'accounts:staff_create' %}" data-modal>+ Add Staff</a>
   </div>
 
   <form class="filter-bar" method="get">
@@ -22,7 +22,7 @@
           {% if not u.is_active %}<span class="pill pill--neutral">Inactive</span>
           {% else %}{% for label in u.role_labels %}<span class="pill pill--neutral">{{ label }}</span>{% endfor %}{% endif %}
           {% if u.is_active %}
-            <a class="btn btn--ghost" href="{% url 'accounts:staff_deactivate' u.pk %}">Deactivate</a>
+            <a class="btn btn--ghost" href="{% url 'accounts:staff_deactivate' u.pk %}" data-modal>Deactivate</a>
           {% else %}
             <form method="post" action="{% url 'accounts:staff_activate' u.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{% url 'accounts:staff_list' %}"><button class="btn btn--primary" type="submit">Activate</button></form>
           {% endif %}
@@ -32,7 +32,7 @@
       <div class="empty-state">
         <div class="empty-state__title">No staff accounts yet.</div>
         <p>Add a staff account, then assign them to a business or villa.</p>
-        <a class="btn btn--primary" href="{% url 'accounts:staff_create' %}">+ Add Staff</a>
+        <a class="btn btn--primary" href="{% url 'accounts:staff_create' %}" data-modal>+ Add Staff</a>
       </div>
     {% endif %}
   </div>

@@ -50,6 +50,7 @@
   }
 
   window.addEventListener("pageshow", hideLoader);
+  window.AppLoader = { show: showLoader, hide: hideLoader };
 
   function switchPeriod(year, month) {
     var label = periodLabel(year, month);

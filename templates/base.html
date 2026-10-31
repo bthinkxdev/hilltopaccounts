@@ -19,6 +19,10 @@
   {% block extra_head %}{% endblock %}
 </head>
 <body>
+  <dialog id="action-modal" class="action-modal" aria-label="Action">
+    <button type="button" class="action-modal__close" data-modal-close aria-label="Close">&times;</button>
+    <div class="action-modal__body" data-modal-body></div>
+  </dialog>
   <input type="checkbox" id="nav-toggle" class="nav-toggle-checkbox">
   <label for="nav-toggle" class="sidebar__scrim" aria-hidden="true"></label>
 
@@ -142,6 +146,7 @@
   <script src="{% static 'js/theme.js' %}"></script>
   <script src="{% static 'js/app.js' %}"></script>
   <script src="{% static 'js/period.js' %}"></script>
+  <script src="{% static 'js/modal.js' %}"></script>
   {% block extra_scripts %}{% endblock %}
 </body>
 </html>

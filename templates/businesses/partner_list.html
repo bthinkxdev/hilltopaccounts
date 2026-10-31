@@ -6,7 +6,7 @@
       <h1>{% if tab == 'owner' %}Admin Profit Statement{% elif tab == 'partners' %}Partners &amp; Payouts{% else %}Partners &amp; Profit Sharing{% endif %}</h1>
       <div class="page-header__meta">{% if tab == 'owner' %}Your villa-by-villa profit earnings for {{ period_label }} · amounts in QAR{% elif tab == 'partners' %}Partner shares and payout records for {{ period_label }} · amounts in QAR{% else %}Profit sharing across villas for {{ period_label }} · amounts in QAR{% endif %}</div>
     </div>
-    {% if user.is_owner and tab != 'owner' %}<a class="btn btn--primary" href="{% url 'businesses:partner_create' %}">+ Add Partner</a>{% endif %}
+    {% if user.is_owner and tab != 'owner' %}<a class="btn btn--primary" href="{% url 'businesses:partner_create' %}" data-modal>+ Add Partner</a>{% endif %}
   </div>
 
   <div style="display: flex; gap: var(--space-2); margin-bottom: var(--space-3); flex-wrap: wrap;">
@@ -142,7 +142,7 @@
               {% elif partner.total_payout < 0 %}
                 <span class="pill pill--danger" title="Offset against this partner's future profit shares">Loss share</span>
               {% endif %}
-              <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_edit' partner.pk %}">Edit</a>
+              <a class="btn btn--ghost btn--sm" href="{% url 'businesses:partner_edit' partner.pk %}" data-modal>Edit</a>
             </div>
           </div>
         </div>
@@ -151,7 +151,7 @@
       <div class="empty-state">
         <div class="empty-state__title">No partners recorded yet.</div>
         <p>Set up partners and their villa percentage shares to calculate profit distributions automatically.</p>
-        {% if user.is_owner %}<a class="btn btn--primary" href="{% url 'businesses:partner_create' %}">+ Add Partner</a>{% endif %}
+        {% if user.is_owner %}<a class="btn btn--primary" href="{% url 'businesses:partner_create' %}" data-modal>+ Add Partner</a>{% endif %}
       </div>
     {% endif %}
   </div>

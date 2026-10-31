@@ -3,7 +3,7 @@
 {% block content %}
   <div class="page-header">
     <h1>Businesses</h1>
-    {% if user.is_owner %}<a class="btn btn--primary" href="{% url 'businesses:create' %}">+ Add Business</a>{% endif %}
+    {% if user.is_owner %}<a class="btn btn--primary" href="{% url 'businesses:create' %}" data-modal>+ Add Business</a>{% endif %}
   </div>
 
   <form class="filter-bar" method="get">
@@ -30,7 +30,7 @@
       <div class="empty-state">
         <div class="empty-state__title">No businesses yet.</div>
         <p>Create your first business to start building your villa portfolio.</p>
-        {% if user.is_owner %}<a class="btn btn--primary" href="{% url 'businesses:create' %}">+ Add Business</a>{% endif %}
+        {% if user.is_owner %}<a class="btn btn--primary" href="{% url 'businesses:create' %}" data-modal>+ Add Business</a>{% endif %}
       </div>
     {% endif %}
   </div>

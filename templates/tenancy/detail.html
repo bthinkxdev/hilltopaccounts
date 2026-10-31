@@ -11,9 +11,9 @@
     </div>
     {% if can_manage and tenant.status == "active" and not tenant.partition.villa.is_sold %}
       <div style="display: flex; gap: var(--space-2);">
-        <a class="btn btn--ghost" href="{% url 'tenancy:deposit_edit' tenant.pk %}?next={{ request.get_full_path|urlencode }}">{% if tenant.deposit_pending > 0 %}Collect Advance{% else %}Edit Advance{% endif %}</a>
-        <a class="btn btn--ghost" href="{% url 'tenancy:edit' tenant.pk %}">Edit</a>
-        <a class="btn btn--ghost" href="{% url 'tenancy:move_out' tenant.pk %}">Move Out</a>
+        <a class="btn btn--ghost" href="{% url 'tenancy:deposit_edit' tenant.pk %}?next={{ request.get_full_path|urlencode }}" data-modal>{% if tenant.deposit_pending > 0 %}Collect Advance{% else %}Edit Advance{% endif %}</a>
+        <a class="btn btn--ghost" href="{% url 'tenancy:edit' tenant.pk %}" data-modal>Edit</a>
+        <a class="btn btn--ghost" href="{% url 'tenancy:move_out' tenant.pk %}" data-modal>Move Out</a>
       </div>
     {% endif %}
   </div>
@@ -64,8 +64,8 @@
             {% if c.is_voided %}· Cancelled {{ c.voided_at|date:"d M Y" }} by {{ c.voided_by.get_full_name|default:c.voided_by.username }}: {{ c.void_reason }}{% endif %}</span>
           {% if c.is_voided %}<span class="pill pill--neutral">Cancelled</span>
           {% elif can_manage %}
-            <a class="btn btn--ghost btn--sm" href="{% url 'tenancy:deposit_correct' c.pk %}">Correct</a>
-            <a class="btn btn--ghost btn--sm" href="{% url 'tenancy:deposit_void' c.pk %}">Cancel</a>
+            <a class="btn btn--ghost btn--sm" href="{% url 'tenancy:deposit_correct' c.pk %}" data-modal>Correct</a>
+            <a class="btn btn--ghost btn--sm" href="{% url 'tenancy:deposit_void' c.pk %}" data-modal>Cancel</a>
           {% endif %}
         </div>
       {% endfor %}
