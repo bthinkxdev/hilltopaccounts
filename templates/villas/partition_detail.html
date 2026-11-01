@@ -188,6 +188,7 @@
             {% elif invoice.computed_status == "overdue" %}<span class="pill pill--danger">Overdue</span>
             {% elif invoice.computed_status == "cancelled" %}<span class="pill pill--neutral">Cancelled</span>
             {% else %}<span class="pill pill--warning">QAR {{ invoice.computed_outstanding|floatformat:"2" }} due</span>{% endif %}
+            {% include "components/revert_buttons.html" with payments=invoice.live_payments %}
           </div>
         {% endfor %}
       {% else %}

@@ -106,6 +106,60 @@ def mark_expense_paid(*, expense: Expense, paid_on, payment_method, marked_by) -
         admin = _is_admin(marked_by, locked.business)
         return _settle(locked, paid_on=paid_on, payment_method=payment_method, actor=marked_by, payer=marked_by, admin=admin, reason='marked paid' if admin else 'marked paid by staff — awaiting admin verification')
 
+def _side_before_payment(expense: Expense) -> str:
+    """Which side (Admin / Staff) the expense was on before it was paid. Paying overwrites it with whoever paid, so it is
+    read back from the payment's own audit entry; an expense that was recorded already paid falls back to the side that
+    would have been expected of it."""
+    from django.contrib.contenttypes.models import ContentType
+    from apps.audit.models import AuditLog
+    entries = AuditLog.objects.filter(content_type=ContentType.objects.get_for_model(Expense), object_id=str(expense.pk), action=Action.EXPENSE_UPDATED).order_by('-timestamp', '-pk')
+    for entry in entries:
+        old, new = entry.old_value or {}, entry.new_value or {}
+        if old.get('paid_on') in (None, '', 'None') and new.get('paid_on') not in (None, '', 'None') and old.get('paid_by') in (PaidBy.STAFF, PaidBy.OWNER):
+            return old['paid_by']
+    if expense.recurring_id is not None:
+        return expense.recurring.paid_by
+    return PaidBy.OWNER if _is_admin(expense.created_by, expense.business) else PaidBy.STAFF
+
+def revert_expense_payment(*, expense: Expense, reverted_by, reason) -> Expense:
+    """Undo a payment that was marked by mistake. Only the payment is undone: the expense goes back to unpaid, on the side
+    it was on before (Admin / Staff), with no payer, method, date or verification. Its amount, month, category and every
+    other expense are untouched, so no other month changes. Refused when the cash is part of a handover, when an
+    auto-debit would just pay it again, or for a sold villa. The reason is mandatory and the old and new state is audited."""
+    from apps.cash.models import CashHandover
+    reason = (reason or '').strip()
+    if not reason:
+        raise DomainError('A reason is required to revert a payment.')
+    with transaction.atomic():
+        locked = Expense.objects.select_for_update().select_related('villa', 'business', 'recurring', 'created_by').get(pk=expense.pk)
+        if locked.status != Expense.Status.ACTIVE:
+            raise ExpenseNotPayable(f'This expense is {locked.status}; there is no payment to revert.')
+        if locked.paid_on is None:
+            raise ExpenseNotPayable('This expense is not marked paid, so there is no payment to revert.')
+        if locked.villa.is_sold:
+            raise DomainError(f'Cannot change expenses of sold villa “{locked.villa.name}”.')
+        if not selectors.ManageScope(reverted_by).can_revert_expense_payment(locked, ignore_auto_debit=True):
+            raise PermissionDenied('Only the Admin can revert a payment.')
+        if locked.auto_debit_resettles:
+            raise DomainError('This is an auto-debit expense that is already due: it would be paid again straight away. Switch auto-debit off for it first (Edit the monthly expense), then revert.')
+        if locked.handovers.filter(status=CashHandover.Status.CONFIRMED).exists():
+            raise DomainError('This payment is part of a confirmed cash handover and cannot be reverted directly.')
+        if locked.handovers.filter(status=CashHandover.Status.SUBMITTED).exists():
+            raise DomainError('This payment is part of a pending cash handover. Reject the handover first.')
+        side = _side_before_payment(locked)
+        old_value = _snapshot(locked)
+        locked.paid_on = None
+        locked.payment_method = ''
+        locked.paid_by_user = None
+        locked.verified_at = None
+        locked.verified_by = None
+        locked.paid_by = side
+        locked.updated_by = reverted_by
+        locked.full_clean()
+        locked.save(update_fields=['paid_on', 'payment_method', 'paid_by', 'paid_by_user', 'verified_at', 'verified_by', 'updated_by', 'updated_at'])
+        audit_services.log(user=reverted_by, action=Action.EXPENSE_PAYMENT_REVERTED, obj=locked, business=locked.business, villa=locked.villa, old_value=old_value, new_value=_snapshot(locked), reason=reason)
+    return locked
+
 def verify_expense(*, expense: Expense, verified_by, reason='verified as paid and received') -> Expense:
     """The Admin / Business Manager confirms a staff-paid expense really happened."""
     with transaction.atomic():

@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 from apps.accounts import selectors as access
 from apps.audit import services as audit_services
 from apps.audit.models import Action
@@ -196,22 +197,40 @@ def record_payment(*, invoice: Invoice, amount, method, collected_by, collected_
         notify_collection_recorded(payment)
     return payment
 
-def cancel_payment(*, payment: Payment, cancelled_by, reason) -> Payment:
+def cancel_payment(*, payment: Payment, cancelled_by, reason, enforce_revert_rule=True) -> Payment:
+    """Revert a rent collection recorded by mistake. The row is kept (marked cancelled, with the reason), the invoice's
+    paid amount falls by exactly this payment so that month's rent is pending again by that amount, and nothing else is
+    touched: not other payments, not other invoices or months. Refused when the cash is part of a handover. The reason
+    is mandatory, the action is permission-checked and audited, and the 'collected' alert for it is closed."""
     from apps.cash.models import CashHandover
-    if payment.handovers.filter(status=CashHandover.Status.CONFIRMED).exists():
-        raise PaymentInHandover(f'{payment} is part of a confirmed cash handover and cannot be cancelled directly. Use a controlled reversal.')
-    if payment.handovers.filter(status=CashHandover.Status.SUBMITTED).exists():
-        raise PaymentInHandover(f'{payment} is part of a pending cash handover. Reject the handover first.')
+    from apps.notifications.models import Notification
+    reason = (reason or '').strip()
+    if not reason:
+        raise DomainError('A reason is required to revert a collection.')
     with transaction.atomic():
-        payment.is_cancelled = True
-        payment.cancelled_reason = reason
-        payment.save(update_fields=['is_cancelled', 'cancelled_reason'])
-        audit_services.log(user=cancelled_by, action=Action.COLLECTION_CANCELLED, obj=payment, business=payment.invoice.business, villa=payment.invoice.villa, old_value={'is_cancelled': False}, new_value={'is_cancelled': True}, reason=reason)
+        locked = Payment.objects.select_for_update().select_related('invoice__partition__villa__business').get(pk=payment.pk)
+        if locked.is_cancelled:
+            raise DomainError('This collection is already reverted.')
+        villa = locked.invoice.villa
+        if villa.is_sold:
+            raise DomainError(f'Cannot change collections of sold villa “{villa.name}”.')
+        if enforce_revert_rule and not access.can_revert_collection(cancelled_by, villa, locked.collected_by_id):
+            raise PermissionDenied('Only the Admin can revert a collection.')
+        if locked.handovers.filter(status=CashHandover.Status.CONFIRMED).exists():
+            raise PaymentInHandover(f'{locked} is part of a confirmed cash handover and cannot be cancelled directly. Use a controlled reversal.')
+        if locked.handovers.filter(status=CashHandover.Status.SUBMITTED).exists():
+            raise PaymentInHandover(f'{locked} is part of a pending cash handover. Reject the handover first.')
+        locked.is_cancelled = True
+        locked.cancelled_reason = reason
+        locked.save(update_fields=['is_cancelled', 'cancelled_reason'])
+        Notification.objects.filter(dedupe_key=f'collection_recorded:{locked.pk}', resolved_at__isnull=True).update(resolved_at=timezone.now())
+        audit_services.log(user=cancelled_by, action=Action.COLLECTION_CANCELLED, obj=locked, business=villa.business, villa=villa, old_value={'is_cancelled': False, 'amount': str(locked.amount), 'invoice': locked.invoice.invoice_number}, new_value={'is_cancelled': True}, reason=reason)
+    payment.is_cancelled, payment.cancelled_reason = True, reason
     return payment
 
 def correct_payment(*, payment: Payment, new_amount, corrected_by, reason, method=None, collected_at=None) -> Payment:
     with transaction.atomic():
-        cancel_payment(payment=payment, cancelled_by=corrected_by, reason=f'corrected: {reason}')
+        cancel_payment(payment=payment, cancelled_by=corrected_by, reason=f'corrected: {reason}', enforce_revert_rule=False)
         new_payment = record_payment(invoice=payment.invoice, amount=new_amount, method=method or payment.method, collected_by=payment.collected_by, collected_at=collected_at or payment.collected_at, created_by=corrected_by, reference=payment.reference, notes=payment.notes)
         new_payment.corrects = payment
         new_payment.save(update_fields=['corrects'])

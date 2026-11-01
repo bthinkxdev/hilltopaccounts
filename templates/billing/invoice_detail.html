@@ -59,10 +59,10 @@
             <span class="list-row__meta">{{ payment.collected_at }} by {{ payment.collected_by.get_full_name|default:payment.collected_by.username }}</span>
             {% if payment.is_cancelled %}
               <span class="pill pill--neutral">Cancelled</span>
-            {% elif can_manage %}
+            {% elif can_manage and user.is_owner %}
               <span class="quick-actions" style="margin:0;">
                 {# <a class="btn btn--ghost" href="{% url 'billing:payment_correct' payment.pk %}" data-modal>Correct</a> #}
-                <a class="btn btn--ghost" href="{% url 'billing:payment_cancel' payment.pk %}" data-modal>Cancel</a>
+                <a class="btn btn--ghost" href="{% url 'billing:payment_cancel' payment.pk %}?next={{ request.get_full_path|urlencode }}" data-modal>Revert</a>
               </span>
             {% endif %}
           </div>

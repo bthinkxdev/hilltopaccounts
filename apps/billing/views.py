@@ -13,6 +13,7 @@ from apps.accounts.models import User
 from apps.shared.exceptions import DomainError
 from apps.shared.forms import ReasonForm
 from apps.shared.pagination import paginate_queryset
+from apps.shared.redirects import safe_next
 from apps.shared.periods import period_context
 from apps.tenancy.models import Tenant
 from . import selectors as billing_selectors
@@ -156,6 +157,7 @@ def payment_list(request):
     period = period_context(request, allow_future=True)
     year, month = period['year'], period['month']
     today = date.today()
+    revert_scope = selectors.ManageScope(request.user)
 
     tab = request.GET.get('tab', 'all')
     if tab not in ('all', 'collected', 'pending'):
@@ -342,6 +344,8 @@ def payment_list(request):
             portfolio_deposit_received += dep_paid
             portfolio_deposit_pending += dep_pending
 
+            for p in r['payments']:
+                p.can_revert = revert_scope.can_revert_collection(villa.pk, villa.business_id, p.collected_by_id)
             decorated_rows.append(r)
             all_collection_rows.append(r)
 
@@ -406,11 +410,11 @@ def payment_list(request):
         rows = []
         for p in filtered(payments, 'invoice__'):
             month = p.invoice.billing_period_start
-            rows.append({'collected_at': p.collected_at, 'created_at': p.created_at, 'tenant': p.invoice.tenant, 'partition': p.invoice.tenant.partition, 'villa': p.invoice.tenant.partition.villa,
+            rows.append({'kind': 'rent', 'pk': p.pk, 'can_revert': revert_scope.can_revert_collection(p.invoice.tenant.partition.villa_id, p.invoice.tenant.partition.villa.business_id, p.collected_by_id), 'collected_at': p.collected_at, 'created_at': p.created_at, 'tenant': p.invoice.tenant, 'partition': p.invoice.tenant.partition, 'villa': p.invoice.tenant.partition.villa,
                          'for_label': f'{month:%B %Y}', 'for_flag': 'Arrears' if month < period['period_start'] else ('Advance rent' if month > period['period_end'] else ''),
                          'collected_by': p.collected_by, 'method': p.get_method_display(), 'amount': p.amount})
         for d in filtered(deposits, ''):
-            rows.append({'collected_at': d.collected_at, 'created_at': d.created_at, 'tenant': d.tenant, 'partition': d.tenant.partition, 'villa': d.tenant.partition.villa,
+            rows.append({'kind': 'advance', 'pk': d.pk, 'can_revert': revert_scope.can_revert_collection(d.tenant.partition.villa_id, d.tenant.partition.villa.business_id, d.collected_by_id), 'collected_at': d.collected_at, 'created_at': d.created_at, 'tenant': d.tenant, 'partition': d.tenant.partition, 'villa': d.tenant.partition.villa,
                          'for_label': 'Advance / deposit', 'for_flag': ('Arrears' if d.tenant.move_in_date < period['period_start'] else ('Advance' if d.tenant.move_in_date > period['period_end'] else '')), 'collected_by': d.collected_by, 'method': d.get_method_display(), 'amount': d.amount})
         for row in rows:
             # Time is known only when it was recorded on the collection day itself (a back-dated entry has no real time).
@@ -489,22 +493,33 @@ def payment_record(request, invoice_pk):
 
 @login_required
 def payment_cancel(request, pk):
-    payment = get_object_or_404(selectors.payments_visible_to(request.user), pk=pk)
-    if not _can_manage(request.user, payment.invoice.villa):
-        raise PermissionDenied('You cannot cancel this payment.')
+    """Revert a rent collection (popup with a mandatory reason). Returns to the page the user came from."""
+    from apps.businesses.selectors import payout_note
+    payment = get_object_or_404(selectors.payments_visible_to(request.user).select_related('invoice__partition__villa__business', 'invoice__tenant', 'collected_by'), pk=pk)
+    invoice, villa = payment.invoice, payment.invoice.villa
+    if not _can_manage(request.user, villa) or not selectors.can_revert_collection(request.user, villa, payment.collected_by_id):
+        raise PermissionDenied('Only the Admin can revert a collection.')
+    month = invoice.billing_period_start
+    back = safe_next(request, request.GET.get('next'), reverse('villas:villa_detail', args=[villa.pk]) + f'?period=month&year={month.year}&month={month.month}')
+    if payment.is_cancelled:
+        messages.info(request, 'This collection is already reverted.')
+        return redirect(back)
     if request.method == 'POST':
         form = ReasonForm(request.POST)
         if form.is_valid():
             try:
                 cancel_payment(payment=payment, cancelled_by=request.user, reason=form.cleaned_data['reason'])
-            except DomainError as exc:
+            except (DomainError, PermissionDenied) as exc:
                 form.add_error(None, str(exc))
             else:
-                messages.success(request, 'Payment cancelled.')
-                return redirect('billing:invoice_detail', pk=payment.invoice.pk)
+                messages.success(request, f'Collection of QAR {payment.amount} reverted — {month:%B %Y} rent for {invoice.tenant.name} is pending again.')
+                return redirect(back)
     else:
         form = ReasonForm()
-    return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Cancel payment of QAR {payment.amount}?', 'message': 'The original record is preserved and marked cancelled — never edited or deleted.', 'cancel_url': reverse('billing:invoice_detail', args=[payment.invoice.pk])})
+    message = (f'This reverses the QAR {payment.amount} collected on {payment.collected_at:%d %b %Y} for {month:%B %Y} ({invoice.tenant.name}, {invoice.partition.name}). '
+               f'That rent goes back to pending by exactly this amount. The record stays visible, marked reverted with your reason. Other collections and other months are not touched.'
+               + payout_note(villa, month.year, month.month))
+    return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Revert collection of QAR {payment.amount}?', 'message': message, 'submit_label': 'Revert collection', 'cancel_url': back})
 
 @login_required
 def payment_correct(request, pk):

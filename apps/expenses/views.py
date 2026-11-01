@@ -14,12 +14,13 @@ from apps.villas.models import Partition, Villa
 from apps.shared.forms import ReasonForm
 from apps.shared.pagination import paginate_queryset
 from apps.shared.periods import period_context, selected_month_start
+from apps.shared.redirects import safe_next
 from . import selectors as expense_selectors
 from .forms import ExpenseForm, MarkPaidForm, PayAheadForm, RecurringExpenseForm, ReviseExpenseForm
 from .models import Expense, PaidBy, RecurringExpense
 from .selectors import DueBucket
 from .services import (cancel_expense, can_pay_expense, create_expense, create_recurring_expense, pay_fixed_expense_ahead, deactivate_recurring_expense, get_or_create_category, mark_expense_paid,
-                       reverse_expense, revise_unpaid_expense, update_recurring_expense, verify_expense)
+                       reverse_expense, revert_expense_payment, revise_unpaid_expense, update_recurring_expense, verify_expense)
 
 def _can_manage_expense(user, expense):
     if expense.villa_id:
@@ -91,6 +92,7 @@ def expense_list(request):
         expense.can_manage = scope.can_manage_villa(expense.villa_id, expense.business_id) if expense.villa_id else scope.is_admin(expense.business_id)
         expense.can_pay = scope.can_pay_expense(expense)
         expense.can_verify = scope.can_verify_expense(expense)
+        expense.can_revert_payment = scope.can_revert_expense_payment(expense)
         expense.can_edit = expense.can_manage and expense.status == 'active' and expense.paid_on is None and not (is_field_staff and expense.paid_by == PaidBy.OWNER)
 
     User = get_user_model()
@@ -260,6 +262,33 @@ def expense_mark_paid(request, pk):
     else:
         form = MarkPaidForm(initial={'paid_on': date.today(), 'payment_method': expense.payment_method or Expense.Method.CASH})
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Mark paid — {expense.category} (QAR {expense.amount})', 'submit_label': 'Mark Paid', 'cancel_url': reverse('expenses:list')})
+
+@login_required
+def expense_revert_payment(request, pk):
+    """Undo a payment marked by mistake (popup with a mandatory reason). Only the payment is undone, nothing else."""
+    expense = get_object_or_404(selectors.expenses_visible_to(request.user).select_related('villa', 'business', 'category', 'recurring', 'paid_by_user'), pk=pk)
+    if not selectors.ManageScope(request.user).can_revert_expense_payment(expense, ignore_auto_debit=True):
+        raise PermissionDenied('Only the Admin can revert a payment.')
+    back = safe_next(request, request.GET.get('next'), reverse('villas:villa_detail', args=[expense.villa_id]) + f'?period=month&year={expense.date.year}&month={expense.date.month}')
+    if expense.paid_on is None:
+        messages.info(request, 'This expense is not marked paid.')
+        return redirect(back)
+    if request.method == 'POST':
+        form = ReasonForm(request.POST)
+        if form.is_valid():
+            try:
+                revert_expense_payment(expense=expense, reverted_by=request.user, reason=form.cleaned_data['reason'])
+            except (DomainError, PermissionDenied) as exc:
+                form.add_error(None, str(exc))
+            else:
+                messages.success(request, f'Payment of {expense.category} (QAR {expense.amount}) reverted — it is unpaid again.')
+                return redirect(back)
+    else:
+        form = ReasonForm()
+    payer = expense.paid_by_user.get_full_name() or expense.paid_by_user.username if expense.paid_by_user_id else 'unknown'
+    message = (f'This undoes the payment of {expense.category} — QAR {expense.amount} ({expense.villa.name}, {expense.date:%B %Y}) marked paid on {expense.paid_on:%d %b %Y} by {payer}. '
+               'The expense goes back to unpaid (and to the side that was expected to pay it); only the payment is removed. Its amount, its month and every other expense stay exactly as they are.')
+    return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Revert payment of {expense.category}?', 'message': message, 'submit_label': 'Revert payment', 'cancel_url': back})
 
 @login_required
 def recurring_pay_ahead(request, pk, year, month):

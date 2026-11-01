@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils import timezone
 from apps.audit import services as audit_services
@@ -64,7 +65,7 @@ def collect_deposit(*, tenant: Tenant, amount, method, collected_by, collected_a
     tenant.refresh_from_db()
     return collection
 
-def void_deposit(*, collection: DepositCollection, voided_by, reason, _action=Action.DEPOSIT_COLLECTION_VOIDED) -> DepositCollection:
+def void_deposit(*, collection: DepositCollection, voided_by, reason, _action=Action.DEPOSIT_COLLECTION_VOIDED, enforce_revert_rule=True) -> DepositCollection:
     """Cancel a wrongly recorded advance collection. The row is kept (marked voided, with who/when/why) and drops out of
     the tenant's received amount, income, profit and cash totals. Refused once the cash is part of a live handover."""
     from apps.cash.models import CashHandover
@@ -78,6 +79,9 @@ def void_deposit(*, collection: DepositCollection, voided_by, reason, _action=Ac
         villa = locked.tenant.partition.villa
         if villa.is_sold:
             raise DomainError(f'Cannot change advance collections of sold villa “{villa.name}”.')
+        from apps.accounts import selectors as access
+        if enforce_revert_rule and not access.can_revert_collection(voided_by, villa, locked.collected_by_id):
+            raise PermissionDenied('Only the Admin can revert an advance collection.')
         if locked.handovers.filter(status=CashHandover.Status.CONFIRMED).exists():
             raise DomainError('This advance is part of a confirmed cash handover and cannot be cancelled directly.')
         if locked.handovers.filter(status=CashHandover.Status.SUBMITTED).exists():
@@ -102,7 +106,7 @@ def correct_deposit(*, collection: DepositCollection, new_amount, voided_by, rea
     if collected_at > date.today():
         raise DomainError('Collection date cannot be in the future.')
     with transaction.atomic():
-        void_deposit(collection=collection, voided_by=voided_by, reason=f'corrected: {reason}', _action=Action.DEPOSIT_COLLECTION_CORRECTED)
+        void_deposit(collection=collection, voided_by=voided_by, reason=f'corrected: {reason}', _action=Action.DEPOSIT_COLLECTION_CORRECTED, enforce_revert_rule=False)
         locked = Tenant.objects.select_for_update().select_related('partition__villa__business').get(pk=collection.tenant_id)
         if new_amount > locked.deposit_pending:
             raise DomainError(f'Only QAR {locked.deposit_pending} of the advance can be collected after cancelling this entry.')

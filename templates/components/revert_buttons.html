@@ -1,0 +1,2 @@
+{# A visible Revert button for each collection listed under a rent row. Needs `payments`, each with can_revert set by the view (Admin only). #}
+{% for p in payments %}{% if p.can_revert %}<a class="btn btn--ghost btn--sm" data-modal href="{% url 'billing:payment_cancel' p.pk %}?next={{ request.get_full_path|urlencode }}" title="Collected by mistake? Revert this collection with a reason.">Revert{% if payments|length > 1 %} QAR {{ p.amount|floatformat:"2g" }}{% endif %}</a>{% endif %}{% endfor %}

@@ -93,6 +93,7 @@
             <th>For</th>
             <th>Collected By</th>
             <th style="text-align: right; padding-right: 20px;">Amount</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -119,9 +120,10 @@
                 <div style="color: var(--text-secondary); font-size: 11px; margin-top: 2px;">{{ p.method }}</div>
               </td>
               <td style="text-align: right; padding-right: 20px; font-weight: 600; font-variant-numeric: tabular-nums;">QAR {{ p.amount|floatformat:"2g" }}</td>
+              <td style="white-space: nowrap;">{% if p.can_revert %}<a class="btn btn--ghost btn--sm" href="{% if p.kind == 'advance' %}{% url 'tenancy:deposit_void' p.pk %}{% else %}{% url 'billing:payment_cancel' p.pk %}{% endif %}?next={{ request.get_full_path|urlencode }}" data-modal title="Collected by mistake? Revert it with a reason.">Revert</a>{% endif %}</td>
             </tr>
           {% empty %}
-            <tr><td colspan="6" style="text-align: center; padding: var(--space-6); color: var(--text-secondary);">Nothing collected yet for {{ period_label }}.</td></tr>
+            <tr><td colspan="7" style="text-align: center; padding: var(--space-6); color: var(--text-secondary);">Nothing collected yet for {{ period_label }}.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -143,6 +145,7 @@
             <span>{% if p.collected_by.is_owner %}Admin{% if name != "Admin" %} {{ name }}{% endif %}{% else %}Staff {{ name }}{% endif %} · {{ p.method }}</span>
           {% endwith %}
         </div>
+        {% if p.can_revert %}<div style="margin-top: var(--space-2);"><a class="btn btn--ghost btn--sm" href="{% if p.kind == 'advance' %}{% url 'tenancy:deposit_void' p.pk %}{% else %}{% url 'billing:payment_cancel' p.pk %}{% endif %}?next={{ request.get_full_path|urlencode }}" data-modal>Revert</a></div>{% endif %}
       </div>
     {% empty %}
       <div class="collections-card" style="text-align: center; padding: var(--space-6); color: var(--text-secondary);">Nothing collected yet for {{ period_label }}.</div>
@@ -288,6 +291,7 @@
                   {% elif row.status == "collected" and row.deposit_pending == 0 %}
                     <span style="color: var(--success); font-size: 13px; font-weight: 500;">✓ Done</span>
                   {% endif %}
+                  {% include "components/revert_buttons.html" with payments=row.payments %}
                 </div>
               </td>
             </tr>
@@ -412,6 +416,7 @@
           {% elif row.status == "collected" and row.deposit_pending == 0 %}
             <div style="color: var(--success); font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: flex-end; width: 100%;">✓ All Collected</div>
           {% endif %}
+          {% include "components/revert_buttons.html" with payments=row.payments %}
         </div>
       </div>
     {% empty %}
@@ -440,6 +445,7 @@
             {% endfor %}
           </div>
           <span class="pill pill--danger">Overdue</span>
+          {% include "components/revert_buttons.html" with payments=row.payments %}
           {% if row.can_manage %}
             {% if row.is_current %}
               <button class="btn btn--primary btn--sm" type="button"

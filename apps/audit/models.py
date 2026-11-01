@@ -40,6 +40,7 @@ class Action(models.TextChoices):
     EXPENSE_CREATED = ('expense.created', 'Expense created')
     EXPENSE_UPDATED = ('expense.updated', 'Expense updated')
     EXPENSE_CANCELLED = ('expense.cancelled', 'Expense cancelled')
+    EXPENSE_PAYMENT_REVERTED = ('expense.payment_reverted', 'Expense payment reverted')
     CASH_HANDOVER_CREATED = ('cash_handover.created', 'Cash handover created')
     CASH_HANDOVER_SUBMITTED = ('cash_handover.submitted', 'Cash handover submitted')
     CASH_HANDOVER_CONFIRMED = ('cash_handover.confirmed', 'Cash handover confirmed')

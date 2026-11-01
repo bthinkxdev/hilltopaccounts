@@ -4,6 +4,15 @@ from django.db.models import Count, Q
 from .models import PartnerPayout, PartnerVillaShare
 
 
+def payout_note(villa, year, month) -> str:
+    """A sentence for a revert popup when partners were already paid for that villa-month: reverting changes the profit
+    they were paid on, and their balance will show the difference."""
+    from .models import PartnerPayout
+    if PartnerPayout.objects.filter(villa=villa, period_year=year, period_month=month).exists():
+        return f' Partners were already paid for {villa.name} in {date(year, month, 1):%B %Y}: their balance will show the difference.'
+    return ''
+
+
 def payouts_for_villas(villas, year: int, month: int | None = None, partner_ids=None) -> list:
     """Payouts that count against these villas' partner shares for a month (or a whole year when month is None).
 

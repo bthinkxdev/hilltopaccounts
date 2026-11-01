@@ -189,11 +189,14 @@ def villa_detail(request, pk):
         expense.due_state = expenses_selectors.due_state(expense, today)
         expense.can_pay = scope.can_pay_expense(expense)
         expense.can_verify = scope.can_verify_expense(expense)
+        expense.can_revert_payment = scope.can_revert_expense_payment(expense) and not villa.is_sold
         expense.can_edit = can_manage and expense.status == 'active' and expense.paid_on is None and not (is_field_staff and expense.paid_by == 'owner')
         return expense
 
     one_off = [decorate(e) for e in expenses.filter(date__gte=start, date__lte=end, recurring__isnull=True).select_related('category', 'partition', 'created_by', 'paid_by_user').order_by('-created_at', '-id')[:15]]
     rent_rows, rent_totals = (billing_selectors.rent_sheet(tenants=tenants + past_tenants, invoice_queryset=invoices, year=period['year'], month=period['month'], today=today) if period['period'] == 'month' else (None, None))
+    for row in rent_rows or []:
+        selectors.flag_revertable_payments(row['payments'], scope, villa)
     fixed_rows, fixed_totals = expenses_selectors.fixed_expense_checklist(villa, period['year'], period['month'], today) if period['period'] == 'month' else (None, None)
     side_names = {'owner': 'Admin', 'staff': 'Staff'}
     for row in fixed_rows or []:
@@ -523,11 +526,14 @@ def partition_detail(request, pk):
     recent_expenses = list(expenses.filter(date__gte=start, date__lte=end).select_related('category', 'paid_by_user', 'created_by').order_by('-created_at', '-id'))
     scope = selectors.ManageScope(request.user)
     can_manage_here = scope.can_manage_villa(villa.pk, villa.business_id) and not villa.is_sold
+    for invoice in invoices:
+        selectors.flag_revertable_payments(invoice.live_payments, scope, villa)
     is_staff = selectors.is_field_staff(request.user)
     for expense in recent_expenses:
         expense.due_state = expenses_selectors.due_state(expense, today)
         expense.can_pay = scope.can_pay_expense(expense) and not villa.is_sold
         expense.can_verify = scope.can_verify_expense(expense) and not villa.is_sold
+        expense.can_revert_payment = scope.can_revert_expense_payment(expense) and not villa.is_sold
         expense.can_edit = can_manage_here and expense.status == 'active' and expense.paid_on is None and not (is_staff and expense.paid_by == 'owner')
     from apps.tenancy.models import Tenant
     past_tenants = list(selectors.tenants_visible_to(request.user).filter(partition=partition, status=Tenant.Status.MOVED_OUT).order_by('-move_out_date', '-id'))

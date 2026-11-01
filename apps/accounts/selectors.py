@@ -181,6 +181,7 @@ class ManageScope:
     """Who-can-do-what for one user, loaded once so list pages never query permissions per row."""
 
     def __init__(self, user):
+        self.user_id = user.pk
         self.is_owner = user.is_owner
         self.admin_business_ids = set()
         self.staff_villa_ids = set()
@@ -216,3 +217,26 @@ class ManageScope:
             return False
         return expense.villa_id is not None and expense.villa_id in self.staff_villa_ids
 
+    def can_revert_collection(self, villa_id, business_id, collected_by_id) -> bool:
+        """Reverting a rent or advance collection is an Admin-only action: it rewrites what has been recorded as received."""
+        return self.is_owner
+
+    def can_revert_expense_payment(self, expense, ignore_auto_debit=False) -> bool:
+        """Reverting an expense payment is Admin-only. Never for an auto-debit that would simply be paid again (unless
+        asked to ignore that, so the popup can explain why)."""
+        if expense.status != Expense.Status.ACTIVE or expense.paid_on is None:
+            return False
+        if not ignore_auto_debit and expense.auto_debit_resettles:
+            return False
+        return self.is_owner
+
+
+def can_revert_collection(user, villa, collected_by_id) -> bool:
+    return ManageScope(user).can_revert_collection(villa.pk, villa.business_id, collected_by_id)
+
+
+def flag_revertable_payments(payments, scope, villa) -> None:
+    """Sets `can_revert` on each payment shown for one villa, from a scope loaded once for the page."""
+    sold = villa.is_sold
+    for p in payments:
+        p.can_revert = (not sold) and scope.can_revert_collection(villa.pk, villa.business_id, p.collected_by_id)

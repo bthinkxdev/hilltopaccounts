@@ -205,21 +205,21 @@ def tenant_deposit_edit(request, pk):
     })
 
 
-def _deposit_for_change(request, pk):
+def _deposit_for_change(request, pk, for_revert=False):
     collection = get_object_or_404(DepositCollection.all_objects.select_related('tenant__partition__villa'), pk=pk, tenant__in=selectors.tenants_visible_to(request.user))
     villa = collection.tenant.partition.villa
     if villa.is_sold:
         raise PermissionDenied('Cannot change advance collections of a sold villa.')
-    if not (request.user.is_owner or selectors.can_manage_villa(request.user, villa)):
-        raise PermissionDenied('You cannot change this advance collection.')
+    if not (request.user.is_owner or selectors.can_manage_villa(request.user, villa)) or (for_revert and not selectors.can_revert_collection(request.user, villa, collection.collected_by_id)):
+        raise PermissionDenied('Only the Admin can revert an advance collection.' if for_revert else 'You cannot change this advance collection.')
     return collection, reverse('tenancy:detail', args=[collection.tenant_id])
 
 @login_required
 def deposit_void(request, pk):
-    collection, back = _deposit_for_change(request, pk)
+    collection, back = _deposit_for_change(request, pk, for_revert=True)
     back = _safe_back(request, request.GET.get('next'), back)
     if collection.is_voided:
-        messages.info(request, 'This advance collection is already cancelled.')
+        messages.info(request, 'This advance collection is already reverted.')
         return redirect(back)
     if request.method == 'POST':
         form = ReasonForm(request.POST)
@@ -229,11 +229,15 @@ def deposit_void(request, pk):
             except DomainError as exc:
                 form.add_error(None, str(exc))
             else:
-                messages.success(request, f'Advance collection of QAR {collection.amount} cancelled. It is pending again.')
+                messages.success(request, f'Advance collection of QAR {collection.amount} reverted — it is pending again.')
                 return redirect(back)
     else:
         form = ReasonForm()
-    return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Cancel advance collection of QAR {collection.amount}?', 'message': 'The record is kept and marked cancelled (never deleted). The amount is removed from income and becomes pending again.', 'submit_label': 'Cancel collection', 'cancel_url': back})
+    from apps.businesses.selectors import payout_note
+    tenant, move_in = collection.tenant, collection.tenant.move_in_date
+    message = (f'This reverses the QAR {collection.amount} advance collected on {collection.collected_at:%d %b %Y} from {tenant.name}. It is removed from income, profit and cash totals of {move_in:%B %Y} (the month the advance belongs to) and becomes pending again by exactly this amount. '
+               'The record stays visible, marked reverted with your reason. Other collections and months are not touched.' + payout_note(collection.tenant.partition.villa, move_in.year, move_in.month))
+    return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Revert advance collection of QAR {collection.amount}?', 'message': message, 'submit_label': 'Revert collection', 'cancel_url': back})
 
 @login_required
 def deposit_correct(request, pk):

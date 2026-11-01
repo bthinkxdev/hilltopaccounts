@@ -349,6 +349,7 @@
             {% elif row.status == "partial" %}<span class="pill pill--warning">{{ row.balance|floatformat:"2g" }} left</span>
             {% elif row.status == "overdue" %}<span class="pill pill--danger">Overdue</span>
             {% else %}<span class="pill pill--neutral">Pending</span>{% endif %}
+            {% include "components/revert_buttons.html" with payments=row.payments %}
             {% if not row.is_current %}
               <span class="pill pill--neutral">Moved out</span>
               {% if row.status != "collected" and can_manage and row.invoice %}<a class="btn btn--ghost btn--sm" href="{% url 'billing:payment_record' row.invoice.pk %}" data-modal>Record payment</a>{% endif %}

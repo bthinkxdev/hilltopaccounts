@@ -103,6 +103,13 @@ class Expense(models.Model):
         return self.paid_on is not None
 
     @property
+    def auto_debit_resettles(self) -> bool:
+        """True when this is an auto-debit expense already due: the scheduled auto-debit would mark it paid again straight
+        after a revert, so its payment cannot be reverted until auto-debit is switched off."""
+        from datetime import date
+        return self.recurring_id is not None and bool(self.recurring.auto_debit) and self.due_date is not None and self.due_date <= date.today()
+
+    @property
     def is_verified(self) -> bool:
         return self.verified_at is not None
 
