@@ -82,6 +82,7 @@ class Expense(models.Model):
     paid_by_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+', null=True, blank=True)
     verified_at = models.DateTimeField(null=True, blank=True, help_text='When the Admin / Business Manager confirmed the payment as received/valid.')
     verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+', null=True, blank=True)
+    auto_debit_skipped = models.BooleanField(default=False, help_text='Set when an auto-debit payment of this month was reverted: auto-debit does not pay this month again, it is paid by hand.')
     recurring = models.ForeignKey(RecurringExpense, on_delete=models.PROTECT, related_name='expenses', null=True, blank=True)
     period = models.DateField(null=True, blank=True, help_text='First day of the month a recurring expense belongs to.')
     description = models.TextField(blank=True)
@@ -104,10 +105,10 @@ class Expense(models.Model):
 
     @property
     def auto_debit_resettles(self) -> bool:
-        """True when this is an auto-debit expense already due: the scheduled auto-debit would mark it paid again straight
-        after a revert, so its payment cannot be reverted until auto-debit is switched off."""
+        """True when the scheduled auto-debit would pay this expense (again): an auto-debit expense that is already due and
+        has not been switched off for this month."""
         from datetime import date
-        return self.recurring_id is not None and bool(self.recurring.auto_debit) and self.due_date is not None and self.due_date <= date.today()
+        return self.recurring_id is not None and bool(self.recurring.auto_debit) and not self.auto_debit_skipped and self.due_date is not None and self.due_date <= date.today()
 
     @property
     def is_verified(self) -> bool:

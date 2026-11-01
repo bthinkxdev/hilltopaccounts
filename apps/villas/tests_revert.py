@@ -139,15 +139,37 @@ class ExpensePaymentRevertTests(VillaStatsBase):
         revert_expense_payment(expense=self.this, reverted_by=self.owner, reason='x')
         self.assertIsNone(self.reload(self.this).paid_on)
 
-    def test_an_auto_debit_that_is_already_due_cannot_be_reverted_because_it_would_just_be_paid_again(self):
+    def test_an_auto_debit_payment_can_be_reverted_and_is_not_paid_again_by_itself_but_other_months_stay_automatic(self):
+        from apps.expenses.services import ensure_fixed_expenses
+        auto = create_recurring_expense(villa=self.villa, category=get_or_create_category(name='Owner debit'), amount=900, due_day=1, created_by=self.owner, auto_debit=True, start_period=months_back(1))
+        settle_auto_debits(today=TODAY)
+        last, this = Expense.objects.get(recurring=auto, period=months_back(1)), Expense.objects.get(recurring=auto, period=THIS_MONTH)
+        self.assertIsNotNone(last.paid_on)
+        self.assertIsNotNone(this.paid_on)
+        self.assertContains(self.client.get(reverse('villas:villa_detail', args=[self.villa.pk])), reverse('expenses:revert_payment', args=[this.pk]))  # the button is there
+        revert_expense_payment(expense=this, reverted_by=self.owner, reason='the bank debit was a mistake')
+        fresh = self.reload(this)
+        self.assertEqual((fresh.paid_on, fresh.auto_debit_skipped, fresh.amount), (None, True, 900))
+        # nothing pays it again by itself: not the scheduled run, not opening pages
+        self.assertEqual(settle_auto_debits(today=TODAY), 0)
+        ensure_fixed_expenses(villa_ids=[self.villa.pk], year=THIS_MONTH.year, month=THIS_MONTH.month)
+        self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]))
+        self.assertIsNone(self.reload(this).paid_on)
+        # the previous month's auto-debit is untouched, and the same expense can still be paid by hand
+        self.assertIsNotNone(self.reload(last).paid_on)
+        mark_expense_paid(expense=self.reload(this), paid_on=TODAY, payment_method='bank_transfer', marked_by=self.owner)
+        self.assertIsNotNone(self.reload(this).paid_on)
+
+    def test_a_future_auto_debit_month_keeps_paying_itself_when_due(self):
         auto = create_recurring_expense(villa=self.villa, category=get_or_create_category(name='Owner debit'), amount=900, due_day=1, created_by=self.owner, auto_debit=True, start_period=THIS_MONTH)
         settle_auto_debits(today=TODAY)
-        e = Expense.objects.get(recurring=auto, period=THIS_MONTH)
-        self.assertIsNotNone(e.paid_on)
-        with self.assertRaises(DomainError) as ctx:
-            revert_expense_payment(expense=e, reverted_by=self.owner, reason='x')
-        self.assertIn('auto-debit', str(ctx.exception).lower())
-        self.assertIsNotNone(self.reload(e).paid_on)
+        nxt = (THIS_MONTH + timedelta(days=35)).replace(day=1)
+        from apps.expenses.services import pay_fixed_expense_ahead
+        paid_ahead = pay_fixed_expense_ahead(recurring=auto, year=nxt.year, month=nxt.month, paid_on=TODAY, payment_method='bank_transfer', marked_by=self.owner)
+        revert_expense_payment(expense=paid_ahead, reverted_by=self.owner, reason='paid ahead by mistake')
+        fresh = self.reload(paid_ahead)
+        self.assertFalse(fresh.auto_debit_skipped)  # not due yet: auto-debit still takes it on its due date
+        self.assertEqual(settle_auto_debits(today=nxt), 1)
 
     def test_a_sold_villa_is_refused(self):
         self.pay_as_admin(self.this)
@@ -369,6 +391,23 @@ class RentCollectionRevertTests(VillaStatsBase):
             self.assertNotContains(self.client.get(reverse('villas:villa_detail', args=[self.villa.pk])), link, msg_prefix=username)
             self.assertNotContains(self.client.get(reverse('billing:payment_list'), {'tab': 'collected', 'period': 'month', 'year': THIS_MONTH.year, 'month': THIS_MONTH.month}), link, msg_prefix=username)
 
+    def test_revert_is_a_visible_button_beside_the_status_with_one_button_per_partial_collection(self):
+        self.collect(self.p1, THIS_MONTH, amount=1500)
+        self.collect(self.p1, THIS_MONTH, amount=800)
+        first, second = self.payments(self.p1, THIS_MONTH)
+        page = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]))
+        for payment, label in ((first, 'Revert QAR 1,500.00'), (second, 'Revert QAR 800.00')):
+            self.assertContains(page, f'data-modal href="{reverse("billing:payment_cancel", args=[payment.pk])}?next=')
+            self.assertContains(page, f'>{label}</a>')
+        # a row with a single collection says just "Revert"
+        self.collect(self.p2, THIS_MONTH)
+        self.assertContains(self.client.get(reverse('villas:villa_detail', args=[self.villa.pk])), '>Revert</a>')
+        # reverting one leaves the other collection and its button
+        cancel_payment(payment=first, cancelled_by=self.owner, reason='x')
+        page = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]))
+        self.assertNotContains(page, reverse('billing:payment_cancel', args=[first.pk]))
+        self.assertContains(page, reverse('billing:payment_cancel', args=[second.pk]))
+
     def test_a_reverted_collection_leaves_the_collected_list_and_the_pending_list_shows_the_rent_again(self):
         self.collect(self.p1, THIS_MONTH)
         payment = self.payments(self.p1, THIS_MONTH)[0]
@@ -402,3 +441,45 @@ class AdvanceCollectionRevertTests(VillaStatsBase):
         self.tenant.refresh_from_db()
         self.assertEqual(self.tenant.deposit_paid, 0)
         self.assertEqual(self.tenant.deposit_pending, 3000)
+
+
+
+class PartnerPayoutRevertButtonTests(VillaStatsBase):
+    """A partner payout paid by mistake can be reverted by the Admin, from the villa page and the partner page."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.businesses.models import Partner, PartnerPayout, PartnerVillaShare
+        self.login('owner')
+        self.partner = Partner.objects.create(name='P', created_by=self.owner)
+        PartnerVillaShare.objects.create(partner=self.partner, villa=self.villa, percentage=Decimal('50.00'))
+        self.collect(self.p1, THIS_MONTH)
+        self.collect(self.p1, LAST_MONTH)
+        self.payout = PartnerPayout.objects.create(partner=self.partner, villa=self.villa, period_year=THIS_MONTH.year, period_month=THIS_MONTH.month, amount=Decimal('300.00'), paid_on=TODAY, created_by=self.owner)
+        self.other_month = PartnerPayout.objects.create(partner=self.partner, villa=self.villa, period_year=LAST_MONTH.year, period_month=LAST_MONTH.month, amount=Decimal('200.00'), paid_on=TODAY, created_by=self.owner)
+        self.url = reverse('businesses:partner_payout_void', args=[self.payout.pk])
+
+    def test_the_admin_sees_a_revert_button_beside_the_partner_payout_on_the_villa_page_and_on_the_partner_page(self):
+        self.assertContains(self.client.get(reverse('villas:villa_detail', args=[self.villa.pk])), self.url)
+        self.assertContains(self.client.get(reverse('businesses:partner_detail', args=[self.partner.pk])), self.url)
+
+    def test_nobody_but_the_admin_gets_the_button_or_the_action(self):
+        for username in ('manager', 'staff'):
+            self.login(username)
+            self.assertNotContains(self.client.get(reverse('villas:villa_detail', args=[self.villa.pk])), self.url, msg_prefix=username)
+            self.assertEqual(self.client.post(self.url, {'reason': 'x'}).status_code, 403, username)
+
+    def test_the_popup_needs_a_reason_then_reverts_only_that_payout_and_returns_to_the_page(self):
+        from apps.businesses.models import PartnerPayout
+        r = self.client.post(self.url, {'reason': ''}, **MODAL)
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn('X-Modal-Redirect', r)
+        self.assertFalse(PartnerPayout.all_objects.get(pk=self.payout.pk).is_voided)
+        back = reverse('villas:villa_detail', args=[self.villa.pk])
+        r = self.client.post(f'{self.url}?next={back}', {'reason': 'paid the wrong partner'}, **MODAL)
+        self.assertEqual(r['X-Modal-Redirect'], back)
+        reverted = PartnerPayout.all_objects.get(pk=self.payout.pk)
+        self.assertEqual((reverted.is_voided, reverted.void_reason), (True, 'paid the wrong partner'))
+        self.assertFalse(PartnerPayout.all_objects.get(pk=self.other_month.pk).is_voided)  # another month's payout is untouched
+        self.assertContains(self.client.get(back), 'reverted')
+        self.assertNotContains(self.client.get(back), self.url)  # reverted: no second button

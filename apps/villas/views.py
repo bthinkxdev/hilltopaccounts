@@ -300,6 +300,7 @@ def villa_detail(request, pk):
             partner_payouts = [p for p in payouts if p.partner_id == s.partner_id]
             s.paid_amount = sum((p.amount for p in partner_payouts), Decimal('0.00'))
             s.payout = partner_payouts[-1] if partner_payouts else None
+            s.payouts = partner_payouts
             s.remaining = max(Decimal('0.00'), s.cut - s.paid_amount)
             s.is_fully_paid = (s.paid_amount >= s.cut and s.cut > 0)
             s.is_partial = (0 < s.paid_amount < s.cut)

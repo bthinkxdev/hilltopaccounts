@@ -147,6 +147,7 @@
                 {% else %}
                   <span class="pill pill--neutral" style="font-size: 11px;">No Profit</span>
                 {% endif %}
+                {% if user.is_owner %}{% for payout in share.payouts %}<a class="btn btn--ghost btn--sm" data-modal href="{% url 'businesses:partner_payout_void' payout.pk %}?next={{ request.get_full_path|urlencode }}" title="Paid by mistake? Revert this payout with a reason.">Revert{% if share.payouts|length > 1 %} QAR {{ payout.amount|floatformat:"2g" }}{% endif %}</a>{% endfor %}{% endif %}
               </div>
             </div>
           </div>

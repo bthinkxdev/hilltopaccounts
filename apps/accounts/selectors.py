@@ -221,14 +221,9 @@ class ManageScope:
         """Reverting a rent or advance collection is an Admin-only action: it rewrites what has been recorded as received."""
         return self.is_owner
 
-    def can_revert_expense_payment(self, expense, ignore_auto_debit=False) -> bool:
-        """Reverting an expense payment is Admin-only. Never for an auto-debit that would simply be paid again (unless
-        asked to ignore that, so the popup can explain why)."""
-        if expense.status != Expense.Status.ACTIVE or expense.paid_on is None:
-            return False
-        if not ignore_auto_debit and expense.auto_debit_resettles:
-            return False
-        return self.is_owner
+    def can_revert_expense_payment(self, expense) -> bool:
+        """Reverting an expense payment is Admin-only, for an active expense that is marked paid."""
+        return self.is_owner and expense.status == Expense.Status.ACTIVE and expense.paid_on is not None
 
 
 def can_revert_collection(user, villa, collected_by_id) -> bool:

@@ -17,7 +17,7 @@ class ExpenseNotPayable(DomainError):
 class ExpenseNotEditable(DomainError):
     pass
 
-TRACKED_FIELDS = ['business_id', 'villa_id', 'partition_id', 'category_id', 'amount', 'date', 'due_date', 'paid_on', 'payment_method', 'paid_by', 'paid_by_user_id', 'verified_at', 'verified_by_id', 'description', 'reference']
+TRACKED_FIELDS = ['auto_debit_skipped', 'business_id', 'villa_id', 'partition_id', 'category_id', 'amount', 'date', 'due_date', 'paid_on', 'payment_method', 'paid_by', 'paid_by_user_id', 'verified_at', 'verified_by_id', 'description', 'reference']
 RECURRING_TRACKED_FIELDS = ['villa_id', 'category_id', 'amount', 'due_day', 'paid_by', 'auto_debit', 'is_active']
 
 def get_or_create_category(*, name) -> ExpenseCategory:
@@ -124,8 +124,8 @@ def _side_before_payment(expense: Expense) -> str:
 def revert_expense_payment(*, expense: Expense, reverted_by, reason) -> Expense:
     """Undo a payment that was marked by mistake. Only the payment is undone: the expense goes back to unpaid, on the side
     it was on before (Admin / Staff), with no payer, method, date or verification. Its amount, month, category and every
-    other expense are untouched, so no other month changes. Refused when the cash is part of a handover, when an
-    auto-debit would just pay it again, or for a sold villa. The reason is mandatory and the old and new state is audited."""
+    other expense are untouched, so no other month changes. Refused when the cash is part of a handover or for a sold
+    villa. Reverting an auto-debit payment switches auto-debit off for that one month (it is paid by hand); other months stay automatic. The reason is mandatory and the old and new state is audited."""
     from apps.cash.models import CashHandover
     reason = (reason or '').strip()
     if not reason:
@@ -138,16 +138,16 @@ def revert_expense_payment(*, expense: Expense, reverted_by, reason) -> Expense:
             raise ExpenseNotPayable('This expense is not marked paid, so there is no payment to revert.')
         if locked.villa.is_sold:
             raise DomainError(f'Cannot change expenses of sold villa “{locked.villa.name}”.')
-        if not selectors.ManageScope(reverted_by).can_revert_expense_payment(locked, ignore_auto_debit=True):
+        if not selectors.ManageScope(reverted_by).can_revert_expense_payment(locked):
             raise PermissionDenied('Only the Admin can revert a payment.')
-        if locked.auto_debit_resettles:
-            raise DomainError('This is an auto-debit expense that is already due: it would be paid again straight away. Switch auto-debit off for it first (Edit the monthly expense), then revert.')
         if locked.handovers.filter(status=CashHandover.Status.CONFIRMED).exists():
             raise DomainError('This payment is part of a confirmed cash handover and cannot be reverted directly.')
         if locked.handovers.filter(status=CashHandover.Status.SUBMITTED).exists():
             raise DomainError('This payment is part of a pending cash handover. Reject the handover first.')
         side = _side_before_payment(locked)
         old_value = _snapshot(locked)
+        if locked.auto_debit_resettles:
+            locked.auto_debit_skipped = True  # auto-debit must not pay this month again straight after the revert; it is paid by hand
         locked.paid_on = None
         locked.payment_method = ''
         locked.paid_by_user = None
@@ -156,7 +156,7 @@ def revert_expense_payment(*, expense: Expense, reverted_by, reason) -> Expense:
         locked.paid_by = side
         locked.updated_by = reverted_by
         locked.full_clean()
-        locked.save(update_fields=['paid_on', 'payment_method', 'paid_by', 'paid_by_user', 'verified_at', 'verified_by', 'updated_by', 'updated_at'])
+        locked.save(update_fields=['paid_on', 'payment_method', 'paid_by', 'paid_by_user', 'verified_at', 'verified_by', 'auto_debit_skipped', 'updated_by', 'updated_at'])
         audit_services.log(user=reverted_by, action=Action.EXPENSE_PAYMENT_REVERTED, obj=locked, business=locked.business, villa=locked.villa, old_value=old_value, new_value=_snapshot(locked), reason=reason)
     return locked
 
@@ -198,7 +198,7 @@ def settle_auto_debits(*, today=None, villa=None, villa_ids=None) -> int:
     """Mark fixed expenses flagged auto-debit as paid once their due date has arrived. Returns how many were settled."""
     from apps.accounts.services import get_system_user
     today = today or date_type.today()
-    due = Expense.objects.filter(status=Expense.Status.ACTIVE, paid_on__isnull=True, recurring__auto_debit=True, due_date__lte=today)
+    due = Expense.objects.filter(status=Expense.Status.ACTIVE, paid_on__isnull=True, recurring__auto_debit=True, auto_debit_skipped=False, due_date__lte=today)
     if villa is not None:
         due = due.filter(villa=villa)
     if villa_ids is not None:
@@ -211,7 +211,7 @@ def settle_auto_debits(*, today=None, villa=None, villa_ids=None) -> int:
     for pk in pks:
         with transaction.atomic():
             locked = Expense.objects.select_for_update().select_related('villa', 'business').get(pk=pk)
-            if locked.paid_on is not None or locked.status != Expense.Status.ACTIVE:
+            if locked.paid_on is not None or locked.status != Expense.Status.ACTIVE or locked.auto_debit_skipped:
                 continue
             _settle(locked, paid_on=locked.due_date, payment_method=Expense.Method.BANK_TRANSFER, actor=system_user, payer=system_user, admin=True, reason='auto-debit from owner account')
             settled += 1

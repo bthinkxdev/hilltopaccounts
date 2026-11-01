@@ -18,6 +18,7 @@ from apps.audit import services as audit_services
 from apps.audit.models import Action
 from apps.villas.models import Villa
 from apps.shared.forms import ReasonForm
+from apps.shared.redirects import safe_next
 from .forms import ArchiveReasonForm, BusinessForm, PartnerForm, PartnerPayoutCorrectionForm, PartnerPayoutForm, PartnerShareForm
 from .models import Partner, PartnerPayout, PartnerVillaShare
 from .services import archive_business, correct_payout, create_business, unarchive_business, void_payout
@@ -515,26 +516,30 @@ def partner_payout_create(request, partner_pk):
 
 @login_required
 def partner_payout_void(request, pk):
+    """Revert a partner payout paid by mistake (popup with a mandatory reason). Admin only."""
     if not request.user.is_owner:
-        raise PermissionDenied('Only the admin can void payouts.')
+        raise PermissionDenied('Only the Admin can revert a payout.')
     payout = get_object_or_404(PartnerPayout.all_objects.select_related('partner', 'villa'), pk=pk)
-    back = reverse('businesses:partner_detail', args=[payout.partner_id])
+    back = safe_next(request, request.GET.get('next'), reverse('businesses:partner_detail', args=[payout.partner_id]))
     if payout.is_voided:
-        messages.info(request, 'This payout is already voided.')
+        messages.info(request, 'This payout is already reverted.')
         return redirect(back)
     if request.method == 'POST':
         form = ReasonForm(request.POST)
         if form.is_valid():
             try:
                 void_payout(payout=payout, voided_by=request.user, reason=form.cleaned_data['reason'])
-            except DomainError as exc:
+            except (DomainError, PermissionDenied) as exc:
                 form.add_error(None, str(exc))
             else:
-                messages.success(request, f'Payout of QAR {payout.amount} voided. That amount now counts as unpaid again.')
+                messages.success(request, f'Payout of QAR {payout.amount} to {payout.partner.name} reverted. That amount is unpaid again.')
                 return redirect(back)
     else:
         form = ReasonForm()
-    return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Void payout of QAR {payout.amount} to {payout.partner.name}?', 'message': 'The record is kept and marked voided (never deleted). The amount will no longer count as paid.', 'submit_label': 'Void payout', 'cancel_url': back})
+    message = (f'This reverses the QAR {payout.amount} paid to {payout.partner.name} for {payout.period_month:02d}/{payout.period_year}'
+               f'{" (" + payout.villa.name + ")" if payout.villa_id else ""}. It becomes unpaid again by exactly this amount. '
+               'The record stays visible, marked reverted with your reason. Other payouts and months are not touched.')
+    return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Revert payout of QAR {payout.amount} to {payout.partner.name}?', 'message': message, 'submit_label': 'Revert payout', 'cancel_url': back})
 
 
 @login_required

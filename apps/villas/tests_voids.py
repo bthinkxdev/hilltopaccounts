@@ -181,5 +181,5 @@ class PartnerPayoutVoidTests(VillaStatsBase):
         self.login('owner')
         page = self.client.get(reverse('businesses:partner_detail', args=[self.partner.pk]))
         self.assertEqual(page.status_code, 200)
-        self.assertContains(page, 'Voided')
+        self.assertContains(page, 'Reverted')
         self.assertContains(page, 'bounced')

@@ -1,3 +1,4 @@
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils import timezone
 from apps.audit import services as audit_services
@@ -10,7 +11,9 @@ def void_payout(*, payout: PartnerPayout, voided_by, reason, _action=Action.PART
     partner has been paid, so the month shows as unpaid again. It replaces the old hard delete."""
     reason = (reason or '').strip()
     if not reason:
-        raise DomainError('A reason is required to void a payout.')
+        raise DomainError('A reason is required to revert a payout.')
+    if not voided_by.is_owner:
+        raise PermissionDenied('Only the Admin can revert a payout.')
     with transaction.atomic():
         locked = PartnerPayout.all_objects.select_for_update().select_related('partner', 'villa__business').get(pk=payout.pk)
         if locked.is_voided:

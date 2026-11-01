@@ -267,7 +267,7 @@ def expense_mark_paid(request, pk):
 def expense_revert_payment(request, pk):
     """Undo a payment marked by mistake (popup with a mandatory reason). Only the payment is undone, nothing else."""
     expense = get_object_or_404(selectors.expenses_visible_to(request.user).select_related('villa', 'business', 'category', 'recurring', 'paid_by_user'), pk=pk)
-    if not selectors.ManageScope(request.user).can_revert_expense_payment(expense, ignore_auto_debit=True):
+    if not selectors.ManageScope(request.user).can_revert_expense_payment(expense):
         raise PermissionDenied('Only the Admin can revert a payment.')
     back = safe_next(request, request.GET.get('next'), reverse('villas:villa_detail', args=[expense.villa_id]) + f'?period=month&year={expense.date.year}&month={expense.date.month}')
     if expense.paid_on is None:
@@ -287,7 +287,8 @@ def expense_revert_payment(request, pk):
         form = ReasonForm()
     payer = expense.paid_by_user.get_full_name() or expense.paid_by_user.username if expense.paid_by_user_id else 'unknown'
     message = (f'This undoes the payment of {expense.category} — QAR {expense.amount} ({expense.villa.name}, {expense.date:%B %Y}) marked paid on {expense.paid_on:%d %b %Y} by {payer}. '
-               'The expense goes back to unpaid (and to the side that was expected to pay it); only the payment is removed. Its amount, its month and every other expense stay exactly as they are.')
+               'The expense goes back to unpaid (and to the side that was expected to pay it); only the payment is removed. Its amount, its month and every other expense stay exactly as they are.'
+               + (' It was paid by auto-debit: reverting it switches auto-debit off for this month only, so it will not be paid again by itself; pay it by hand when due. Other months stay automatic.' if expense.auto_debit_resettles else ''))
     return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Revert payment of {expense.category}?', 'message': message, 'submit_label': 'Revert payment', 'cancel_url': back})
 
 @login_required
