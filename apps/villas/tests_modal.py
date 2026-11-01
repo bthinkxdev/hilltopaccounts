@@ -367,3 +367,44 @@ class VillaPendingTests(VillaStatsBase):
         self.assertContains(r, reverse('tenancy:deposit_edit', args=[tenant.pk]))
         self.assertContains(r, reverse('billing:rent_collect', args=[self.p1.pk]))
         self.assertContains(r, 'Pay now')
+
+
+class ExpenseSideOnVillaCardsTests(VillaStatsBase):
+    """One rule: before it is paid the owner is whoever is expected to pay; once paid, whoever actually paid."""
+
+    def setUp(self):
+        super().setUp()
+        from datetime import date
+        from apps.expenses.models import Expense
+        from apps.expenses.services import create_recurring_expense, get_or_create_category
+        self.login('owner')
+        self.today = date.today()
+        self.rec = create_recurring_expense(villa=self.villa, category=get_or_create_category(name='Wi-Fi'), amount=300, due_day=1, paid_by='staff', created_by=self.owner)
+        self.expense = Expense.objects.get(recurring=self.rec, period=self.today.replace(day=1))
+
+    def card_rows(self):
+        ctx = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk])).context
+        return [r['template'].category.name for r in ctx['owner_fixed_rows']], [r['template'].category.name for r in ctx['staff_fixed_rows']], ctx
+
+    def test_unpaid_staff_expense_sits_in_the_staff_card(self):
+        owner_card, staff_card, _ = self.card_rows()
+        self.assertEqual((owner_card, staff_card), ([], ['Wi-Fi']))
+
+    def test_staff_expense_paid_by_the_admin_moves_to_the_admin_card_and_says_so(self):
+        from apps.expenses.services import mark_expense_paid
+        mark_expense_paid(expense=self.expense, paid_on=self.today, payment_method='bank_transfer', marked_by=self.owner)
+        owner_card, staff_card, ctx = self.card_rows()
+        self.assertEqual((owner_card, staff_card), (['Wi-Fi'], []))
+        self.assertEqual(ctx['owner_fixed_totals']['paid'], 300)
+        self.assertEqual(ctx['pnl']['owner_expenses'], 300)  # the card total matches the P&L Admin card
+        r = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]))
+        self.assertContains(r, 'Paid by Admin — scheduled as Staff')
+
+    def test_staff_expense_paid_by_staff_stays_in_the_staff_card_with_the_normal_text(self):
+        from apps.expenses.services import mark_expense_paid
+        self.login('staff')
+        mark_expense_paid(expense=self.expense, paid_on=self.today, payment_method='cash', marked_by=self.staff)
+        owner_card, staff_card, ctx = self.card_rows()
+        self.assertEqual((owner_card, staff_card), ([], ['Wi-Fi']))
+        self.assertEqual(ctx['pnl']['staff_expenses'], 300)
+        self.assertNotContains(self.client.get(reverse('villas:villa_detail', args=[self.villa.pk])), 'scheduled as')

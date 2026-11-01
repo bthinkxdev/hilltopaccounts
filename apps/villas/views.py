@@ -195,9 +195,14 @@ def villa_detail(request, pk):
     one_off = [decorate(e) for e in expenses.filter(date__gte=start, date__lte=end, recurring__isnull=True).select_related('category', 'partition', 'created_by', 'paid_by_user').order_by('-created_at', '-id')[:15]]
     rent_rows, rent_totals = (billing_selectors.rent_sheet(tenants=tenants + past_tenants, invoice_queryset=invoices, year=period['year'], month=period['month'], today=today) if period['period'] == 'month' else (None, None))
     fixed_rows, fixed_totals = expenses_selectors.fixed_expense_checklist(villa, period['year'], period['month'], today) if period['period'] == 'month' else (None, None)
+    side_names = {'owner': 'Admin', 'staff': 'Staff'}
     for row in fixed_rows or []:
         if row['expense'] is not None:
             decorate(row['expense'])
+        # One rule: before it is paid the owner is who is expected to pay; once paid, who actually paid it.
+        row['scheduled_side'] = row['template'].paid_by
+        row['side'] = row['expense'].paid_by if row['expense'] is not None else row['template'].paid_by
+        row['side_label'], row['scheduled_label'] = side_names.get(row['side'], row['side']), side_names.get(row['scheduled_side'], row['scheduled_side'])
 
     def compute_fixed_subset(rows):
         zero = Decimal('0.00')
@@ -213,12 +218,12 @@ def villa_detail(request, pk):
         return sub
 
     fixed_templates = list(RecurringExpense.objects.filter(villa=villa, is_active=True).select_related('category').order_by('-created_at', '-id')) if period['period'] == 'year' else []
-    owner_fixed_rows = [r for r in (fixed_rows or []) if getattr(r['template'], 'paid_by', '') == 'owner'] if fixed_rows is not None else None
+    owner_fixed_rows = [r for r in (fixed_rows or []) if r['side'] == 'owner'] if fixed_rows is not None else None
     owner_fixed_totals = compute_fixed_subset(owner_fixed_rows) if owner_fixed_rows is not None else None
     owner_fixed_templates = [t for t in fixed_templates if t.paid_by == 'owner']
     owner_one_off = [e for e in one_off if e.paid_by == 'owner']
 
-    staff_fixed_rows = [r for r in (fixed_rows or []) if getattr(r['template'], 'paid_by', '') == 'staff'] if fixed_rows is not None else None
+    staff_fixed_rows = [r for r in (fixed_rows or []) if r['side'] == 'staff'] if fixed_rows is not None else None
     staff_fixed_totals = compute_fixed_subset(staff_fixed_rows) if staff_fixed_rows is not None else None
     staff_fixed_templates = [t for t in fixed_templates if t.paid_by == 'staff']
     staff_one_off = [e for e in one_off if e.paid_by == 'staff']

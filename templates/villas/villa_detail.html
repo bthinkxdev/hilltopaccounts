@@ -451,7 +451,7 @@
               {% endif %}
               <div class="list-row__main">
                 <span class="list-row__title">{{ row.template.category }}</span>
-                <div class="list-row__meta">{{ row.amount|floatformat:"2g" }} · due {{ row.due_date|date:"d M" }} · {{ row.template.get_paid_by_display }}{% if row.template.auto_debit %} · auto-debit{% endif %}{% if row.expense.paid_on %} · paid {{ row.expense.paid_on|date:"d M" }}{% if row.expense.paid_by_user %} by {% if row.expense.paid_by_user == request.user %}you{% else %}{{ row.expense.paid_by_user.get_full_name|default:row.expense.paid_by_user.username }}{% endif %}{% endif %}{% endif %}</div>
+                <div class="list-row__meta">{{ row.amount|floatformat:"2g" }} · due {{ row.due_date|date:"d M" }} · {% if row.side != row.scheduled_side %}Paid by {{ row.side_label }} — scheduled as {{ row.scheduled_label }}{% else %}{{ row.template.get_paid_by_display }}{% endif %}{% if row.template.auto_debit %} · auto-debit{% endif %}{% if row.expense.paid_on %} · paid {{ row.expense.paid_on|date:"d M" }}{% if row.expense.paid_by_user %} by {% if row.expense.paid_by_user == request.user %}you{% else %}{{ row.expense.paid_by_user.get_full_name|default:row.expense.paid_by_user.username }}{% endif %}{% endif %}{% endif %}</div>
               </div>
               {% if row.status == "paid" %}<span class="pill pill--success">Paid</span>
               {% elif row.status == "to_verify" %}<span class="pill pill--warning">Paid — to verify</span>
@@ -499,7 +499,7 @@
               {% endif %}
               <div class="list-row__main">
                 <span class="list-row__title">{{ row.template.category }}</span>
-                <div class="list-row__meta">{{ row.amount|floatformat:"2g" }} · due {{ row.due_date|date:"d M" }} · {{ row.template.get_paid_by_display }}{% if row.template.auto_debit %} · auto-debit{% endif %}{% if row.expense.paid_on %} · paid {{ row.expense.paid_on|date:"d M" }}{% if row.expense.paid_by_user %} by {% if row.expense.paid_by_user == request.user %}you{% else %}{{ row.expense.paid_by_user.get_full_name|default:row.expense.paid_by_user.username }}{% endif %}{% endif %}{% endif %}</div>
+                <div class="list-row__meta">{{ row.amount|floatformat:"2g" }} · due {{ row.due_date|date:"d M" }} · {% if row.side != row.scheduled_side %}Paid by {{ row.side_label }} — scheduled as {{ row.scheduled_label }}{% else %}{{ row.template.get_paid_by_display }}{% endif %}{% if row.template.auto_debit %} · auto-debit{% endif %}{% if row.expense.paid_on %} · paid {{ row.expense.paid_on|date:"d M" }}{% if row.expense.paid_by_user %} by {% if row.expense.paid_by_user == request.user %}you{% else %}{{ row.expense.paid_by_user.get_full_name|default:row.expense.paid_by_user.username }}{% endif %}{% endif %}{% endif %}</div>
               </div>
               {% if row.status == "paid" %}<span class="pill pill--success">Paid</span>
               {% elif row.status == "to_verify" %}<span class="pill pill--warning">Paid — to verify</span>
