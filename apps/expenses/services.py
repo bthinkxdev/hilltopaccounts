@@ -255,8 +255,28 @@ def _set_status(*, expense: Expense, status, actor, reason) -> Expense:
         audit_services.log(user=actor, action=Action.EXPENSE_CANCELLED, obj=expense, business=expense.business, villa=expense.villa, old_value={'status': old_status}, new_value={'status': status}, reason=reason)
     return expense
 
-def cancel_expense(*, expense: Expense, cancelled_by, reason) -> Expense:
+def cancel_expense(*, expense: Expense, cancelled_by, reason, forever=False) -> Expense:
+    """Take an expense out of the totals. For one month of a monthly expense there are two choices: just that month
+    (`forever=False`, the other months carry on) or `forever=True`: that month and every later one, so nothing is shown or
+    offered for payment from that month on. Earlier months are never touched."""
+    if forever and expense.recurring_id:
+        return _cancel_monthly_forever(expense=expense, cancelled_by=cancelled_by, reason=reason)
     return _set_status(expense=expense, status=Expense.Status.CANCELLED, actor=cancelled_by, reason=reason)
+
+def _cancel_monthly_forever(*, expense: Expense, cancelled_by, reason) -> Expense:
+    recurring, start = expense.recurring, expense.period
+    with transaction.atomic():
+        later = list(Expense.objects.select_for_update().filter(recurring=recurring, period__gte=start, status=Expense.Status.ACTIVE).order_by('period'))
+        paid = [e for e in later if e.paid_on is not None]
+        if paid:
+            months = ', '.join(f'{e.period:%B %Y}' for e in paid)
+            raise DomainError(f'{recurring.category} is already paid for {months}. Revert that payment first, then cancel.')
+        if recurring.is_active:
+            deactivate_recurring_expense(recurring=recurring, updated_by=cancelled_by, reason=f'Cancelled from {start:%B %Y} onward: {reason}')
+        for e in later:
+            _set_status(expense=e, status=Expense.Status.CANCELLED, actor=cancelled_by, reason=reason)
+    expense.refresh_from_db()
+    return expense
 
 def restore_expense(*, expense: Expense, restored_by, reason) -> Expense:
     """Bring a cancelled (or reversed) expense back as an active, unpaid-as-it-was expense, so it can be edited and paid again.
@@ -279,6 +299,10 @@ def restore_expense(*, expense: Expense, restored_by, reason) -> Expense:
         locked.updated_by = restored_by
         locked.save(update_fields=['status', 'status_reason', 'updated_by', 'updated_at'])
         audit_services.log(user=restored_by, action=Action.EXPENSE_UPDATED, obj=locked, business=locked.business, villa=locked.villa, old_value={'status': old_status}, new_value={'status': locked.status}, reason=f'Restored: {reason}')
+        # A monthly expense that was cancelled "forever" from this month (or an earlier one) runs again from here.
+        recurring = locked.recurring if locked.recurring_id else None
+        if recurring is not None and not recurring.is_active and locked.period >= date_type.today().replace(day=1):
+            update_recurring_expense(recurring=recurring, updated_by=restored_by, is_active=True)
     return locked
 
 # ---- fixed monthly (recurring) expenses ---------------------------------------------------------

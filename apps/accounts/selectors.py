@@ -209,6 +209,8 @@ class ManageScope:
 
     def can_pay_expense(self, expense) -> bool:
         """Mirrors expenses.services.can_pay_expense — auto-debit or landlord rent needs an admin; other villa expenses can be paid by staff."""
+        if expense.status != Expense.Status.ACTIVE:
+            return False  # a cancelled expense is not payable: no tick box, no Pay
         if self.is_admin(expense.business_id):
             return True
         if expense.recurring_id is not None and getattr(expense.recurring, 'auto_debit', False):

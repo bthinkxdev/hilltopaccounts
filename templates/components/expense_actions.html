@@ -7,4 +7,4 @@
 {% endif %}
 {% if expense.can_revert_payment %}<a class="btn btn--ghost btn--sm" href="{% url 'expenses:revert_payment' expense.pk %}?next={{ request.get_full_path|urlencode }}" data-modal>Revert payment</a>{% endif %}
 {% if expense.can_restore %}<a class="btn btn--ghost btn--sm" href="{% url 'expenses:restore' expense.pk %}?next={{ request.get_full_path|urlencode }}" data-modal>Restore</a>{% endif %}
-{% if expense.can_edit %}<a class="btn btn--ghost btn--sm" href="{% url 'expenses:revise' expense.pk %}" data-modal>Edit</a>{% endif %}
+{% if expense.can_edit %}<a class="btn btn--ghost btn--sm" href="{% url 'expenses:revise' expense.pk %}?next={{ request.get_full_path|urlencode }}" data-modal>Edit</a>{% endif %}

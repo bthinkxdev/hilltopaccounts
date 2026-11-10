@@ -8,6 +8,12 @@
       {% csrf_token %}
       {% if request.GET.next %}<input type="hidden" name="next" value="{{ request.GET.next }}">{% endif %}
       {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors.0 }}</div>{% endif %}
+      {% if form.scope %}
+      <div class="field">
+        <label>Cancel for</label>
+        {% for radio in form.scope %}<div style="margin: 4px 0;"><label style="display: flex; gap: 8px; align-items: flex-start; font-weight: 500;">{{ radio.tag }} <span>{{ radio.choice_label }}</span></label></div>{% endfor %}
+      </div>
+      {% endif %}
       <div class="field">
         <label for="{{ form.reason.id_for_label }}">Reason <span class="field__required">*</span></label>
         {{ form.reason }}

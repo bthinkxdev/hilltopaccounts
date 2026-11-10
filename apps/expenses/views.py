@@ -16,7 +16,7 @@ from apps.shared.pagination import paginate_queryset
 from apps.shared.periods import period_context, selected_month_start
 from apps.shared.redirects import safe_next
 from . import selectors as expense_selectors
-from .forms import ExpenseForm, MarkPaidForm, PayAheadForm, RecurringExpenseForm, ReviseExpenseForm
+from .forms import CancelExpenseForm, ExpenseForm, MarkPaidForm, PayAheadForm, RecurringExpenseForm, ReviseExpenseForm
 from .models import Expense, PaidBy, RecurringExpense
 from .selectors import DueBucket
 from .services import (cancel_expense, can_pay_expense, restore_expense, create_expense, create_recurring_expense, pay_fixed_expense_ahead, deactivate_recurring_expense, get_or_create_category, mark_expense_paid,
@@ -217,6 +217,8 @@ def expense_create(request, villa_pk=None):
             messages.success(request, f'{expense.category} — QAR {expense.amount} recorded for {expense.villa.name}.')
             if expense.partition_id:
                 return redirect('villas:partition_detail', pk=expense.partition_id)
+            if request.POST.get('next') or request.GET.get('next'):
+                return redirect(_return_to(request, reverse('expenses:list')))
             return redirect('villas:villa_detail', pk=expense.villa_id) if (villa_pk or request.GET.get('villa')) else redirect('expenses:list')
     else:
         from apps.shared.periods import selected_year_month
@@ -259,7 +261,7 @@ def expense_mark_paid(request, pk):
                 form.add_error(None, str(exc))
             else:
                 messages.success(request, f'{expense.category} marked as paid.')
-                return redirect('expenses:list')
+                return redirect(_return_to(request, reverse('expenses:list')))
     else:
         form = MarkPaidForm(initial={'paid_on': date.today(), 'payment_method': expense.payment_method or Expense.Method.CASH})
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Mark paid — {expense.category} (QAR {expense.amount})', 'submit_label': 'Mark Paid', 'cancel_url': reverse('expenses:list')})
@@ -297,7 +299,7 @@ def recurring_pay_ahead(request, pk, year, month):
     recurring = get_object_or_404(RecurringExpense.objects.select_related('villa', 'villa__business', 'category'), pk=pk, villa__in=selectors.villas_visible_to(request.user))
     if not 1 <= month <= 12:
         raise Http404
-    back = reverse('villas:villa_detail', args=[recurring.villa_id]) + f'?period=month&year={year}&month={month}#villa-expenses'
+    back = _return_to(request, reverse('villas:villa_detail', args=[recurring.villa_id]) + f'?period=month&year={year}&month={month}#villa-expenses')
     if request.method == 'POST':
         form = PayAheadForm(request.POST, scheduled=recurring.amount)
         if form.is_valid():
@@ -317,14 +319,22 @@ def expense_cancel(request, pk):
     expense = get_object_or_404(selectors.expenses_visible_to(request.user), pk=pk)
     if not (request.user.is_owner or selectors.is_business_manager_of(request.user, expense.business)):
         raise PermissionDenied('You cannot cancel this expense.')
+    monthly = expense.recurring_id is not None
+    month_label = f'{expense.period:%B %Y}' if monthly and expense.period else 'this month'
+    Form = (lambda *a: CancelExpenseForm(*a, month_label=month_label)) if monthly else ReasonForm
     if request.method == 'POST':
-        form = ReasonForm(request.POST)
+        form = Form(request.POST)
         if form.is_valid():
-            cancel_expense(expense=expense, cancelled_by=request.user, reason=form.cleaned_data['reason'])
-            messages.success(request, 'Expense cancelled.')
-            return redirect('expenses:list')
+            forever = monthly and form.cleaned_data.get('scope') == 'forever'
+            try:
+                cancel_expense(expense=expense, cancelled_by=request.user, reason=form.cleaned_data['reason'], forever=forever)
+            except DomainError as exc:
+                form.add_error(None, str(exc))
+            else:
+                messages.success(request, f'{expense.category} cancelled from {month_label} onward.' if forever else 'Expense cancelled.')
+                return redirect(_return_to(request, reverse('expenses:list')))
     else:
-        form = ReasonForm()
+        form = Form()
     return render(request, 'components/confirm_reason.html', {'form': form, 'title': 'Cancel this expense?', 'message': "For an expense that hasn't been relied on yet — it stays on record, excluded from P&L.", 'cancel_url': reverse('expenses:list')})
 
 @login_required
@@ -353,7 +363,7 @@ def expense_revise(request, pk):
     expense = get_object_or_404(selectors.expenses_visible_to(request.user).select_related('villa', 'business', 'category'), pk=pk)
     if not _can_manage_expense(request.user, expense) or (selectors.is_field_staff(request.user) and expense.paid_by == PaidBy.OWNER):
         raise PermissionDenied('You cannot edit this expense.')
-    back = reverse('villas:villa_detail', args=[expense.villa_id]) if expense.villa_id else reverse('expenses:list')
+    back = _return_to(request, reverse('villas:villa_detail', args=[expense.villa_id]) if expense.villa_id else reverse('expenses:list'))
     if request.method == 'POST':
         form = ReviseExpenseForm(request.POST)
         if form.is_valid():
@@ -438,6 +448,10 @@ def recurring_stop(request, pk):
         form = ReasonForm()
     return render(request, 'components/confirm_reason.html', {'form': form, 'title': f'Stop {recurring.category.name}?', 'message': 'No new monthly expense will be created. Expenses already generated stay on record.', 'cancel_url': back})
 
+
+def _return_to(request, default):
+    """After a popup action, back to the page it was opened from — with its filters and month — when that page is on this site."""
+    return safe_next(request, request.POST.get('next') or request.GET.get('next'), default)
 
 def _back_to(request, default):
     """Where to return after a one-tap action — only ever a path on this site."""

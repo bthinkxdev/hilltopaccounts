@@ -3,7 +3,7 @@
 {% block content %}
   <div class="page-header">
     <h1>Expenses</h1>
-    {% if can_add %}<a class="btn btn--primary" href="{% url 'expenses:create' %}{% if selected_villa %}?villa={{ selected_villa }}{% endif %}" data-modal>+ Add Expense</a>{% endif %}
+    {% if can_add %}<a class="btn btn--primary" href="{% url 'expenses:create' %}?{% if selected_villa %}villa={{ selected_villa }}&{% endif %}next={{ request.get_full_path|urlencode }}" data-modal>+ Add Expense</a>{% endif %}
   </div>
 
   <div class="grid--kpi">
@@ -125,7 +125,7 @@
             <div class="expense-row__actions">
               {% include "components/expense_actions.html" %}
               {% if expense.status == "active" and not expense.paid_on and not is_field_staff %}
-                <a class="btn btn--ghost btn--sm" href="{% url 'expenses:cancel' expense.pk %}" data-modal>Cancel</a>
+                <a class="btn btn--ghost btn--sm" href="{% url 'expenses:cancel' expense.pk %}?next={{ request.get_full_path|urlencode }}" data-modal>Cancel</a>
               {% endif %}
             </div>
           </div>
@@ -137,7 +137,7 @@
       <div class="empty-state">
         <div class="empty-state__title">{% if has_filters %}No expenses match these filters.{% else %}No expenses recorded yet.{% endif %}</div>
         <p>Record rent, utilities, salaries and maintenance against a villa to see its profit and loss.</p>
-        {% if can_add %}<a class="btn btn--primary" href="{% url 'expenses:create' %}" data-modal>+ Add Expense</a>{% endif %}
+        {% if can_add %}<a class="btn btn--primary" href="{% url 'expenses:create' %}?next={{ request.get_full_path|urlencode }}" data-modal>+ Add Expense</a>{% endif %}
       </div>
     </div>
   {% endif %}
@@ -153,7 +153,7 @@
             <div class="list-row__meta">{{ item.villa.name }} · due {{ item.due_date|date:"d M Y" }} · {{ item.template.get_paid_by_display }}</div>
           </div>
           <span class="pill pill--neutral">Upcoming</span>
-          {% if item.can_pay and not item.villa.is_sold %}<a class="btn btn--ghost btn--sm" data-modal href="{% url 'expenses:recurring_pay_ahead' item.template.pk year month %}">Pay ahead</a>{% endif %}
+          {% if item.can_pay and not item.villa.is_sold %}<a class="btn btn--ghost btn--sm" data-modal href="{% url 'expenses:recurring_pay_ahead' item.template.pk year month %}?next={{ request.get_full_path|urlencode }}">Pay ahead</a>{% endif %}
         </div>
       {% endfor %}
     </div>

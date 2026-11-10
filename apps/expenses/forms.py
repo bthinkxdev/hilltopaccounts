@@ -1,5 +1,6 @@
 from decimal import Decimal
 from django import forms
+from apps.shared.forms import ReasonForm
 from apps.villas.models import Partition, Villa
 from .models import Expense, ExpenseCategory
 
@@ -24,6 +25,14 @@ class PartitionChoiceField(forms.ModelChoiceField):
         if tenant:
             return f"{obj.name} (Tenant: {tenant.name})"
         return f"{obj.name} (Vacant)"
+
+class CancelExpenseForm(ReasonForm):
+    """Cancel a monthly expense for its month only, or forever (that month and every later one)."""
+    scope = forms.ChoiceField(widget=forms.RadioSelect, initial='month', label='Cancel for')
+
+    def __init__(self, *args, month_label='this month', **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['scope'].choices = [('month', f'{month_label} only — other months carry on'), ('forever', f'Forever — {month_label} and every later month; nothing is shown or offered for payment')]
 
 class ExpenseForm(forms.Form):
     FREQUENCY_CHOICES = [('one_time', 'One time'), ('monthly', 'Monthly repeated')]
