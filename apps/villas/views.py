@@ -190,6 +190,7 @@ def villa_detail(request, pk):
         expense.can_pay = scope.can_pay_expense(expense)
         expense.can_verify = scope.can_verify_expense(expense)
         expense.can_revert_payment = scope.can_revert_expense_payment(expense) and not villa.is_sold
+        expense.can_restore = scope.can_restore_expense(expense) and not villa.is_sold
         expense.can_edit = can_manage and expense.status == 'active' and expense.paid_on is None and not (is_field_staff and expense.paid_by == 'owner')
         return expense
 
@@ -535,6 +536,7 @@ def partition_detail(request, pk):
         expense.can_pay = scope.can_pay_expense(expense) and not villa.is_sold
         expense.can_verify = scope.can_verify_expense(expense) and not villa.is_sold
         expense.can_revert_payment = scope.can_revert_expense_payment(expense) and not villa.is_sold
+        expense.can_restore = scope.can_restore_expense(expense) and not villa.is_sold
         expense.can_edit = can_manage_here and expense.status == 'active' and expense.paid_on is None and not (is_staff and expense.paid_by == 'owner')
     from apps.tenancy.models import Tenant
     past_tenants = list(selectors.tenants_visible_to(request.user).filter(partition=partition, status=Tenant.Status.MOVED_OUT).order_by('-move_out_date', '-id'))
@@ -544,7 +546,14 @@ def partition_detail(request, pk):
         p.can_delete = selectors.can_delete_photo(request.user, p) and not villa.is_sold
     active_charges = list(Charge.objects.filter(partition=partition, is_active=True).filter(Q(end_date__isnull=True) | Q(end_date__gt=today))) if current_tenant else []
     can_add_charge = (not villa.is_sold) and current_tenant is not None  # a new charge type can always be typed in
-    context = {'partition': partition, 'villa': villa, 'current_tenant': current_tenant, 'past_tenants': past_tenants, 'rent': billing_selectors.rent_schedule(partition, today) if current_tenant else None, 'charges': active_charges, 'can_add_charge': can_add_charge, 'invoices': invoices, 'recent_expenses': recent_expenses, 'photos': partition_photos, 'can_manage': selectors.can_manage_villa(request.user, villa) and not villa.is_sold, 'can_archive': (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)) and not villa.is_sold, 'can_delete_photos': (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)) and not villa.is_sold, 'can_view_financials': can_view_financials, 'keep': [], 'breadcrumbs': [('Villas', reverse('villas:villa_list')), (villa.name, reverse('villas:villa_detail', args=[villa.pk])), (partition.name, None)], **period}
+    # What is still to collect from the current tenant for the chosen month, from the same rent sheet as the Collections page.
+    month_rent = None
+    # A month that ends before the tenant moved in has nothing to collect: no rent, no advance.
+    not_yet_moved_in = bool(current_tenant and period['period'] == 'month' and current_tenant.move_in_date > end)
+    if current_tenant and period['period'] == 'month' and not not_yet_moved_in:
+        rows, _ = billing_selectors.rent_sheet(tenants=[current_tenant], invoice_queryset=all_invoices, year=period['year'], month=period['month'], today=today)
+        month_rent = next((r for r in rows if r['tenant'].pk == current_tenant.pk), None)
+    context = {'partition': partition, 'villa': villa, 'current_tenant': current_tenant, 'past_tenants': past_tenants, 'month_rent': month_rent, 'not_yet_moved_in': not_yet_moved_in, 'rent': billing_selectors.rent_schedule(partition, today) if current_tenant else None, 'charges': active_charges, 'can_add_charge': can_add_charge, 'invoices': invoices, 'recent_expenses': recent_expenses, 'photos': partition_photos, 'can_manage': selectors.can_manage_villa(request.user, villa) and not villa.is_sold, 'can_archive': (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)) and not villa.is_sold, 'can_delete_photos': (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)) and not villa.is_sold, 'can_view_financials': can_view_financials, 'keep': [], 'breadcrumbs': [('Villas', reverse('villas:villa_list')), (villa.name, reverse('villas:villa_detail', args=[villa.pk])), (partition.name, None)], **period}
     if can_view_financials:
         context['pnl'] = billing_selectors.period_profit_loss(all_invoices, expenses, start, end, deposits=selectors.deposits_visible_to(request.user).filter(tenant__partition=partition))
         context['outstanding'] = billing_selectors.outstanding_amount(all_invoices)

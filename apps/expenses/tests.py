@@ -10,7 +10,7 @@ from apps.businesses.services import create_business
 from apps.villas.services import create_villa
 from . import selectors
 from .models import Expense
-from .services import cancel_expense, create_expense, get_or_create_category, reverse_expense, update_expense
+from .services import cancel_expense, create_expense, get_or_create_category, update_expense
 
 class ExpenseServiceTests(TestCase):
 
@@ -59,12 +59,6 @@ class ExpenseServiceTests(TestCase):
         self.assertEqual(expense.status, Expense.Status.CANCELLED)
         self.assertTrue(Expense.objects.filter(pk=expense.pk).exists())
 
-    def test_reverse_sets_reversed_status(self):
-        expense = create_expense(villa=self.villa, category=self.category, amount=Decimal('100.00'), date=date(2026, 3, 1), payment_method='cash', created_by=self.owner)
-        reverse_expense(expense=expense, reversed_by=self.owner, reason='double-counted')
-        expense.refresh_from_db()
-        self.assertEqual(expense.status, Expense.Status.REVERSED)
-
 class ExpenseFinancialEngineTests(TestCase):
 
     def setUp(self):
@@ -79,7 +73,8 @@ class ExpenseFinancialEngineTests(TestCase):
         create_expense(villa=self.villa, category=self.category, amount=Decimal('999.00'), date=date(2026, 3, 3), payment_method='cash', created_by=self.owner)
         cancel_expense(expense=e2, cancelled_by=self.owner, reason='mistake')
         third = Expense.objects.exclude(pk__in=[e1.pk, e2.pk]).get()
-        reverse_expense(expense=third, reversed_by=self.owner, reason='undo')
+        third.status = Expense.Status.REVERSED  # an old row from when Reverse existed
+        third.save(update_fields=['status'])
         total = selectors.valid_expense_total(Expense.objects.filter(business=self.business))
         self.assertEqual(total, Decimal('100.00'))
 

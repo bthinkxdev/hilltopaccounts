@@ -258,8 +258,28 @@ def _set_status(*, expense: Expense, status, actor, reason) -> Expense:
 def cancel_expense(*, expense: Expense, cancelled_by, reason) -> Expense:
     return _set_status(expense=expense, status=Expense.Status.CANCELLED, actor=cancelled_by, reason=reason)
 
-def reverse_expense(*, expense: Expense, reversed_by, reason) -> Expense:
-    return _set_status(expense=expense, status=Expense.Status.REVERSED, actor=reversed_by, reason=reason)
+def restore_expense(*, expense: Expense, restored_by, reason) -> Expense:
+    """Bring a cancelled (or reversed) expense back as an active, unpaid-as-it-was expense, so it can be edited and paid again.
+    Cancelling only takes an expense out of the totals; nothing else about it was changed, so nothing else is touched here.
+    A monthly expense's month row is the same row, so that month returns instead of being blocked."""
+    reason = (reason or '').strip()
+    if not reason:
+        raise DomainError('A reason is required to restore an expense.')
+    with transaction.atomic():
+        locked = Expense.objects.select_for_update().select_related('villa', 'business').get(pk=expense.pk)
+        if locked.status == Expense.Status.ACTIVE:
+            raise DomainError('This expense is already active.')
+        if locked.villa and locked.villa.is_sold:
+            raise DomainError(f'Cannot change expenses of sold villa “{locked.villa.name}”.')
+        if not selectors.ManageScope(restored_by).can_restore_expense(locked):
+            raise PermissionDenied('Only the Admin or Business Manager can restore an expense.')
+        old_status = locked.status
+        locked.status = Expense.Status.ACTIVE
+        locked.status_reason = ''
+        locked.updated_by = restored_by
+        locked.save(update_fields=['status', 'status_reason', 'updated_by', 'updated_at'])
+        audit_services.log(user=restored_by, action=Action.EXPENSE_UPDATED, obj=locked, business=locked.business, villa=locked.villa, old_value={'status': old_status}, new_value={'status': locked.status}, reason=f'Restored: {reason}')
+    return locked
 
 # ---- fixed monthly (recurring) expenses ---------------------------------------------------------
 

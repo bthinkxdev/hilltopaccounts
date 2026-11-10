@@ -125,11 +125,7 @@
           </div>
         {% endif %}
         {% if breadcrumbs %}{% include "components/breadcrumbs.html" %}{% endif %}
-        {% if messages %}
-          {% for message in messages %}
-            <div class="alert alert--{{ message.tags|default:'info' }}">{{ message }}</div>
-          {% endfor %}
-        {% endif %}
+        <div data-live="messages">{% for message in messages %}<div class="alert alert--{{ message.tags|default:'info' }}">{{ message }}</div>{% endfor %}</div>
         {% block content %}{% endblock %}
       </main>
     </div>
@@ -147,6 +143,7 @@
   <script src="{% static 'js/app.js' %}"></script>
   <script src="{% static 'js/period.js' %}"></script>
   <script src="{% static 'js/modal.js' %}"></script>
+  <script src="{% static 'js/live.js' %}"></script>
   {% block extra_scripts %}{% endblock %}
 </body>
 </html>

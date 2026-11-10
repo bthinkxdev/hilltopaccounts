@@ -8,7 +8,7 @@ from django.urls import Resolver404, resolve
 
 ACTION_URL_NAMES = frozenset("""
 accounts:assignment_create accounts:assignment_remove accounts:password_change accounts:staff_create
-accounts:staff_deactivate accounts:staff_password_change accounts:staff_whatsapp_edit
+accounts:staff_deactivate accounts:staff_password_change accounts:staff_edit
 billing:charge_cancel billing:charge_create billing:invoice_cancel billing:invoice_generate billing:payment_cancel
 billing:payment_correct billing:payment_record
 businesses:archive businesses:create businesses:partner_create businesses:partner_edit businesses:partner_payout_correct
@@ -16,7 +16,7 @@ businesses:partner_payout_create businesses:partner_payout_void businesses:partn
 businesses:villa_partner_payout_batch
 cash:handover_confirm cash:handover_reject cash:handover_submit
 expenses:cancel expenses:create expenses:create_for_villa expenses:mark_paid expenses:recurring_create
-expenses:recurring_edit expenses:recurring_pay_ahead expenses:recurring_stop expenses:revert_payment expenses:reverse expenses:revise
+expenses:recurring_edit expenses:recurring_pay_ahead expenses:recurring_stop expenses:revert_payment expenses:restore expenses:revise
 tenancy:create tenancy:deposit_correct tenancy:deposit_edit tenancy:deposit_void tenancy:edit tenancy:move_out
 villas:partition_archive villas:partition_create villas:partition_edit villas:partition_photo_add villas:photo_delete
 villas:villa_archive villas:villa_create villas:villa_edit villas:villa_photo_add villas:villa_sell

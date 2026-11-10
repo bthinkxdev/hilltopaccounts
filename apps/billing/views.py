@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db.models import F, Q
+from django.db.models import F, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -430,6 +430,62 @@ def payment_list(request):
     received_payments = collection_rows(billing_selectors.income_payments(selectors.invoices_visible_to(request.user), start, end), billing_selectors.income_deposits(visible_deposits, start, end))
     received_total = sum((r['amount'] for r in received_payments), Decimal('0.00'))
 
+    # The total bar pinned to the bottom of the page: sums of exactly the rows the current tab and filters show (every matching
+    # row, not one page), taken from the same lists the tables render, so a figure can never disagree with its rows.
+    zero = Decimal('0.00')
+
+    def collected_part(r):
+        """What a rent row contributes to 'collected' under the active collector filter (else everything paid on it)."""
+        if active_collector == 'staff':
+            return r.get('staff_collected', zero)
+        if active_collector == 'admin':
+            return r.get('admin_collected', zero)
+        if active_collector.isdigit():
+            return sum((p.amount for p in r.get('payments', []) if p.collected_by_id == int(active_collector)), zero)
+        return r['paid']
+
+    filter_summary = []
+    if active_collector == 'staff':
+        filter_summary.append('Staff collections')
+    elif active_collector == 'admin':
+        filter_summary.append('Admin collections')
+    elif active_collector.isdigit() and active_collector_user:
+        filter_summary.append(f'Collected by {active_collector_user.get_full_name() or active_collector_user.username}')
+    if villa_id.isdigit():
+        filter_summary.append(next((v.name for v in all_filter_villas if str(v.pk) == villa_id), 'one villa'))
+    if q:
+        filter_summary.append(f'\u201c{q}\u201d')
+
+    if tab == 'collected':
+        totals_bar = {
+            'kind': 'collected', 'count': len(received_payments), 'total': received_total,
+            'rent': sum((r['amount'] for r in received_payments if r['kind'] == 'rent'), zero),
+            'advance': sum((r['amount'] for r in received_payments if r['kind'] == 'advance'), zero),
+        }
+    elif is_month:
+        # The advance recorded in the selected month (whenever the tenant moved in), from these rows' tenants, by the same collector filter as the rent.
+        from apps.tenancy.models import DepositCollection
+        dep = DepositCollection.objects.filter(tenant_id__in=[r['tenant'].pk for r in all_collection_rows], collected_at__range=(period['period_start'], period['period_end']))
+        if active_collector == 'staff':
+            dep = dep.filter(collected_by__is_owner=False)
+        elif active_collector == 'admin':
+            dep = dep.filter(collected_by__is_owner=True)
+        elif active_collector.isdigit():
+            dep = dep.filter(collected_by_id=int(active_collector))
+        advance_in_rows = dep.aggregate(t=Sum('amount'))['t'] or zero
+        totals_bar = {
+            'kind': 'rent', 'count': len(all_collection_rows),
+            'due': sum((r['due'] for r in all_collection_rows), zero),
+            # Total collected = rent + the advance of the same rows (the Advance column's collected amount).
+            'rent_collected': sum((collected_part(r) for r in all_collection_rows), zero),
+            'collected': sum((collected_part(r) for r in all_collection_rows), zero) + advance_in_rows,
+            'advance_collected': advance_in_rows,
+            'pending': sum((max(zero, r['due'] - r['paid']) for r in all_collection_rows), zero),
+            'arrears': portfolio_arrears, 'arrears_count': len(arrears_rows),
+        }
+    else:
+        totals_bar = None  # the yearly view has no rent sheet: only the Collected tab has rows to total
+
     has_filters = bool(q or active_collector or villa_id)
 
     keep = []
@@ -450,6 +506,8 @@ def payment_list(request):
         },
         'received_payments': received_payments,
         'received_total': received_total,
+        'totals_bar': totals_bar,
+        'filter_summary': filter_summary,
         'portfolio_rent_expected': portfolio_rent_expected,
         'portfolio_rent_collected': portfolio_rent_collected,
         'portfolio_rent_pending': portfolio_rent_pending,

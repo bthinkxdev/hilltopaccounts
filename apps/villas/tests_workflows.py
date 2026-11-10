@@ -160,12 +160,11 @@ class StaffVillaScopeWorkflow(TestCase):
         self.assertNotContains(self.client.get(reverse('expenses:list')), 'QAR 999.00')
         self.assertEqual(self.client.get(reverse('expenses:suggest'), {'name': 'Gas'}).json(), {'amount': None})
 
-    def test_staff_cannot_cancel_or_reverse_expenses(self):
+    def test_staff_cannot_cancel_expenses(self):
         self.client.login(username='staff', password=PASSWORD)
         from apps.expenses.services import create_expense
         own = create_expense(villa=self.villa, category=ExpenseCategory.objects.get(name='Gas'), amount=Decimal('10.00'), date=date(2026, 2, 1), created_by=self.staff)
         self.assertEqual(self.client.post(reverse('expenses:cancel', args=[own.pk]), {'reason': 'x'}).status_code, 403)
-        self.assertEqual(self.client.post(reverse('expenses:reverse', args=[own.pk]), {'reason': 'x'}).status_code, 403)
         own.refresh_from_db()
         self.assertEqual(own.status, Expense.Status.ACTIVE)
 

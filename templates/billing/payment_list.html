@@ -4,7 +4,7 @@
   <div class="page-header" style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3);">
     <div>
       <h1 style="margin: 0; font-size: 26px; font-weight: 700;">Collections</h1>
-      <p style="color: var(--text-secondary); margin: 4px 0 0 0; font-size: 13px;">
+      <p data-live="summary" style="color: var(--text-secondary); margin: 4px 0 0 0; font-size: 13px;">
         Showing {{ period_label }}
         {% if tab == 'collected' %}
           &bull; Collected for {{ period_label }}{% if collector == 'staff' %} by staff{% elif collector == 'admin' %} by admin{% elif active_collector_user %} by {{ active_collector_user.get_full_name|default:active_collector_user.username }}{% endif %}: <strong style="color: var(--success); font-weight: 700;">QAR {{ received_total|floatformat:"2g" }}</strong>
@@ -30,7 +30,7 @@
   </div>
 
   <!-- segmented tabs (All / Collected / Pending) -->
-  <div class="overview-tabs" style="margin-bottom: var(--space-3);">
+  <div class="overview-tabs" data-live="tabs" style="margin-bottom: var(--space-3);">
     <a class="overview-tab{% if tab == 'all' %} overview-tab--active{% endif %}" href="?tab=all&period={{ period|default:'month' }}{% if year %}&year={{ year }}{% endif %}{% if month %}&month={{ month }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if collector %}&collector={{ collector }}{% endif %}{% if villa_id %}&villa={{ villa_id }}{% endif %}">
       <span>All</span>
       <span class="overview-tab__badge">{{ tab_counts.all }}</span>
@@ -81,6 +81,7 @@
     {% endif %}
   </form>
 
+  <div data-live="list">
   {% if tab == 'collected' %}
   <div class="collections-card collections-desktop-table">
     <div class="collections-table-wrap">
@@ -257,7 +258,7 @@
                       <span class="pill pill--success" style="font-size: 11px;">Paid QAR {{ row.deposit_paid|floatformat:"0g" }}</span>
                     {% endif %}
                   </div>
-                  <div style="color: var(--text-secondary); font-size: 11px; margin-top: 2px;">Total: QAR {{ row.deposit_total|floatformat:"0g" }}</div>
+                  <div style="color: var(--text-secondary); font-size: 11px; margin-top: 2px;">{% if row.deposit_pending > 0 and row.deposit_paid > 0 %}Collected: QAR {{ row.deposit_paid|floatformat:"2g" }} · {% endif %}Total: QAR {{ row.deposit_total|floatformat:"0g" }}</div>
                 {% else %}
                   <span style="color: var(--text-muted); font-size: 13px;">No advance</span>
                 {% endif %}
@@ -357,7 +358,7 @@
               {% else %}
                 <span class="pill pill--success" style="font-size: 11px;">Dep. Paid QAR {{ row.deposit_paid|floatformat:"0g" }}</span>
               {% endif %}
-              <div style="color: var(--text-secondary); font-size: 10px; margin-top: 2px;">Total: QAR {{ row.deposit_total|floatformat:"0g" }}</div>
+              <div style="color: var(--text-secondary); font-size: 10px; margin-top: 2px;">{% if row.deposit_pending > 0 and row.deposit_paid > 0 %}Collected: QAR {{ row.deposit_paid|floatformat:"2g" }} · {% endif %}Total: QAR {{ row.deposit_total|floatformat:"0g" }}</div>
             {% else %}
               <span style="color: var(--text-muted); font-size: 12px;">No advance</span>
             {% endif %}
@@ -470,6 +471,30 @@
   </div>
   {% endif %}
   {% endif %}
+  </div>
+
+  {# Total bar pinned to the bottom: totals of exactly the rows the current tab and filters show. Always present (hidden when there is nothing to total) so it can be refreshed in place. #}
+  <div class="collections-total-bar" data-live="total" role="status" aria-live="polite"{% if totals_bar %} data-total-bar="{{ totals_bar.kind }}"{% else %} hidden{% endif %}>
+  {% if totals_bar %}
+      <div class="collections-total-bar__scope">
+        <strong>{{ period_label }}</strong>
+        {% if filter_summary %}<span class="pill pill--accent">Filtered</span><span class="collections-total-bar__filters">{{ filter_summary|join:" &middot; " }}</span>{% else %}<span class="pill pill--neutral">All</span>{% endif %}
+        <span class="collections-total-bar__count">{{ totals_bar.count }} {% if totals_bar.kind == 'collected' %}collection{{ totals_bar.count|pluralize }}{% else %}tenant row{{ totals_bar.count|pluralize }}{% endif %}</span>
+      </div>
+      <div class="collections-total-bar__figures">
+        {% if totals_bar.kind == 'collected' %}
+          <div class="collections-total-bar__fig collections-total-bar__fig--main"><span>Total collected</span><strong class="is-success" data-total="collected">QAR {{ totals_bar.total|floatformat:"2g" }}</strong></div>
+          <div class="collections-total-bar__fig"><span>Rent</span><strong>QAR {{ totals_bar.rent|floatformat:"2g" }}</strong></div>
+          <div class="collections-total-bar__fig"><span>Advance</span><strong>QAR {{ totals_bar.advance|floatformat:"2g" }}</strong></div>
+        {% else %}
+          <div class="collections-total-bar__fig"><span>Total Collectable</span><strong>QAR {{ totals_bar.due|floatformat:"2g" }}</strong></div>
+          <div class="collections-total-bar__fig collections-total-bar__fig--main"><span>Total collected</span><strong class="is-success" data-total="collected">QAR {{ totals_bar.collected|floatformat:"2g" }}</strong>{% if totals_bar.advance_collected %}<small class="collections-total-bar__adv">(Adv: QAR {{ totals_bar.advance_collected|floatformat:"2g" }})</small>{% endif %}</div>
+          <div class="collections-total-bar__fig"><span>Pending</span><strong class="{% if totals_bar.pending %}is-warning{% endif %}" data-total="pending">QAR {{ totals_bar.pending|floatformat:"2g" }}</strong></div>
+          {% if totals_bar.arrears_count %}<div class="collections-total-bar__fig"><span>Earlier months unpaid</span><strong class="is-danger" data-total="arrears">QAR {{ totals_bar.arrears|floatformat:"2g" }}</strong></div>{% endif %}
+        {% endif %}
+      </div>
+  {% endif %}
+  </div>
 
   {% include "components/collection_modals.html" %}
 {% endblock %}

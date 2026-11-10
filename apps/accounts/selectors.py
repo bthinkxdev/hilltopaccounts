@@ -221,6 +221,10 @@ class ManageScope:
         """Reverting a rent or advance collection is an Admin-only action: it rewrites what has been recorded as received."""
         return self.is_owner
 
+    def can_restore_expense(self, expense) -> bool:
+        """A cancelled (or reversed) expense can be brought back by whoever can cancel it: the Admin or the Business Manager."""
+        return self.is_admin(expense.business_id) and expense.status != Expense.Status.ACTIVE
+
     def can_revert_expense_payment(self, expense) -> bool:
         """Reverting an expense payment is Admin-only, for an active expense that is marked paid."""
         return self.is_owner and expense.status == Expense.Status.ACTIVE and expense.paid_on is not None

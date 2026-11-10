@@ -214,6 +214,10 @@ function closeEditShareModal() {
   document.getElementById('edit-share-modal')?.close();
 }
 
+document.getElementById('edit-share-modal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'edit-share-modal') closeEditShareModal();
+});
+
 function openDeleteShareModal(actionUrl, partnerName, villaName) {
   document.getElementById('delete-share-form').action = actionUrl;
   document.getElementById('delete-share-modal-msg').textContent =
@@ -225,9 +229,6 @@ function closeDeleteShareModal() {
   document.getElementById('delete-share-modal')?.close();
 }
 
-document.getElementById('edit-share-modal')?.addEventListener('click', (e) => {
-  if (e.target.id === 'edit-share-modal') closeEditShareModal();
-});
 document.getElementById('delete-share-modal')?.addEventListener('click', (e) => {
   if (e.target.id === 'delete-share-modal') closeDeleteShareModal();
 });

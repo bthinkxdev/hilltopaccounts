@@ -35,8 +35,14 @@
   function go(url) {
     var target = new URL(url, window.location.href);
     var here = new URL(window.location.href);
+    var samePage = target.pathname === here.pathname && target.search === here.search;
+    // A page with live regions (Collections) refreshes its figures in place instead of reloading.
+    if (samePage && window.LiveRefresh && window.LiveRefresh.available()) {
+      window.LiveRefresh.refresh();
+      return;
+    }
     loader("Saved", "Refreshing…");
-    if (target.pathname === here.pathname && target.search === here.search) {
+    if (samePage) {
       if (target.hash) window.location.hash = target.hash;
       window.location.reload();
     } else {

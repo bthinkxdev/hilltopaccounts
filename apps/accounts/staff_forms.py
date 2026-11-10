@@ -82,7 +82,10 @@ class StaffPasswordChangeForm(forms.Form):
             self.staff.save()
         return self.staff
 
-class StaffWhatsAppForm(forms.Form):
+class StaffEditForm(forms.Form):
+    first_name = forms.CharField(max_length=150, required=False)
+    last_name = forms.CharField(max_length=150, required=False)
+    email = forms.EmailField(required=False)
     whatsapp_number = forms.CharField(max_length=32, label='WhatsApp number', help_text='Include the country code, e.g. +974 5555 1234.')
 
     def clean_whatsapp_number(self):

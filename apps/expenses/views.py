@@ -19,8 +19,8 @@ from . import selectors as expense_selectors
 from .forms import ExpenseForm, MarkPaidForm, PayAheadForm, RecurringExpenseForm, ReviseExpenseForm
 from .models import Expense, PaidBy, RecurringExpense
 from .selectors import DueBucket
-from .services import (cancel_expense, can_pay_expense, create_expense, create_recurring_expense, pay_fixed_expense_ahead, deactivate_recurring_expense, get_or_create_category, mark_expense_paid,
-                       reverse_expense, revert_expense_payment, revise_unpaid_expense, update_recurring_expense, verify_expense)
+from .services import (cancel_expense, can_pay_expense, restore_expense, create_expense, create_recurring_expense, pay_fixed_expense_ahead, deactivate_recurring_expense, get_or_create_category, mark_expense_paid,
+                       revert_expense_payment, revise_unpaid_expense, update_recurring_expense, verify_expense)
 
 def _can_manage_expense(user, expense):
     if expense.villa_id:
@@ -93,6 +93,7 @@ def expense_list(request):
         expense.can_pay = scope.can_pay_expense(expense)
         expense.can_verify = scope.can_verify_expense(expense)
         expense.can_revert_payment = scope.can_revert_expense_payment(expense)
+        expense.can_restore = scope.can_restore_expense(expense)
         expense.can_edit = expense.can_manage and expense.status == 'active' and expense.paid_on is None and not (is_field_staff and expense.paid_by == PaidBy.OWNER)
 
     User = get_user_model()
@@ -327,20 +328,25 @@ def expense_cancel(request, pk):
     return render(request, 'components/confirm_reason.html', {'form': form, 'title': 'Cancel this expense?', 'message': "For an expense that hasn't been relied on yet — it stays on record, excluded from P&L.", 'cancel_url': reverse('expenses:list')})
 
 @login_required
-def expense_reverse(request, pk):
+def expense_restore(request, pk):
     expense = get_object_or_404(selectors.expenses_visible_to(request.user), pk=pk)
-    if not (request.user.is_owner or selectors.is_business_manager_of(request.user, expense.business)):
-        raise PermissionDenied('You cannot reverse this expense.')
+    if not selectors.ManageScope(request.user).can_restore_expense(expense):
+        raise PermissionDenied('You cannot restore this expense.')
+    default_back = reverse('villas:villa_detail', args=[expense.villa_id]) if expense.villa_id else reverse('expenses:list')
+    back = safe_next(request, request.POST.get('next') or request.GET.get('next'), default_back)
     if request.method == 'POST':
         form = ReasonForm(request.POST)
         if form.is_valid():
-            reverse_expense(expense=expense, reversed_by=request.user, reason=form.cleaned_data['reason'])
-            messages.success(request, 'Expense reversed.')
-            return redirect('expenses:list')
+            try:
+                restore_expense(expense=expense, restored_by=request.user, reason=form.cleaned_data['reason'])
+            except DomainError as exc:
+                messages.error(request, str(exc))
+            else:
+                messages.success(request, 'Expense restored. It is active again and can be edited or paid.')
+            return redirect(back)
     else:
         form = ReasonForm()
-    return render(request, 'components/confirm_reason.html', {'form': form, 'title': 'Reverse this expense?', 'message': 'For an expense that already fed into a reported P&L figure — it stays on record, excluded from future totals.', 'cancel_url': reverse('expenses:list')})
-
+    return render(request, 'components/confirm_reason.html', {'form': form, 'title': 'Restore this expense?', 'message': "It becomes an active expense again, as it was before it was cancelled, and counts in its month's totals. You can then edit or pay it.", 'cancel_url': back})
 
 @login_required
 def expense_revise(request, pk):
