@@ -253,7 +253,12 @@ def revise_unpaid_expense(*, expense: Expense, updated_by, amount, due_date=None
         # Who is going to pay it (Admin or Staff) is the Admin's call; an auto-debit is always the Admin's account.
         if assignment.valid(assigned_to) and updated_by.is_owner and not (locked.recurring_id and locked.recurring.auto_debit):
             changes['assigned_to'] = assigned_to
-        return update_expense(expense=locked, updated_by=updated_by, **changes)
+        changed_side = 'assigned_to' in changes and changes['assigned_to'] != locked.assigned_to
+        revised = update_expense(expense=locked, updated_by=updated_by, **changes)
+        if changed_side and locked.recurring_id and locked.period and locked.period >= date_type.today().replace(day=1):
+            # A monthly expense keeps its side: the change carries on to the coming months (earlier months keep theirs).
+            update_recurring_expense(recurring=locked.recurring, updated_by=updated_by, assigned_to=changes['assigned_to'])
+        return revised
 
 def _set_status(*, expense: Expense, status, actor, reason) -> Expense:
     with transaction.atomic():

@@ -426,6 +426,8 @@ def expense_revise(request, pk):
                 return redirect(back)
     else:
         form = ReviseExpenseForm(initial={'amount': expense.amount, 'description': expense.description, 'assigned_to': expense.assigned_to}, can_assign=request.user.is_owner)
+    if expense.recurring_id and 'assigned_to' in form.fields:
+        form.fields['assigned_to'].help_text = 'Who is going to pay it. On a monthly expense this applies from this month on; earlier months keep theirs.'
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Edit {expense.category} — {expense.villa.name if expense.villa_id else expense.business.name}', 'cancel_url': back})
 
 def _villa_for_fixed_expenses(request, villa_pk):

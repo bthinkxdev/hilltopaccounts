@@ -401,3 +401,33 @@ class ExpenseDetailsFollowAssignmentTests(VerificationBase):
         owner_rows = self.client.get(ctx['period_pnl_urls']['admin_expenses'].split('?')[0] + '?paid_by=owner&villa=%d%s' % (self.villa.pk, month)).context['page_obj']
         self.assertEqual({e.pk for e in staff_rows}, {a.pk, c.pk})
         self.assertEqual({e.pk for e in owner_rows}, {b.pk})
+
+
+class MonthlyAssignmentCarriesForwardTests(VerificationBase):
+    """Changing who pays a monthly expense from its edit popup carries on to the coming months."""
+
+    def test_the_change_applies_to_next_month_and_keeps_earlier_months(self):
+        self.login('owner')
+        self.client.post(reverse('villas:villa_create'), {'business': self.business.pk, 'name': 'Carry Villa', 'fixed_cleaning': '699', 'fixed_cleaning_assigned': 'staff'})
+        villa = Villa.objects.get(name='Carry Villa')
+        row = Expense.objects.get(villa=villa, category__name='Cleaning')
+        r = self.client.post(reverse('expenses:revise', args=[row.pk]), {'amount': '699.00', 'assigned_to': 'owner', 'description': ''})
+        self.assertEqual(r.status_code, 302)
+        rec = RecurringExpense.objects.get(villa=villa, category__name='Cleaning')
+        row.refresh_from_db()
+        self.assertEqual((row.assigned_to, rec.assigned_to), ('owner', 'owner'))
+        nxt = (TODAY.replace(day=1) + timedelta(days=32)).replace(day=1)
+        ctx = self.client.get(reverse('villas:villa_detail', args=[villa.pk]), {'period': 'month', 'year': nxt.year, 'month': nxt.month}).context
+        self.assertEqual([r['template'].category.name for r in ctx['owner_fixed_rows']], ['Cleaning'])
+        self.assertEqual(ctx['staff_fixed_rows'], [])
+
+    def test_staff_cannot_carry_a_change_forward(self):
+        self.login('owner')
+        self.client.post(reverse('villas:villa_create'), {'business': self.business.pk, 'name': 'Carry Villa 2', 'fixed_cleaning': '100'})
+        villa = Villa.objects.get(name='Carry Villa 2')
+        assign_villa_staff(user=self.staff, villa=villa, assigned_by=self.owner)
+        row = Expense.objects.get(villa=villa, category__name='Cleaning')
+        self.login('staff')
+        self.client.post(reverse('expenses:revise', args=[row.pk]), {'amount': '100.00', 'assigned_to': 'owner', 'description': ''})
+        rec = RecurringExpense.objects.get(villa=villa)
+        self.assertEqual(rec.assigned_to, 'staff')
