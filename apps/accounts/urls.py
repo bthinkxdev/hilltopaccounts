@@ -10,6 +10,7 @@ urlpatterns = [
     path('staff/<int:pk>/', staff_views.staff_detail, name='staff_detail'),
     path('staff/<int:pk>/password/', staff_views.staff_password_change, name='staff_password_change'),
     path('staff/<int:pk>/edit/', staff_views.staff_edit, name='staff_edit'),
+    path('staff/<int:pk>/partner/', staff_views.staff_partner_link, name='staff_partner_link'),
     path('staff/<int:pk>/deactivate/', staff_views.staff_deactivate, name='staff_deactivate'),
     path('staff/<int:pk>/activate/', staff_views.staff_activate, name='staff_activate'),
     path('staff/<int:staff_pk>/assignments/new/', staff_views.assignment_create, name='assignment_create'),

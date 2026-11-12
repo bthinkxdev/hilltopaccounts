@@ -1,6 +1,7 @@
 import re
 from django import forms
 from django.contrib.auth.password_validation import validate_password
+from django.db.models import Q
 from apps.businesses.models import Business, Partner
 from apps.shared.forms import TaggedSelect
 from apps.villas.models import Villa
@@ -54,6 +55,17 @@ class StaffCreateForm(forms.Form):
             if not cleaned.get('villa'):
                 self.add_error('villa', 'Please select a villa for this partner.')
         return cleaned
+
+class StaffPartnerLinkForm(forms.Form):
+    """The selection bar on a staff page: which partner record (if any) this login is."""
+    partner = forms.ModelChoiceField(queryset=Partner.objects.none(), required=False, empty_label='Not a partner', label='Partner')
+
+    def __init__(self, *args, staff=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.staff = staff
+        free = Q(user__isnull=True) | Q(user=staff)
+        self.fields['partner'].queryset = Partner.objects.filter(free, is_active=True).order_by('name')
+
 
 class StaffPasswordChangeForm(forms.Form):
     new_password1 = forms.CharField(widget=forms.PasswordInput, label='New password')

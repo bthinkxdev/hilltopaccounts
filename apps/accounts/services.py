@@ -73,6 +73,27 @@ def assign_partner(*, user, villa, assigned_by, partner=None, can_add_partitions
         partner.save(update_fields=['user'])
     return assignment
 
+def link_partner(*, user: User, partner, changed_by):
+    """Link a login to a partner record (or, with partner=None, unlink it). One login has one partner record and one partner
+    record has one login. Once linked, the person sees the partner details of every villa where that partner has a share."""
+    from apps.businesses.models import Partner
+    with transaction.atomic():
+        current = Partner.objects.select_for_update().filter(user=user).first()
+        if partner is not None:
+            partner = Partner.objects.select_for_update().get(pk=partner.pk)
+            if partner.user_id and partner.user_id != user.pk:
+                raise ValidationError(f'{partner.name} is already linked to another login. A partner can have only one.')
+        if current is not None and (partner is None or current.pk != partner.pk):
+            current.user = None
+            current.save(update_fields=['user'])
+            audit_services.log(user=changed_by, action=Action.PARTNER_UPDATED, obj=current, old_value={'login': user.username}, new_value={'login': None}, reason='login unlinked from partner')
+        if partner is not None and (current is None or current.pk != partner.pk):
+            partner.user = user
+            partner.save(update_fields=['user'])
+            audit_services.log(user=changed_by, action=Action.PARTNER_UPDATED, obj=partner, old_value={'login': None}, new_value={'login': user.username}, reason='login linked to partner')
+    return partner
+
+
 def remove_assignment(*, assignment: Assignment, removed_by, reason='') -> None:
     with transaction.atomic():
         old_value = {'assigned_user': assignment.user.username, 'role': assignment.role}

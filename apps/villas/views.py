@@ -320,7 +320,7 @@ def villa_detail(request, pk):
         context['partner_count'] = len(shares)
         context['distributable_profit'] = split['net']
 
-        is_partner = selectors.is_partner(request.user)
+        is_partner = selectors.is_partner_of(request.user, villa)  # a partner of THIS villa, not just a partner somewhere
         context['is_partner'] = is_partner
         if is_partner:
             partner = getattr(request.user, 'partner_profile', None)

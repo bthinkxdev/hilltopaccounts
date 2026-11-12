@@ -159,9 +159,22 @@ def manageable_villas(user) -> QuerySet[Villa]:
     staffed = Assignment.objects.filter(user=user, role__in=[Assignment.Role.VILLA_STAFF, Assignment.Role.PARTNER]).values('villa_id')
     return Villa.objects.filter(Q(business_id__in=managed) | Q(pk__in=staffed))
 
+def _linked_partner_has_share(user, villa) -> bool:
+    """A login linked to a partner record whose partner holds a share in this villa."""
+    from apps.businesses.models import PartnerVillaShare
+    return PartnerVillaShare.objects.filter(partner__user=user, partner__is_active=True, villa=villa).exists()
+
+def is_partner_of(user, villa) -> bool:
+    """Is this person a partner of this particular villa: a Partner assignment on it, or a login linked to a partner who holds a share in it."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    return Assignment.objects.filter(user=user, role=Assignment.Role.PARTNER, villa=villa).exists() or _linked_partner_has_share(user, villa)
+
 def can_view_villa_financials(user, villa) -> bool:
     """Profit/loss and activity for one villa: Admin, its Business Manager, or an Accountant/Partner scoped to it."""
     if user.is_owner:
+        return True
+    if _linked_partner_has_share(user, villa):
         return True
     return Assignment.objects.filter(user=user).filter(
         Q(role=Assignment.Role.BUSINESS_MANAGER, business_id=villa.business_id)
@@ -173,8 +186,10 @@ def financial_villas(user) -> QuerySet[Villa]:
     """Villas whose income/expense/profit this user may see: Admin, the Business Manager, or a scoped Accountant/Partner."""
     if user.is_owner:
         return Villa.objects.all()
+    from apps.businesses.models import PartnerVillaShare
     rows = Assignment.objects.filter(user=user, role__in=[Assignment.Role.BUSINESS_MANAGER, Assignment.Role.ACCOUNTANT, Assignment.Role.PARTNER])
-    return Villa.objects.filter(Q(business_id__in=rows.values('business_id')) | Q(pk__in=rows.filter(role__in=[Assignment.Role.ACCOUNTANT, Assignment.Role.PARTNER]).values('villa_id'))).distinct()
+    shared = PartnerVillaShare.objects.filter(partner__user=user, partner__is_active=True).values('villa_id')  # a linked partner, on the villas they can open
+    return Villa.objects.filter(Q(business_id__in=rows.values('business_id')) | Q(pk__in=rows.filter(role__in=[Assignment.Role.ACCOUNTANT, Assignment.Role.PARTNER]).values('villa_id')) | (Q(pk__in=shared) & Q(pk__in=villas_visible_to(user).values('pk')))).distinct()
 
 
 class ManageScope:

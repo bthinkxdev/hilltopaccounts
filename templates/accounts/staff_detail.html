@@ -48,6 +48,36 @@
     </div>
   </div>
 
+  {% if not staff.is_owner %}
+  <div class="detail-section" id="partner-link">
+    <div class="detail-section__title">Partner</div>
+    <div class="card">
+      <form method="post" action="{% url 'accounts:staff_partner_link' staff.pk %}" style="display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center;">
+        {% csrf_token %}
+        <div class="field" style="flex: 1 1 260px; max-width: 420px; margin: 0;">
+          <label for="{{ partner_form.partner.id_for_label }}" class="sr-only" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Partner</label>
+          {{ partner_form.partner }}
+        </div>
+        <button class="btn btn--primary" type="submit">Save</button>
+      </form>
+      <div class="list-row__meta" style="margin-top: var(--space-2);">Choose the partner this login belongs to. They then see the partner details (profit, share, payouts) of every villa where that partner has a share and that they work in.</div>
+      {% if partner %}
+        <div style="margin-top: var(--space-3);">
+          {% for share in partner_shares %}
+            <div class="list-row list-row--compact">
+              <span class="list-row__title">{{ share.villa.name }}</span>
+              <span class="list-row__meta">{{ share.percentage|floatformat:"-2" }}% share</span>
+              {% if share.sees_it %}<span class="pill pill--success">Sees partner details</span>{% else %}<span class="pill pill--warning" title="Add this villa to this person's assignments so they can open it">Not assigned to this villa</span>{% endif %}
+            </div>
+          {% empty %}
+            <div class="list-row__meta">{{ partner.name }} has no villa shares yet. Add one on the partner's page.</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   <dialog id="partition-modal" style="width: calc(100% - var(--space-6)); max-width: 420px;">
     <h3 style="margin-bottom:var(--space-2);">Enable Partition Access</h3>
     <p id="partition-modal-msg" style="color:var(--text-secondary); margin-bottom:var(--space-4); font-size:14px; line-height:1.5;"></p>

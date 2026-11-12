@@ -11,8 +11,8 @@ from apps.shared.periods import period_context
 from apps.tenancy.models import DepositCollection
 from . import selectors
 from .models import Assignment, User
-from .services import assign_accountant, assign_business_manager, assign_villa_staff, create_user, disable_user, enable_user, remove_assignment
-from .staff_forms import AssignmentForm, StaffCreateForm, StaffPasswordChangeForm, StaffEditForm
+from .services import assign_accountant, assign_business_manager, assign_villa_staff, create_user, disable_user, enable_user, link_partner, remove_assignment
+from .staff_forms import AssignmentForm, StaffCreateForm, StaffPartnerLinkForm, StaffPasswordChangeForm, StaffEditForm
 
 def _owner_only(user):
     if not user.is_owner:
@@ -141,7 +141,12 @@ def staff_detail(request, pk):
     _owner_only(request.user)
     staff = get_object_or_404(User.objects.exclude(username='system'), pk=pk)
     assignments = Assignment.objects.filter(user=staff).select_related('business', 'villa')
-    return render(request, 'accounts/staff_detail.html', {'staff': staff, 'assignments': assignments, 'role_labels': selectors.role_labels_for(staff), 'breadcrumbs': [('Staff', reverse('accounts:staff_list')), (staff.username, None)]})
+    partner = getattr(staff, 'partner_profile', None)
+    partner_shares = []
+    if partner is not None:
+        assigned_villas = {a.villa_id for a in assignments if a.villa_id}
+        partner_shares = [{'villa': s.villa, 'percentage': s.percentage, 'sees_it': s.villa_id in assigned_villas} for s in partner.villa_shares.select_related('villa')]
+    return render(request, 'accounts/staff_detail.html', {'staff': staff, 'assignments': assignments, 'partner': partner, 'partner_shares': partner_shares, 'partner_form': StaffPartnerLinkForm(staff=staff, initial={'partner': partner}), 'role_labels': selectors.role_labels_for(staff), 'breadcrumbs': [('Staff', reverse('accounts:staff_list')), (staff.username, None)]})
 
 @login_required
 def staff_deactivate(request, pk):
@@ -165,6 +170,26 @@ def staff_activate(request, pk):
         enable_user(user=staff, enabled_by=request.user)
         messages.success(request, f'“{staff.username}” reactivated.')
     return redirect(request.POST.get('next') if request.POST.get('next') == reverse('accounts:staff_list') else reverse('accounts:staff_detail', args=[staff.pk]))
+
+@login_required
+def staff_partner_link(request, pk):
+    """Link this login to a partner record, or unlink it (Admin only). The selection bar on the staff page posts here."""
+    _owner_only(request.user)
+    staff = get_object_or_404(User.objects.exclude(username='system').filter(is_owner=False), pk=pk)
+    if request.method == 'POST':
+        form = StaffPartnerLinkForm(request.POST, staff=staff)
+        if form.is_valid():
+            partner = form.cleaned_data['partner']
+            try:
+                link_partner(user=staff, partner=partner, changed_by=request.user)
+            except ValidationError as exc:
+                messages.error(request, exc.messages[0] if getattr(exc, 'messages', None) else str(exc))
+            else:
+                messages.success(request, f'{staff.username} is now linked to partner {partner.name}.' if partner else f'{staff.username} is no longer linked to a partner.')
+        else:
+            messages.error(request, 'Choose a partner from the list.')
+    return redirect('accounts:staff_detail', pk=staff.pk)
+
 
 @login_required
 def assignment_create(request, staff_pk):
