@@ -3,7 +3,7 @@ from django.db.models import Q, QuerySet
 from apps.billing.models import Charge, Invoice, Payment
 from apps.businesses.models import Business
 from apps.cash.models import CashHandover
-from apps.expenses.models import Expense, PaidBy
+from apps.expenses.models import AssignedTo, Expense, PaidBy
 from apps.tenancy.models import Tenant
 from apps.villas.models import Partition, Villa
 from .models import Assignment
@@ -217,6 +217,8 @@ class ManageScope:
             return False
         if expense.category_id and re.search(LANDLORD_RENT_REGEX, expense.category.name, re.I):
             return False
+        if expense.assigned_to == AssignedTo.OWNER:
+            return False  # assigned to the Admin: staff can only view it
         return expense.villa_id is not None and expense.villa_id in self.staff_villa_ids
 
     def can_revert_collection(self, villa_id, business_id, collected_by_id) -> bool:

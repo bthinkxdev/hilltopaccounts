@@ -3,10 +3,11 @@ from decimal import Decimal
 from django import forms
 from apps.businesses.forms import ArchiveReasonForm
 from apps.businesses.models import Business
+from apps.expenses.assignment import assignment_field, keep_for_admin
 from .models import Partition, Villa
 
 # The fixed monthly costs every villa has. Each is optional at creation and can be set later by the Admin.
-FIXED_EXPENSE_DEFAULTS = [('fixed_villa_rent', 'Villa rent', 'owner'), ('fixed_electricity', 'Electricity', 'staff'), ('fixed_wifi', 'Wi-Fi', 'staff'), ('fixed_cleaning', 'Cleaning', 'staff'), ('fixed_maintenance', 'Maintenance', 'staff')]
+FIXED_EXPENSE_DEFAULTS = [('fixed_villa_rent', 'Villa rent', 'owner'), ('fixed_electricity', 'Electricity', 'staff'), ('fixed_wifi', 'Wi-Fi', 'staff'), ('fixed_cleaning', 'Cleaning', 'staff'), ('fixed_maintenance', 'Company Service', 'staff')]
 
 class VillaForm(forms.Form):
     business = forms.ModelChoiceField(queryset=Business.objects.none(), empty_label='Select a business…')
@@ -17,13 +18,23 @@ class VillaForm(forms.Form):
     contract_start = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
     contract_end = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
     fixed_villa_rent = forms.DecimalField(required=False, min_value=Decimal('0.01'), decimal_places=2, max_digits=12, label='Villa rent (paid to the villa owner) — monthly', widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01', 'placeholder': 'Optional'}))
+    fixed_villa_rent_assigned = assignment_field(label='Villa rent — assigned to')
     fixed_electricity = forms.DecimalField(required=False, min_value=Decimal('0.01'), decimal_places=2, max_digits=12, label='Electricity — monthly', widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01', 'placeholder': 'Optional'}))
+    fixed_electricity_assigned = assignment_field(label='Electricity — assigned to')
     fixed_wifi = forms.DecimalField(required=False, min_value=Decimal('0.01'), decimal_places=2, max_digits=12, label='Wi-Fi — monthly', widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01', 'placeholder': 'Optional'}))
+    fixed_wifi_assigned = assignment_field(label='Wi-Fi — assigned to')
     fixed_cleaning = forms.DecimalField(required=False, min_value=Decimal('0.01'), decimal_places=2, max_digits=12, label='Cleaning — monthly', widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01', 'placeholder': 'Optional'}))
-    fixed_maintenance = forms.DecimalField(required=False, min_value=Decimal('0.01'), decimal_places=2, max_digits=12, label='Maintenance — monthly', widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01', 'placeholder': 'Optional'}))
+    fixed_cleaning_assigned = assignment_field(label='Cleaning — assigned to')
+    fixed_maintenance = forms.DecimalField(required=False, min_value=Decimal('0.01'), decimal_places=2, max_digits=12, label='Company Service — monthly', widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01', 'placeholder': 'Optional'}))
+    fixed_maintenance_assigned = assignment_field(label='Company Service — assigned to')
 
-    def __init__(self, *args, business_queryset=None, **kwargs):
+    def __init__(self, *args, business_queryset=None, can_assign=False, **kwargs):
         super().__init__(*args, **kwargs)
+        # Choosing who is going to pay each monthly expense (Admin or Staff) is an Admin-only setting.
+        keep_for_admin(self, can_assign, [f'{field}_assigned' for field, _label, _side in FIXED_EXPENSE_DEFAULTS])
+        for field, _label, side in FIXED_EXPENSE_DEFAULTS:
+            if f'{field}_assigned' in self.fields:
+                self.fields[f'{field}_assigned'].initial = side  # Villa rent starts on Admin, the rest on Staff
         if business_queryset is not None:
             self.fields['business'].queryset = business_queryset
 

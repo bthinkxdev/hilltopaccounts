@@ -158,3 +158,51 @@ class KeepFiltersTests(VillaStatsBase):
         other = create_expense(villa=self.villa, category=get_or_create_category(name='Paint'), amount=Decimal('20.00'), date=THIS_MONTH, created_by=self.owner)
         r = self.client.post(reverse('expenses:cancel', args=[other.pk]), {'reason': 'x', 'next': 'https://evil.example/'})
         self.assertEqual(r['Location'], reverse('expenses:list'))
+
+
+class ListFilterTests(VillaStatsBase):
+    """The Expenses list shows exactly the rows each filter promises: status, payment state, villa and payer."""
+
+    def setUp(self):
+        super().setUp()
+        self.login('owner')
+        cat = lambda n: get_or_create_category(name=n)
+        self.unpaid = create_expense(villa=self.villa, category=cat('Unpaid one'), amount=Decimal('10.00'), date=THIS_MONTH, created_by=self.owner)
+        self.paid = create_expense(villa=self.villa, category=cat('Paid one'), amount=Decimal('20.00'), date=THIS_MONTH, created_by=self.owner)
+        from apps.expenses.services import mark_expense_paid
+        mark_expense_paid(expense=self.paid, marked_by=self.owner, payment_method='cash', paid_on=THIS_MONTH)
+        self.gone = create_expense(villa=self.villa, category=cat('Gone one'), amount=Decimal('30.00'), date=THIS_MONTH, created_by=self.owner)
+        cancel_expense(expense=self.gone, cancelled_by=self.owner, reason='no longer needed')
+        self.base = f'/expenses/?period=month&year={THIS_MONTH.year}&month={THIS_MONTH.month}'
+
+    def names(self, query=''):
+        r = self.client.get(self.base + query)
+        self.assertEqual(r.status_code, 200)
+        return {e.category.name for e in r.context['page_obj']}
+
+    def test_default_lists_active_only(self):
+        self.assertEqual(self.names(), {'Unpaid one', 'Paid one'})
+
+    def test_cancelled_filter_lists_cancelled_rows(self):
+        self.assertEqual(self.names('&status=cancelled'), {'Gone one'})
+
+    def test_cancelled_filter_is_not_emptied_by_a_payment_state(self):
+        for due in ('unpaid', 'overdue', 'verify', 'paid'):
+            self.assertEqual(self.names(f'&status=cancelled&due={due}'), {'Gone one'}, due)
+
+    def test_all_lists_every_status(self):
+        self.assertEqual(self.names('&status='), {'Unpaid one', 'Paid one', 'Gone one'})
+
+    def test_payment_state_with_all_statuses_ignores_cancelled_rows(self):
+        self.assertEqual(self.names('&status=&due=unpaid'), {'Unpaid one'})
+        self.assertEqual(self.names('&status=&due=paid'), {'Paid one'})
+
+    def test_payment_state_filters_on_active(self):
+        self.assertEqual(self.names('&due=unpaid'), {'Unpaid one'})
+        self.assertEqual(self.names('&due=paid'), {'Paid one'})
+        self.assertEqual(self.names('&due=overdue'), set())
+
+    def test_the_status_choice_stays_selected(self):
+        for status in ('cancelled', ''):
+            html = self.client.get(self.base + f'&status={status}').content.decode()
+            self.assertIn('<option value="%s" selected>' % status, html)

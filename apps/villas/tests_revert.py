@@ -185,13 +185,13 @@ class ExpensePaymentRevertTests(VillaStatsBase):
             revert_expense_payment(expense=self.this, reverted_by=self.owner, reason='x')
 
     def test_the_side_is_restored_when_the_other_side_paid_it(self):
-        # an admin-side monthly expense that staff paid goes back to the admin side
-        rec = create_recurring_expense(villa=self.villa, category=get_or_create_category(name='Paint'), amount=500, due_day=1, paid_by='owner', created_by=self.owner, start_period=THIS_MONTH)
+        # a staff-side monthly expense that the admin paid goes back to the staff side
+        rec = create_recurring_expense(villa=self.villa, category=get_or_create_category(name='Paint'), amount=500, due_day=1, paid_by='staff', created_by=self.owner, start_period=THIS_MONTH)
         e = Expense.objects.get(recurring=rec, period=THIS_MONTH)
-        mark_expense_paid(expense=e, paid_on=TODAY, payment_method='cash', marked_by=self.staff)
-        self.assertEqual(self.reload(e).paid_by, PaidBy.STAFF)
-        revert_expense_payment(expense=e, reverted_by=self.owner, reason='x')
+        mark_expense_paid(expense=e, paid_on=TODAY, payment_method='cash', marked_by=self.owner)
         self.assertEqual(self.reload(e).paid_by, PaidBy.OWNER)
+        revert_expense_payment(expense=e, reverted_by=self.owner, reason='x')
+        self.assertEqual(self.reload(e).paid_by, PaidBy.STAFF)
 
     def test_a_one_time_expense_recorded_already_paid_goes_back_to_the_side_of_whoever_recorded_it(self):
         e = create_expense(villa=self.villa, category=get_or_create_category(name='Gas'), amount=60, date=THIS_MONTH, created_by=self.owner, paid_on=TODAY, payment_method='cash')

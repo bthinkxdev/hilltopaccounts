@@ -17,7 +17,7 @@ from apps.shared.periods import period_context, selected_month_start
 from apps.shared.redirects import safe_next
 from . import selectors as expense_selectors
 from .forms import CancelExpenseForm, ExpenseForm, MarkPaidForm, PayAheadForm, RecurringExpenseForm, ReviseExpenseForm
-from .models import Expense, PaidBy, RecurringExpense
+from .models import AssignedTo, Expense, PaidBy, RecurringExpense
 from .selectors import DueBucket
 from .services import (cancel_expense, can_pay_expense, restore_expense, create_expense, create_recurring_expense, pay_fixed_expense_ahead, deactivate_recurring_expense, get_or_create_category, mark_expense_paid,
                        revert_expense_payment, revise_unpaid_expense, update_recurring_expense, verify_expense)
@@ -63,7 +63,8 @@ def expense_list(request):
     if status:
         qs = qs.filter(status=status)
     due = request.GET.get('due', '')
-    if due in dict(DueBucket.CHOICES):
+    # A payment state (overdue / outstanding / paid…) only describes active rows, so it must not empty a Cancelled or Reversed list.
+    if due in dict(DueBucket.CHOICES) and status not in (Expense.Status.CANCELLED, Expense.Status.REVERSED):
         qs = expense_selectors.filter_by_due_bucket(qs, due, today)
     staff_id = request.GET.get('staff', '').strip() or request.GET.get('paid_by', '').strip()
     if staff_id.isdigit():
@@ -94,7 +95,7 @@ def expense_list(request):
         expense.can_verify = scope.can_verify_expense(expense)
         expense.can_revert_payment = scope.can_revert_expense_payment(expense)
         expense.can_restore = scope.can_restore_expense(expense)
-        expense.can_edit = expense.can_manage and expense.status == 'active' and expense.paid_on is None and not (is_field_staff and expense.paid_by == PaidBy.OWNER)
+        expense.can_edit = expense.can_manage and expense.status == 'active' and expense.paid_on is None and not (is_field_staff and expense.assigned_to == AssignedTo.OWNER)
 
     User = get_user_model()
     if request.user.is_owner:
@@ -162,7 +163,7 @@ def _create_monthly(request, form, data, villa_pk, visible_expenses):
         form.add_error('name', f'{category.name} is already a monthly expense of this villa — edit it on the villa page instead.')
     else:
         try:
-            create_recurring_expense(villa=villa, category=category, amount=data['amount'], due_day=min(start.day, 28), auto_debit=data.get('auto_debit', False), start_period=start, created_by=request.user)
+            create_recurring_expense(villa=villa, category=category, amount=data['amount'], due_day=min(start.day, 28), auto_debit=data.get('auto_debit', False), assigned_to=data.get('assigned_to'), start_period=start, created_by=request.user)
         except (PermissionDenied, DomainError) as exc:
             form.add_error(None, str(exc))
         else:
@@ -223,7 +224,7 @@ def expense_create(request, villa_pk=None):
     else:
         from apps.shared.periods import selected_year_month
         sel_year, sel_month = selected_year_month(request)
-        initial = {'frequency': 'monthly' if request.GET.get('type') == 'monthly' else 'one_time', 'villa': preselected, 'date': date.today() if (sel_year, sel_month) == (date.today().year, date.today().month) else date(sel_year, sel_month, 1)}
+        initial = {'assigned_to': 'staff', 'frequency': 'monthly' if request.GET.get('type') == 'monthly' else 'one_time', 'villa': preselected, 'date': date.today() if (sel_year, sel_month) == (date.today().year, date.today().month) else date(sel_year, sel_month, 1)}
         partition_id = request.GET.get('partition', '')
         if partition_id.isdigit():
             partition = Partition.objects.filter(pk=partition_id, villa__in=manageable).first()
@@ -361,11 +362,11 @@ def expense_restore(request, pk):
 @login_required
 def expense_revise(request, pk):
     expense = get_object_or_404(selectors.expenses_visible_to(request.user).select_related('villa', 'business', 'category'), pk=pk)
-    if not _can_manage_expense(request.user, expense) or (selectors.is_field_staff(request.user) and expense.paid_by == PaidBy.OWNER):
+    if not _can_manage_expense(request.user, expense) or (selectors.is_field_staff(request.user) and expense.assigned_to == AssignedTo.OWNER):
         raise PermissionDenied('You cannot edit this expense.')
     back = _return_to(request, reverse('villas:villa_detail', args=[expense.villa_id]) if expense.villa_id else reverse('expenses:list'))
     if request.method == 'POST':
-        form = ReviseExpenseForm(request.POST)
+        form = ReviseExpenseForm(request.POST, can_assign=request.user.is_owner)
         if form.is_valid():
             try:
                 revise_unpaid_expense(expense=expense, updated_by=request.user, **form.cleaned_data)
@@ -375,7 +376,7 @@ def expense_revise(request, pk):
                 messages.success(request, f'{expense.category} updated to QAR {form.cleaned_data["amount"]}.')
                 return redirect(back)
     else:
-        form = ReviseExpenseForm(initial={'amount': expense.amount, 'description': expense.description})
+        form = ReviseExpenseForm(initial={'amount': expense.amount, 'description': expense.description, 'assigned_to': expense.assigned_to}, can_assign=request.user.is_owner)
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Edit {expense.category} — {expense.villa.name if expense.villa_id else expense.business.name}', 'cancel_url': back})
 
 def _villa_for_fixed_expenses(request, villa_pk):
@@ -392,18 +393,18 @@ def recurring_create(request, villa_pk):
     back = reverse('villas:villa_detail', args=[villa.pk]) + '#fixed-expenses'
     can_auto_debit = selectors.is_business_manager_of(request.user, villa.business)
     if request.method == 'POST':
-        form = RecurringExpenseForm(request.POST, can_auto_debit=can_auto_debit)
+        form = RecurringExpenseForm(request.POST, can_auto_debit=can_auto_debit, can_assign=request.user.is_owner)
         if form.is_valid():
             data = form.cleaned_data
             category = get_or_create_category(name=data['name'])
             if RecurringExpense.objects.filter(villa=villa, category=category).exists():
                 form.add_error('name', f'{category.name} is already a fixed expense of this villa — edit it instead.')
             else:
-                create_recurring_expense(villa=villa, category=category, amount=data['amount'], due_day=data['due_day'], auto_debit=data.get('auto_debit', False), start_period=selected_month_start(request), created_by=request.user)
+                create_recurring_expense(villa=villa, category=category, amount=data['amount'], due_day=data['due_day'], auto_debit=data.get('auto_debit', False), assigned_to=data.get('assigned_to'), start_period=selected_month_start(request), created_by=request.user)
                 messages.success(request, f'Fixed expense “{category.name}” added to {villa.name}.')
                 return redirect(back)
     else:
-        form = RecurringExpenseForm(can_auto_debit=can_auto_debit)
+        form = RecurringExpenseForm(can_auto_debit=can_auto_debit, can_assign=request.user.is_owner)
     names = expense_selectors.used_expense_names(selectors.expenses_visible_to(request.user))
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Add fixed monthly expense — {villa.name}', 'cancel_url': back, 'expense_names': names, 'datalist_only': True})
 
@@ -414,7 +415,7 @@ def recurring_edit(request, pk):
     back = reverse('villas:villa_detail', args=[villa.pk]) + '#fixed-expenses'
     can_auto_debit = selectors.is_business_manager_of(request.user, villa.business)
     if request.method == 'POST':
-        form = RecurringExpenseForm(request.POST, can_auto_debit=can_auto_debit)
+        form = RecurringExpenseForm(request.POST, can_auto_debit=can_auto_debit, can_assign=request.user.is_owner)
         if form.is_valid():
             data = form.cleaned_data
             category = get_or_create_category(name=data['name'])
@@ -425,11 +426,13 @@ def recurring_edit(request, pk):
                 changes = {'category': category, 'amount': data['amount'], 'due_day': data['due_day']}
                 if can_auto_debit:
                     changes['auto_debit'] = data.get('auto_debit', False)
+                if data.get('assigned_to'):
+                    changes['assigned_to'] = data['assigned_to']
                 update_recurring_expense(recurring=recurring, updated_by=request.user, **changes)
                 messages.success(request, f'“{category.name}” updated — it applies from this month; earlier months keep their amount.')
                 return redirect(back)
     else:
-        form = RecurringExpenseForm(can_auto_debit=can_auto_debit, initial={'name': recurring.category.name, 'amount': recurring.amount, 'due_day': recurring.due_day, 'auto_debit': recurring.auto_debit})
+        form = RecurringExpenseForm(can_auto_debit=can_auto_debit, can_assign=request.user.is_owner, initial={'name': recurring.category.name, 'amount': recurring.amount, 'due_day': recurring.due_day, 'auto_debit': recurring.auto_debit, 'assigned_to': recurring.assigned_to})
     names = expense_selectors.used_expense_names(selectors.expenses_visible_to(request.user))
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Edit fixed expense — {recurring.category.name}', 'cancel_url': back, 'expense_names': names, 'datalist_only': True})
 

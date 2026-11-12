@@ -18,6 +18,11 @@ class PaidBy(models.TextChoices):
     STAFF = ('staff', 'Staff — from collected cash')
     OWNER = ('owner', 'Admin — own account')
 
+class AssignedTo(models.TextChoices):
+    """Who is going to pay an expense. Separate from `paid_by`, which records who actually paid it."""
+    STAFF = ('staff', 'Staff')
+    OWNER = ('owner', 'Admin')
+
 class RecurringExpense(models.Model):
     """A fixed monthly expense of one villa (admin rent, electricity, Wi-Fi, maintenance, villa service…).
 
@@ -28,6 +33,7 @@ class RecurringExpense(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     due_day = models.PositiveSmallIntegerField(default=1, help_text='Day of the month it falls due (1–28).')
     paid_by = models.CharField(max_length=10, choices=PaidBy.choices, default=PaidBy.OWNER)
+    assigned_to = models.CharField(max_length=10, choices=AssignedTo.choices, default=AssignedTo.STAFF, help_text='Who is going to pay it (Admin or Staff). Staff can only view an expense assigned to the Admin.')
     auto_debit = models.BooleanField(default=False, help_text='Debited automatically from the admin account on the due date.')
     is_active = models.BooleanField(default=True)
     start_period = models.DateField(null=True, blank=True, help_text='First month it applies to (the 1st). Empty = the month it was set up.')
@@ -79,6 +85,7 @@ class Expense(models.Model):
     paid_on = models.DateField(null=True, blank=True)
     payment_method = models.CharField(max_length=20, choices=Method.choices, blank=True)
     paid_by = models.CharField(max_length=10, choices=PaidBy.choices, default=PaidBy.OWNER)
+    assigned_to = models.CharField(max_length=10, choices=AssignedTo.choices, default=AssignedTo.STAFF, help_text='Who is going to pay it (Admin or Staff). Staff can only view an expense assigned to the Admin.')
     paid_by_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+', null=True, blank=True)
     verified_at = models.DateTimeField(null=True, blank=True, help_text='When the Admin / Business Manager confirmed the payment as received/valid.')
     verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+', null=True, blank=True)

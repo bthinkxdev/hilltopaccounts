@@ -9,7 +9,8 @@ from apps.accounts import selectors
 from apps.audit import services as audit_services
 from apps.audit.models import Action
 from apps.shared.exceptions import DomainError
-from .models import Expense, ExpenseCategory, PaidBy, RecurringExpense
+from . import assignment
+from .models import AssignedTo, Expense, ExpenseCategory, PaidBy, RecurringExpense
 
 class ExpenseNotPayable(DomainError):
     pass
@@ -17,8 +18,8 @@ class ExpenseNotPayable(DomainError):
 class ExpenseNotEditable(DomainError):
     pass
 
-TRACKED_FIELDS = ['auto_debit_skipped', 'business_id', 'villa_id', 'partition_id', 'category_id', 'amount', 'date', 'due_date', 'paid_on', 'payment_method', 'paid_by', 'paid_by_user_id', 'verified_at', 'verified_by_id', 'description', 'reference']
-RECURRING_TRACKED_FIELDS = ['villa_id', 'category_id', 'amount', 'due_day', 'paid_by', 'auto_debit', 'is_active']
+TRACKED_FIELDS = ['auto_debit_skipped', 'business_id', 'villa_id', 'partition_id', 'category_id', 'amount', 'date', 'due_date', 'paid_on', 'payment_method', 'paid_by', 'assigned_to', 'paid_by_user_id', 'verified_at', 'verified_by_id', 'description', 'reference']
+RECURRING_TRACKED_FIELDS = ['villa_id', 'category_id', 'amount', 'due_day', 'paid_by', 'assigned_to', 'auto_debit', 'is_active']
 
 def get_or_create_category(*, name) -> ExpenseCategory:
     """Expense names are a shared catalogue; match case-insensitively so 'electricity' reuses 'Electricity'."""
@@ -39,6 +40,8 @@ def can_pay_expense(user, expense: Expense) -> bool:
         return selectors.is_business_manager_of(user, expense.business)
     if expense.category_id and re.search(selectors.LANDLORD_RENT_REGEX, expense.category.name, re.I):
         return selectors.is_business_manager_of(user, expense.business)
+    if expense.assigned_to == AssignedTo.OWNER:
+        return selectors.is_business_manager_of(user, expense.business)  # assigned to the Admin: staff can only view it
     if expense.villa_id:
         return selectors.can_manage_villa(user, expense.villa)
     return selectors.is_business_manager_of(user, expense.business)
@@ -75,6 +78,9 @@ def create_expense(*, villa, category, amount, date, created_by, partition=None,
         # Nobody picks "paid by": an unpaid expense sits with the side of whoever recorded it, and moves to whoever
         # actually pays it (admin side for the Admin / Business Manager, staff side — from collected cash — otherwise).
         fields.setdefault('paid_by', PaidBy.OWNER if _is_admin(created_by, villa.business) else PaidBy.STAFF)
+        # Who is going to pay it is the Admin's call; for anyone else, or when nobody chose, it is decided by the expense itself.
+        chosen = assignment.valid(fields.pop('assigned_to', None)) if created_by.is_owner else None
+        fields['assigned_to'] = chosen or assignment.default_for(category_name=category.name)
         expense = Expense(business=villa.business, villa=villa, partition=partition, category=category, amount=amount, date=date, created_by=created_by, **fields)
         if expense.paid_on is not None:
             if not can_pay_expense(created_by, expense):
@@ -230,7 +236,7 @@ def update_expense(*, expense: Expense, updated_by, **fields) -> Expense:
             audit_services.log(user=updated_by, action=Action.EXPENSE_UPDATED, obj=expense, business=expense.business, villa=expense.villa, old_value=old_value, new_value=new_value)
     return expense
 
-def revise_unpaid_expense(*, expense: Expense, updated_by, amount, due_date=None, description='') -> Expense:
+def revise_unpaid_expense(*, expense: Expense, updated_by, amount, due_date=None, description='', assigned_to=None) -> Expense:
     """Adjust the amount/due date of an expense that has not been paid yet (e.g. this month's electricity bill).
 
     A paid expense is financial history: it can only be cancelled or reversed, never rewritten.
@@ -243,7 +249,11 @@ def revise_unpaid_expense(*, expense: Expense, updated_by, amount, due_date=None
             raise ExpenseNotEditable('Only an unpaid, active expense can be edited. Cancel or reverse a paid one instead.')
         if due_date is None:
             due_date = locked.due_date
-        return update_expense(expense=locked, updated_by=updated_by, amount=amount, due_date=due_date, description=description)
+        changes = {'amount': amount, 'due_date': due_date, 'description': description}
+        # Who is going to pay it (Admin or Staff) is the Admin's call; an auto-debit is always the Admin's account.
+        if assignment.valid(assigned_to) and updated_by.is_owner and not (locked.recurring_id and locked.recurring.auto_debit):
+            changes['assigned_to'] = assigned_to
+        return update_expense(expense=locked, updated_by=updated_by, **changes)
 
 def _set_status(*, expense: Expense, status, actor, reason) -> Expense:
     with transaction.atomic():
@@ -314,7 +324,7 @@ def _require_fixed_expense_admin(user, villa):
     if not (user.is_owner or selectors.is_business_manager_of(user, villa.business) or selectors.is_villa_staff_of(user, villa)):
         raise PermissionDenied('Only the Admin, Business Manager, or assigned Villa Staff can set a villa\'s fixed expenses.')
 
-def create_recurring_expense(*, villa, category, amount, due_day, created_by, paid_by=None, auto_debit=False, start_period=None) -> RecurringExpense:
+def create_recurring_expense(*, villa, category, amount, due_day, created_by, paid_by=None, assigned_to=None, auto_debit=False, start_period=None) -> RecurringExpense:
     if villa.is_sold:
         raise DomainError(f'Cannot add fixed expenses to sold villa “{villa.name}”.')
     _require_fixed_expense_admin(created_by, villa)
@@ -323,8 +333,12 @@ def create_recurring_expense(*, villa, category, amount, due_day, created_by, pa
     if paid_by is None:
         # Who normally pays it follows who sets it up; an auto-debit is always the admin account.
         paid_by = PaidBy.OWNER if (admin or auto_debit) else PaidBy.STAFF
+    # Who is going to pay it: the Admin's choice; otherwise the side it was set up for. An auto-debit is always the Admin's account.
+    assigned_to = (assignment.valid(assigned_to) if created_by.is_owner else None) or paid_by
+    if auto_debit:
+        assigned_to = AssignedTo.OWNER
     with transaction.atomic():
-        recurring = RecurringExpense(villa=villa, category=category, amount=amount, due_day=due_day, paid_by=paid_by, auto_debit=auto_debit, start_period=start_period.replace(day=1) if start_period else None, created_by=created_by)
+        recurring = RecurringExpense(villa=villa, category=category, amount=amount, due_day=due_day, paid_by=paid_by, assigned_to=assigned_to, auto_debit=auto_debit, start_period=start_period.replace(day=1) if start_period else None, created_by=created_by)
         recurring.full_clean()
         recurring.save()
         audit_services.log(user=created_by, action=Action.EXPENSE_CREATED, obj=recurring, business=villa.business, villa=villa, new_value=_recurring_snapshot(recurring), reason='fixed monthly expense set up')
@@ -364,7 +378,11 @@ def update_recurring_expense(*, recurring: RecurringExpense, updated_by, **field
             fields.pop('auto_debit')  # only the admin side can debit the admin account
         elif fields['auto_debit']:
             fields['paid_by'] = PaidBy.OWNER
-    if recurring.is_active and any(f in fields and fields[f] != getattr(recurring, f) for f in ('amount', 'paid_by')):
+    if fields.get('auto_debit', recurring.auto_debit):
+        fields['assigned_to'] = AssignedTo.OWNER  # an auto-debit is always the Admin's account
+    elif 'assigned_to' in fields and not (updated_by.is_owner and assignment.valid(fields['assigned_to'])):
+        fields.pop('assigned_to')  # only the Admin chooses
+    if recurring.is_active and any(f in fields and fields[f] != getattr(recurring, f) for f in ('amount', 'paid_by', 'assigned_to')):
         _freeze_past_months(recurring)
     old_value = _recurring_snapshot(recurring)
     for field, value in fields.items():
@@ -377,6 +395,9 @@ def update_recurring_expense(*, recurring: RecurringExpense, updated_by, **field
         if new_value != old_value:
             audit_services.log(user=updated_by, action=Action.EXPENSE_UPDATED, obj=recurring, business=recurring.villa.business, villa=recurring.villa, old_value=old_value, new_value=new_value, reason='fixed monthly expense changed')
         _generate_months_up_to_now(recurring, updated_by)
+        if new_value.get('assigned_to') != old_value.get('assigned_to'):
+            # From this month on, what is still unpaid follows the new assignment; paid and past months keep theirs.
+            Expense.objects.filter(recurring=recurring, status=Expense.Status.ACTIVE, paid_on__isnull=True, period__gte=date_type.today().replace(day=1)).update(assigned_to=recurring.assigned_to)
     return recurring
 
 def deactivate_recurring_expense(*, recurring: RecurringExpense, updated_by, reason='') -> RecurringExpense:
@@ -407,7 +428,7 @@ def _create_fixed_expense(recurring: RecurringExpense, period, generated_by):
     last_day = calendar.monthrange(period.year, period.month)[1]
     try:
         with transaction.atomic():
-            expense = Expense(business=villa.business, villa=villa, category=recurring.category, amount=recurring.amount, date=period, due_date=date_type(period.year, period.month, min(recurring.due_day, last_day)), paid_by=recurring.paid_by, recurring=recurring, period=period, created_by=generated_by)
+            expense = Expense(business=villa.business, villa=villa, category=recurring.category, amount=recurring.amount, date=period, due_date=date_type(period.year, period.month, min(recurring.due_day, last_day)), paid_by=recurring.paid_by, assigned_to=recurring.assigned_to, recurring=recurring, period=period, created_by=generated_by)
             expense.full_clean(validate_constraints=False)
             expense.save()
             audit_services.log(user=generated_by, action=Action.EXPENSE_CREATED, obj=expense, business=villa.business, villa=villa, new_value=_snapshot(expense), reason=f'fixed expense for {period:%B %Y}')

@@ -390,13 +390,14 @@ class ExpenseSideOnVillaCardsTests(VillaStatsBase):
         owner_card, staff_card, _ = self.card_rows()
         self.assertEqual((owner_card, staff_card), ([], ['Wi-Fi']))
 
-    def test_staff_expense_paid_by_the_admin_moves_to_the_admin_card_and_says_so(self):
+    def test_staff_expense_paid_by_the_admin_stays_in_the_staff_card_and_says_so(self):
+        # cards follow who it is assigned to; the P&L still counts who actually paid
         from apps.expenses.services import mark_expense_paid
         mark_expense_paid(expense=self.expense, paid_on=self.today, payment_method='bank_transfer', marked_by=self.owner)
         owner_card, staff_card, ctx = self.card_rows()
-        self.assertEqual((owner_card, staff_card), (['Wi-Fi'], []))
-        self.assertEqual(ctx['owner_fixed_totals']['paid'], 300)
-        self.assertEqual(ctx['pnl']['owner_expenses'], 300)  # the card total matches the P&L Admin card
+        self.assertEqual((owner_card, staff_card), ([], ['Wi-Fi']))
+        self.assertEqual(ctx['staff_fixed_totals']['paid'], 300)
+        self.assertEqual(ctx['pnl']['owner_expenses'], 300)  # the P&L Admin figure is what the Admin actually paid
         r = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]))
         self.assertContains(r, 'Paid by Admin — scheduled as Staff')
 

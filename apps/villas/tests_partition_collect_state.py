@@ -26,7 +26,7 @@ class PartitionCollectState(VillaStatsBase):
 
     def test_both_pending_offers_both(self):
         html = self.page()
-        self.assertIn('Rent pending', html)
+        self.assertTrue('Rent pending' in html or 'Rent overdue' in html)  # overdue once the month's due date has passed
         self.assertIn('Collect rent', html)
         self.assertIn('openRentCollectModal(this)', html)      # opens the popup, not the Collections page
         self.assertIn('id="rent-collect-modal"', html)

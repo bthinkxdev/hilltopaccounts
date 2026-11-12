@@ -2,6 +2,7 @@ from decimal import Decimal
 from django import forms
 from apps.shared.forms import ReasonForm
 from apps.villas.models import Partition, Villa
+from .assignment import assignment_field, keep_for_admin
 from .models import Expense, ExpenseCategory
 
 class _TaggedSelect(forms.Select):
@@ -41,6 +42,7 @@ class ExpenseForm(forms.Form):
     partition = PartitionChoiceField(queryset=Partition.objects.none(), required=False, empty_label='Whole villa (no specific partition)', widget=_TaggedSelect(data_attr='data-villa', instance_attr='villa_id'))
     name = forms.CharField(max_length=100, label='Expense', widget=forms.TextInput(attrs={'list': 'expense-names', 'autocomplete': 'off', 'placeholder': 'e.g. Electricity'}))
     amount = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12, widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01'}))
+    assigned_to = assignment_field()
     date = forms.DateField(label='Expense date', widget=forms.DateInput(attrs={'type': 'date'}))
     mark_paid = forms.BooleanField(required=False, label='Already paid', help_text='Paid by you — staff payments come out of the cash you collected.')
     payment_method = forms.ChoiceField(required=False, choices=[('', 'Select a method…')] + list(Expense.Method.choices), help_text='Needed when the expense is already paid.')
@@ -52,6 +54,7 @@ class ExpenseForm(forms.Form):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = user
+        keep_for_admin(self, user is not None and user.is_owner, ['assigned_to'])
         if user is not None and not user.is_owner:
             from apps.accounts import selectors as access
             if not any(access.is_business_manager_of(user, v.business) for v in access.manageable_villas(user).select_related('business')):
@@ -109,10 +112,12 @@ class RecurringExpenseForm(forms.Form):
     name = forms.CharField(max_length=100, label='Expense', widget=forms.TextInput(attrs={'list': 'expense-names', 'autocomplete': 'off', 'placeholder': 'e.g. Villa owner rent'}))
     amount = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12, widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01'}))
     due_day = forms.IntegerField(min_value=1, max_value=28, initial=1, widget=forms.HiddenInput(), required=False)
+    assigned_to = assignment_field()
     auto_debit = forms.BooleanField(required=False, label='Auto-debit from the admin account on the due date')
 
-    def __init__(self, *args, user=None, can_auto_debit=None, **kwargs):
+    def __init__(self, *args, user=None, can_auto_debit=None, can_assign=False, **kwargs):
         super().__init__(*args, **kwargs)
+        keep_for_admin(self, can_assign, ['assigned_to'])
         if not (can_auto_debit if can_auto_debit is not None else (user is not None and user.is_owner)):
             self.fields.pop('auto_debit', None)
 
@@ -127,4 +132,9 @@ class RecurringExpenseForm(forms.Form):
 
 class ReviseExpenseForm(forms.Form):
     amount = forms.DecimalField(min_value=Decimal('0.01'), decimal_places=2, max_digits=12, widget=forms.NumberInput(attrs={'inputmode': 'decimal', 'step': '0.01'}))
+    assigned_to = assignment_field()
     description = forms.CharField(required=False, label='Notes', widget=forms.Textarea(attrs={'rows': 2}))
+
+    def __init__(self, *args, can_assign=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        keep_for_admin(self, can_assign, ['assigned_to'])

@@ -24,7 +24,7 @@ from apps.villas.services import create_partition, create_villa
 
 PASSWORD = 'Passw0rd!2026'
 RENTS = [('Outhouse', 2400), ('Ground Studio 1', 1900), ('Ground Studio 2', 1700), ('Ground Studio 3', 2700), ('First Studio 1', 1800), ('First Studio 2', 1900), ('First 1BHK', 2600), ('Pent house', 1850)]
-FIXED = [('Villa owner rent', '9500.00', 'owner', True), ('Kharama', '2000.00', 'staff', False), ('Wifi', '415.00', 'staff', False), ('Maintenance', '135.00', 'staff', False), ('Villa service', '300.00', 'owner', False)]
+FIXED = [('Villa owner rent', '9500.00', 'owner', True), ('Kharama', '2000.00', 'staff', False), ('Wifi', '415.00', 'staff', False), ('Maintenance', '135.00', 'staff', False), ('Villa service', '300.00', 'staff', False)]
 YEAR, MONTH = date.today().year, date.today().month
 
 class FieldworkBase(TestCase):
@@ -96,7 +96,7 @@ class NotebookScenarioTests(FieldworkBase):
         # Staff pay the staff-side expenses from that cash, but cannot settle the owner's own.
         staff_side = Expense.objects.filter(villa=self.villa, paid_by='staff')
         owner_side = Expense.objects.filter(villa=self.villa, paid_by='owner')
-        self.assertEqual((staff_side.count(), owner_side.count()), (3, 2))
+        self.assertEqual((staff_side.count(), owner_side.count()), (4, 1))
         for expense in staff_side:
             r = self.client.post(reverse('expenses:mark_paid', args=[expense.pk]), {'paid_on': '2026-02-03', 'payment_method': 'cash'})
             self.assertEqual(r.status_code, 302)
@@ -106,11 +106,8 @@ class NotebookScenarioTests(FieldworkBase):
         self.assertTrue(AuditLog.objects.filter(action=Action.EXPENSE_UPDATED, object_id=str(rent.pk), reason='auto-debit from owner account').exists())
         from apps.expenses.services import settle_auto_debits
         self.assertEqual(settle_auto_debits(today=date(2026, 3, 1)), 0)
-        # Staff can pay an owner-side bill from their cash too (only auto-debits and the villa rent are owner-only);
-        # whoever pays it is the payer, and the owner then verifies it.
+        # The Admin assigned 'Villa service' to staff: staff paid it from their cash, and the owner then verifies it.
         service = Expense.objects.get(recurring__category__name='Villa service')
-        self.assertEqual(self.client.post(reverse('expenses:mark_paid', args=[service.pk]), {'paid_on': '2026-02-03', 'payment_method': 'cash'}).status_code, 302)
-        service.refresh_from_db()
         self.assertEqual((service.paid_by, service.paid_by_user, service.awaiting_verification), ('staff', self.staff, True))
 
         # Income 16,850 - expenses 12,350 = profit 4,500, straight from the financial engine.

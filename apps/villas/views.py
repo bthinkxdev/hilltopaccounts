@@ -191,7 +191,7 @@ def villa_detail(request, pk):
         expense.can_verify = scope.can_verify_expense(expense)
         expense.can_revert_payment = scope.can_revert_expense_payment(expense) and not villa.is_sold
         expense.can_restore = scope.can_restore_expense(expense) and not villa.is_sold
-        expense.can_edit = can_manage and expense.status == 'active' and expense.paid_on is None and not (is_field_staff and expense.paid_by == 'owner')
+        expense.can_edit = can_manage and expense.status == 'active' and expense.paid_on is None and not (is_field_staff and expense.assigned_to == 'owner')
         return expense
 
     one_off = [decorate(e) for e in expenses.filter(date__gte=start, date__lte=end, recurring__isnull=True).select_related('category', 'partition', 'created_by', 'paid_by_user').order_by('-created_at', '-id')[:15]]
@@ -203,10 +203,12 @@ def villa_detail(request, pk):
     for row in fixed_rows or []:
         if row['expense'] is not None:
             decorate(row['expense'])
-        # One rule: before it is paid the owner is who is expected to pay; once paid, who actually paid it.
-        row['scheduled_side'] = row['template'].paid_by
-        row['side'] = row['expense'].paid_by if row['expense'] is not None else row['template'].paid_by
-        row['side_label'], row['scheduled_label'] = side_names.get(row['side'], row['side']), side_names.get(row['scheduled_side'], row['scheduled_side'])
+        # The card (Admin / Staff) is who it is assigned to; `payer_side` is who actually paid it, once it is paid.
+        assigned = row['expense'].assigned_to if row['expense'] is not None else row['template'].assigned_to
+        paid = row['expense'] is not None and row['expense'].paid_on is not None
+        row['scheduled_side'] = row['side'] = assigned
+        row['payer_side'] = row['expense'].paid_by if paid else assigned
+        row['side_label'], row['scheduled_label'] = side_names.get(row['payer_side'], row['payer_side']), side_names.get(assigned, assigned)
 
     def compute_fixed_subset(rows):
         zero = Decimal('0.00')
@@ -224,13 +226,13 @@ def villa_detail(request, pk):
     fixed_templates = list(RecurringExpense.objects.filter(villa=villa, is_active=True).select_related('category').order_by('-created_at', '-id')) if period['period'] == 'year' else []
     owner_fixed_rows = [r for r in (fixed_rows or []) if r['side'] == 'owner'] if fixed_rows is not None else None
     owner_fixed_totals = compute_fixed_subset(owner_fixed_rows) if owner_fixed_rows is not None else None
-    owner_fixed_templates = [t for t in fixed_templates if t.paid_by == 'owner']
-    owner_one_off = [e for e in one_off if e.paid_by == 'owner']
+    owner_fixed_templates = [t for t in fixed_templates if t.assigned_to == 'owner']
+    owner_one_off = [e for e in one_off if e.assigned_to == 'owner']
 
     staff_fixed_rows = [r for r in (fixed_rows or []) if r['side'] == 'staff'] if fixed_rows is not None else None
     staff_fixed_totals = compute_fixed_subset(staff_fixed_rows) if staff_fixed_rows is not None else None
-    staff_fixed_templates = [t for t in fixed_templates if t.paid_by == 'staff']
-    staff_one_off = [e for e in one_off if e.paid_by == 'staff']
+    staff_fixed_templates = [t for t in fixed_templates if t.assigned_to == 'staff']
+    staff_one_off = [e for e in one_off if e.assigned_to == 'staff']
 
     villa_photos = [p for p in photos if not p.partition_id]
     for p in villa_photos:
@@ -359,37 +361,41 @@ def villa_create(request):
         preselected = get_object_or_404(manageable_businesses, pk=business_id)
         initial['business'] = preselected.pk
     if request.method == 'POST':
-        form = VillaForm(request.POST, business_queryset=manageable_businesses)
+        form = VillaForm(request.POST, business_queryset=manageable_businesses, can_assign=request.user.is_owner)
         if form.is_valid():
             data = dict(form.cleaned_data)
-            fixed_amounts = [(label, data.pop(field), paid_by) for field, label, paid_by in FIXED_EXPENSE_DEFAULTS]
+            fixed_amounts = [(label, data.pop(field), paid_by, data.pop(f'{field}_assigned', None)) for field, label, paid_by in FIXED_EXPENSE_DEFAULTS]
             business = data.pop('business')
             try:
                 with transaction.atomic():
                     villa = create_villa(business=business, created_by=request.user, **data)
                     if selectors.is_business_manager_of(request.user, business):
-                        for label, amount, paid_by in fixed_amounts:
+                        for label, amount, paid_by, assigned_to in fixed_amounts:
                             if amount:
-                                create_recurring_expense(villa=villa, category=get_or_create_category(name=label), amount=amount, due_day=1, paid_by=paid_by, start_period=selected_month_start(request), created_by=request.user)
+                                create_recurring_expense(villa=villa, category=get_or_create_category(name=label), amount=amount, due_day=1, paid_by=paid_by, assigned_to=assigned_to, start_period=selected_month_start(request), created_by=request.user)
                 messages.success(request, f'Villa “{villa.name}” created.')
                 return redirect('villas:villa_detail', pk=villa.pk)
             except ValidationError as exc:
                 msg = exc.message_dict.get('__all__', [str(exc)])[0] if hasattr(exc, 'message_dict') else str(exc)
                 form.add_error('name', msg)
     else:
-        form = VillaForm(business_queryset=manageable_businesses, initial=initial)
+        form = VillaForm(business_queryset=manageable_businesses, initial=initial, can_assign=request.user.is_owner)
     return render(request, 'components/form_page.html', {'form': form, 'title': 'Add Villa', 'cancel_url': reverse('villas:villa_list'), 'breadcrumbs': [('Villas', reverse('villas:villa_list')), ('New Villa', None)]})
 
 def _sync_fixed_expenses(villa, user, data, start_period=None):
     existing = {r.category.name.lower(): r for r in RecurringExpense.objects.filter(villa=villa).select_related('category')}
     for field, label, paid_by in FIXED_EXPENSE_DEFAULTS:
         amount = data.pop(field, None)
+        chosen = data.pop(f'{field}_assigned', None)  # only sent when the Admin edits
         rec = existing.get(label.lower()) or (existing.get('villa owner rent') if label == 'Villa rent' else None)
         if amount:
             if rec:
-                update_recurring_expense(recurring=rec, updated_by=user, amount=amount, is_active=True)
+                changes = {'amount': amount, 'is_active': True}
+                if chosen:
+                    changes['assigned_to'] = chosen
+                update_recurring_expense(recurring=rec, updated_by=user, **changes)
             else:
-                create_recurring_expense(villa=villa, category=get_or_create_category(name=label), amount=amount, due_day=1, paid_by=paid_by, start_period=start_period, created_by=user)
+                create_recurring_expense(villa=villa, category=get_or_create_category(name=label), amount=amount, due_day=1, paid_by=paid_by, assigned_to=chosen, start_period=start_period, created_by=user)
         elif rec and rec.is_active:
             deactivate_recurring_expense(recurring=rec, updated_by=user, reason='Removed in villa edit')
 
@@ -399,7 +405,7 @@ def villa_edit(request, pk):
     if not (request.user.is_owner or selectors.is_business_manager_of(request.user, villa.business)):
         raise PermissionDenied('You cannot edit this villa.')
     if request.method == 'POST':
-        form = VillaEditForm(request.POST, villa=villa)
+        form = VillaEditForm(request.POST, villa=villa, can_assign=request.user.is_owner)
         if form.is_valid():
             data = dict(form.cleaned_data)
             try:
@@ -412,11 +418,15 @@ def villa_edit(request, pk):
                 msg = exc.message_dict.get('__all__', [str(exc)])[0] if hasattr(exc, 'message_dict') else str(exc)
                 form.add_error('name', msg)
     else:
-        active = {r.category.name.lower(): r.amount for r in RecurringExpense.objects.filter(villa=villa, is_active=True).select_related('category')}
+        active_rows = {r.category.name.lower(): r for r in RecurringExpense.objects.filter(villa=villa, is_active=True).select_related('category')}
+        active = {name: r.amount for name, r in active_rows.items()}
         initial = {f: getattr(villa, f) for f in ['name', 'address', 'landlord_name', 'landlord_contact', 'contract_start', 'contract_end']}
         for field, label, _ in FIXED_EXPENSE_DEFAULTS:
             initial[field] = active.get(label.lower()) or (active.get('villa owner rent') if label == 'Villa rent' else None)
-        form = VillaEditForm(initial=initial, villa=villa)
+            row = active_rows.get(label.lower()) or (active_rows.get('villa owner rent') if label == 'Villa rent' else None)
+            if row:
+                initial[f'{field}_assigned'] = row.assigned_to
+        form = VillaEditForm(initial=initial, villa=villa, can_assign=request.user.is_owner)
     return render(request, 'components/form_page.html', {'form': form, 'title': f'Edit {villa.name}', 'submit_label': 'Save Changes', 'cancel_url': reverse('villas:villa_detail', args=[villa.pk]), 'breadcrumbs': [('Villas', reverse('villas:villa_list')), (villa.name, reverse('villas:villa_detail', args=[villa.pk])), ('Edit', None)]})
 
 @login_required
@@ -537,7 +547,7 @@ def partition_detail(request, pk):
         expense.can_verify = scope.can_verify_expense(expense) and not villa.is_sold
         expense.can_revert_payment = scope.can_revert_expense_payment(expense) and not villa.is_sold
         expense.can_restore = scope.can_restore_expense(expense) and not villa.is_sold
-        expense.can_edit = can_manage_here and expense.status == 'active' and expense.paid_on is None and not (is_staff and expense.paid_by == 'owner')
+        expense.can_edit = can_manage_here and expense.status == 'active' and expense.paid_on is None and not (is_staff and expense.assigned_to == 'owner')
     from apps.tenancy.models import Tenant
     past_tenants = list(selectors.tenants_visible_to(request.user).filter(partition=partition, status=Tenant.Status.MOVED_OUT).order_by('-move_out_date', '-id'))
     can_view_financials = selectors.can_view_villa_financials(request.user, villa)

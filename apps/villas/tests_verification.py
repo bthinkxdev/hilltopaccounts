@@ -12,7 +12,7 @@ from apps.cash import selectors as cash_selectors
 from apps.cash.models import CashHandover
 from apps.cash.services import confirm_cash_handover, reject_cash_handover, submit_cash_handover
 from apps.expenses.models import Expense, RecurringExpense
-from apps.expenses.services import create_expense, get_or_create_category
+from apps.expenses.services import create_expense, create_recurring_expense, get_or_create_category
 from apps.notifications.models import Notification
 from apps.notifications.services import sync_for_user
 from apps.tenancy.services import create_tenant
@@ -200,9 +200,9 @@ class VillaCreationDefaultsTests(VerificationBase):
         villa = Villa.objects.get(name='New Villa')
         self.assertRedirects(r, reverse('villas:villa_detail', args=[villa.pk]))
         fixed = {f.category.name: (f.amount, f.paid_by) for f in RecurringExpense.objects.filter(villa=villa)}
-        self.assertEqual(fixed, {'Villa rent': (Decimal('9500.00'), 'owner'), 'Electricity': (Decimal('600.50'), 'staff'), 'Maintenance': (Decimal('135.00'), 'staff')})
+        self.assertEqual(fixed, {'Villa rent': (Decimal('9500.00'), 'owner'), 'Electricity': (Decimal('600.50'), 'staff'), 'Company Service': (Decimal('135.00'), 'staff')})
         page = self.client.get(reverse('villas:villa_detail', args=[villa.pk]))
-        self.assertEqual({row['template'].category.name: row['status'] for row in page.context['fixed_rows']}, {'Villa rent': 'overdue' if TODAY.day > 1 else 'due_today', 'Electricity': 'overdue' if TODAY.day > 1 else 'due_today', 'Maintenance': 'overdue' if TODAY.day > 1 else 'due_today'})
+        self.assertEqual({row['template'].category.name: row['status'] for row in page.context['fixed_rows']}, {'Villa rent': 'overdue' if TODAY.day > 1 else 'due_today', 'Electricity': 'overdue' if TODAY.day > 1 else 'due_today', 'Company Service': 'overdue' if TODAY.day > 1 else 'due_today'})
         self.assertEqual(Expense.objects.filter(villa=villa).count(), 3)
 
     def test_all_blank_creates_a_villa_with_no_fixed_expenses_and_the_owner_can_add_later(self):
@@ -226,3 +226,155 @@ class VillaCreationDefaultsTests(VerificationBase):
         self._post(fixed_wifi='300')
         villa = Villa.objects.get(name='New Villa')
         self.assertEqual(RecurringExpense.objects.get(villa=villa).category.name, 'Wi-Fi')
+
+
+class FixedExpenseAssignmentTests(VerificationBase):
+    """The Admin chooses, per monthly expense, whether the Admin or the Staff pays it; staff can only view the Admin's."""
+
+    def _create(self, **fixed):
+        data = {'business': self.business.pk, 'name': 'Assigned Villa', 'address': 'x'}
+        data.update(fixed)
+        return self.client.post(reverse('villas:villa_create'), data)
+
+    def _paid_by(self, villa):
+        return {f.category.name: f.assigned_to for f in RecurringExpense.objects.filter(villa=villa)}
+
+    def test_admin_chooses_who_pays_each_monthly_expense(self):
+        self.login('owner')
+        self._create(fixed_villa_rent='9000', fixed_villa_rent_assigned='staff', fixed_electricity='600', fixed_electricity_assigned='owner', fixed_wifi='50')
+        villa = Villa.objects.get(name='Assigned Villa')
+        # untouched choices keep the old defaults (rent: Admin, others: Staff)
+        self.assertEqual(self._paid_by(villa), {'Villa rent': 'staff', 'Electricity': 'owner', 'Wi-Fi': 'staff'})
+        self.assertEqual({e.category.name: e.assigned_to for e in Expense.objects.filter(villa=villa)}, {'Villa rent': 'staff', 'Electricity': 'owner', 'Wi-Fi': 'staff'})
+
+    def test_the_choice_is_shown_to_the_admin_only(self):
+        self.login('owner')
+        self.assertIn('fixed_electricity_assigned', self.client.get(reverse('villas:villa_create')).content.decode())
+        self.login('manager')
+        self.assertNotIn('fixed_electricity_assigned', self.client.get(reverse('villas:villa_create')).content.decode())
+
+    def test_a_non_admin_cannot_set_the_choice(self):
+        self.login('manager')
+        self._create(fixed_villa_rent='9000', fixed_villa_rent_assigned='staff', fixed_electricity='600', fixed_electricity_assigned='owner')
+        villa = Villa.objects.get(name='Assigned Villa')
+        self.assertEqual(self._paid_by(villa), {'Villa rent': 'owner', 'Electricity': 'staff'})  # the defaults
+
+    def test_admin_can_change_the_assignment_when_editing_the_villa(self):
+        self.login('owner')
+        self._create(fixed_electricity='600')
+        villa = Villa.objects.get(name='Assigned Villa')
+        page = self.client.get(reverse('villas:villa_edit', args=[villa.pk]))
+        self.assertEqual(page.context['form'].initial['fixed_electricity_assigned'], 'staff')
+        r = self.client.post(reverse('villas:villa_edit', args=[villa.pk]), {'name': villa.name, 'fixed_electricity': '600', 'fixed_electricity_assigned': 'owner'})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self._paid_by(villa), {'Electricity': 'owner'})
+
+    def test_staff_cannot_pay_an_admin_assigned_monthly_expense_but_can_pay_a_staff_one(self):
+        self.login('owner')
+        self._create(fixed_electricity='600', fixed_electricity_assigned='owner', fixed_wifi='50', fixed_wifi_assigned='staff')
+        villa = Villa.objects.get(name='Assigned Villa')
+        assign_villa_staff(user=self.staff, villa=villa, assigned_by=self.owner)
+        admin_row = Expense.objects.get(villa=villa, category__name='Electricity')
+        staff_row = Expense.objects.get(villa=villa, category__name='Wi-Fi')
+        self.login('staff')
+        self.client.post(reverse('expenses:quick_paid', args=[admin_row.pk]))
+        admin_row.refresh_from_db()
+        self.assertIsNone(admin_row.paid_on)
+        self.client.post(reverse('expenses:quick_paid', args=[staff_row.pk]))
+        staff_row.refresh_from_db()
+        self.assertIsNotNone(staff_row.paid_on)
+        # the villa page shows both cards to staff; the Admin one has no tick box (read-only, status only)
+        page = self.client.get(reverse('villas:villa_detail', args=[villa.pk]))
+        html = page.content.decode()
+        self.assertIn('Admin Expenses', html)
+        self.assertNotIn(f'name="expense_ids" value="{admin_row.pk}"', html)
+        self.assertTrue(all(not r['expense'].can_pay for r in page.context['owner_fixed_rows']))
+
+    def test_the_admin_can_still_pay_both(self):
+        self.login('owner')
+        self._create(fixed_electricity='600', fixed_electricity_assigned='owner', fixed_wifi='50', fixed_wifi_assigned='staff')
+        villa = Villa.objects.get(name='Assigned Villa')
+        for row in Expense.objects.filter(villa=villa):
+            self.client.post(reverse('expenses:quick_paid', args=[row.pk]))
+            row.refresh_from_db()
+            self.assertIsNotNone(row.paid_on)
+
+
+class ReviseAssignmentTests(VerificationBase):
+    """The Admin can move an unpaid expense between Admin and Staff from its edit popup."""
+
+    def setUp(self):
+        super().setUp()
+        self.row = self.expense(name='Electricity', paid_by='staff')
+        self.url = reverse('expenses:revise', args=[self.row.pk])
+
+    def test_the_admin_sees_the_choice_and_can_change_it(self):
+        self.login('owner')
+        page = self.client.get(self.url)
+        self.assertEqual(page.context['form'].initial['assigned_to'], 'staff')
+        r = self.client.post(self.url, {'amount': '210.00', 'assigned_to': 'owner', 'description': ''})
+        self.assertEqual(r.status_code, 302)
+        self.row.refresh_from_db()
+        self.assertEqual((self.row.assigned_to, self.row.amount), ('owner', Decimal('210.00')))
+
+    def test_leaving_it_blank_keeps_the_assignment(self):
+        self.login('owner')
+        self.client.post(self.url, {'amount': '220.00', 'assigned_to': '', 'description': ''})
+        self.row.refresh_from_db()
+        self.assertEqual((self.row.assigned_to, self.row.amount), ('staff', Decimal('220.00')))
+
+    def test_staff_do_not_see_the_choice_and_cannot_set_it(self):
+        self.login('staff')
+        self.assertNotIn('name="assigned_to"', self.client.get(self.url).content.decode())
+        self.client.post(self.url, {'amount': '230.00', 'assigned_to': 'owner', 'description': ''})
+        self.row.refresh_from_db()
+        self.assertEqual((self.row.assigned_to, self.row.amount), ('staff', Decimal('230.00')))
+
+    def test_an_auto_debit_stays_with_the_admin(self):
+        rec = create_recurring_expense(villa=self.villa, category=get_or_create_category(name='Rent'), amount=Decimal('900'), due_day=1, auto_debit=True, created_by=self.owner, start_period=TODAY.replace(day=1))
+        row = Expense.objects.get(recurring=rec)
+        self.login('owner')
+        self.client.post(reverse('expenses:revise', args=[row.pk]), {'amount': '900.00', 'assigned_to': 'staff', 'description': ''})
+        row.refresh_from_db()
+        self.assertEqual(row.assigned_to, 'owner')
+
+
+class AssignedVersusPaidByTests(VerificationBase):
+    """'Assigned to' is who is going to pay; 'paid by' stays the record of who actually paid."""
+
+    def test_assigning_does_not_touch_paid_by_and_paying_records_the_real_payer(self):
+        self.login('owner')
+        self.client.post(reverse('villas:villa_create'), {'business': self.business.pk, 'name': 'AP Villa', 'fixed_wifi': '50', 'fixed_wifi_assigned': 'staff', 'fixed_villa_rent': '900', 'fixed_villa_rent_assigned': 'staff'})
+        villa = Villa.objects.get(name='AP Villa')
+        wifi = Expense.objects.get(villa=villa, category__name='Wi-Fi')
+        self.assertEqual((wifi.assigned_to, wifi.paid_by), ('staff', 'staff'))
+        rent = Expense.objects.get(villa=villa, category__name='Villa rent')
+        self.assertEqual((rent.assigned_to, rent.paid_by), ('staff', 'owner'))  # paid_by keeps its own default
+        self.client.post(reverse('expenses:quick_paid', args=[wifi.pk]))  # the admin pays what was assigned to staff
+        wifi.refresh_from_db()
+        self.assertEqual((wifi.assigned_to, wifi.paid_by, wifi.paid_by_user), ('staff', 'owner', self.owner))
+        html = self.client.get(reverse('villas:villa_detail', args=[villa.pk])).content.decode()
+        self.assertIn('Paid by Admin — scheduled as Staff', html)
+
+    def test_the_add_expense_form_assigns_for_the_admin_only(self):
+        url = reverse('expenses:create_for_villa', args=[self.villa.pk])
+        self.login('owner')
+        self.assertIn('name="assigned_to"', self.client.get(url).content.decode())
+        data = {'villa': self.villa.pk, 'name': 'Gas', 'amount': '40.00', 'date': TODAY.isoformat(), 'frequency': 'one_time', 'assigned_to': 'owner'}
+        self.client.post(url, data)
+        self.assertEqual(Expense.objects.get(category__name='Gas').assigned_to, 'owner')
+        self.login('staff')
+        self.assertNotIn('name="assigned_to"', self.client.get(url).content.decode())
+        self.client.post(url, {**data, 'name': 'Soap', 'assigned_to': 'owner'})
+        self.assertEqual(Expense.objects.get(category__name='Soap').assigned_to, 'staff')
+
+    def test_a_monthly_expense_can_be_assigned_when_added_and_edited(self):
+        self.login('owner')
+        self.client.post(reverse('expenses:create_for_villa', args=[self.villa.pk]), {'villa': self.villa.pk, 'name': 'Pest control', 'amount': '90.00', 'date': TODAY.replace(day=1).isoformat(), 'frequency': 'monthly', 'assigned_to': 'owner'})
+        rec = RecurringExpense.objects.get(category__name='Pest control')
+        self.assertEqual(rec.assigned_to, 'owner')
+        row = Expense.objects.get(recurring=rec)
+        self.assertEqual(row.assigned_to, 'owner')
+        self.client.post(reverse('expenses:recurring_edit', args=[rec.pk]), {'name': 'Pest control', 'amount': '90.00', 'assigned_to': 'staff'})
+        rec.refresh_from_db(); row.refresh_from_db()
+        self.assertEqual((rec.assigned_to, row.assigned_to), ('staff', 'staff'))  # this month's unpaid row follows
