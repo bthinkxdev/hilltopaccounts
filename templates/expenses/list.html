@@ -160,6 +160,28 @@
   {% endif %}
 
   {% include "components/pagination.html" %}
+
+  {# Total bar pinned to the bottom: totals of exactly the rows the filters match, for the selected month / year. Only active expenses count; cancelled and reversed ones are kept apart. #}
+  <div class="collections-total-bar" role="status" aria-live="polite" data-total-bar="{{ totals_bar.kind }}">
+    <div class="collections-total-bar__scope">
+      <strong>{{ period_label }}</strong>
+      {% if filter_summary %}<span class="pill pill--accent">Filtered</span><span class="collections-total-bar__filters">{{ filter_summary|join:" &middot; " }}</span>{% else %}<span class="pill pill--neutral">All</span>{% endif %}
+      <span class="collections-total-bar__count">{{ totals_bar.count }} expense{{ totals_bar.count|pluralize }}</span>
+    </div>
+    <div class="collections-total-bar__figures">
+      {% if totals_bar.kind == "inactive" %}
+        <div class="collections-total-bar__fig collections-total-bar__fig--main"><span>Total {{ totals_bar.status_label|lower }}</span><strong data-total="inactive">QAR {{ totals_bar.inactive|floatformat:"2g" }}</strong><small class="collections-total-bar__adv">Not counted in expenses</small></div>
+      {% else %}
+        <div class="collections-total-bar__fig collections-total-bar__fig--main"><span>Total expenses</span><strong class="is-danger" data-total="expenses">QAR {{ totals_bar.total|floatformat:"2g" }}</strong>{% if totals_bar.staff or totals_bar.owner %}<small class="collections-total-bar__adv">(Staff: QAR {{ totals_bar.staff|floatformat:"2g" }} · Admin: QAR {{ totals_bar.owner|floatformat:"2g" }})</small>{% endif %}</div>
+        <div class="collections-total-bar__fig"><span>Paid</span><strong class="is-success" data-total="paid">QAR {{ totals_bar.paid|floatformat:"2g" }}</strong></div>
+        <div class="collections-total-bar__fig"><span>Unpaid</span><strong class="{% if totals_bar.unpaid %}is-warning{% endif %}" data-total="unpaid">QAR {{ totals_bar.unpaid|floatformat:"2g" }}</strong></div>
+        {% if totals_bar.overdue_count %}<div class="collections-total-bar__fig"><span>Overdue ({{ totals_bar.overdue_count }})</span><strong class="is-danger" data-total="overdue">QAR {{ totals_bar.overdue|floatformat:"2g" }}</strong></div>{% endif %}
+        {% if totals_bar.to_verify %}<div class="collections-total-bar__fig"><span>To verify</span><strong class="is-warning" data-total="to_verify">QAR {{ totals_bar.to_verify|floatformat:"2g" }}</strong></div>{% endif %}
+        {% if totals_bar.scheduled %}<div class="collections-total-bar__fig"><span>Scheduled</span><strong data-total="scheduled">QAR {{ totals_bar.scheduled|floatformat:"2g" }}</strong></div>{% endif %}
+        {% if totals_bar.inactive_count %}<div class="collections-total-bar__fig"><span>Cancelled ({{ totals_bar.inactive_count }})</span><strong data-total="inactive">QAR {{ totals_bar.inactive|floatformat:"2g" }}</strong></div>{% endif %}
+      {% endif %}
+    </div>
+  </div>
 {% endblock %}
 
 {% block extra_scripts %}

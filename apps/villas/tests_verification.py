@@ -378,3 +378,26 @@ class AssignedVersusPaidByTests(VerificationBase):
         self.client.post(reverse('expenses:recurring_edit', args=[rec.pk]), {'name': 'Pest control', 'amount': '90.00', 'assigned_to': 'staff'})
         rec.refresh_from_db(); row.refresh_from_db()
         self.assertEqual((rec.assigned_to, row.assigned_to), ('staff', 'staff'))  # this month's unpaid row follows
+
+
+class ExpenseDetailsFollowAssignmentTests(VerificationBase):
+    """The Staff / Admin Expenses figures count by who each expense is assigned to, whoever ends up paying it."""
+
+    def test_figures_and_links_follow_the_assignment(self):
+        self.login('owner')
+        a = self.expense(name='Electricity', amount='100.00')  # assigned to staff by default
+        b = self.expense(name='Insurance', amount='300.00')
+        c = self.expense(name='Cleaning', amount='50.00')
+        Expense.objects.filter(pk=b.pk).update(assigned_to='owner')
+        from apps.expenses.services import mark_expense_paid
+        mark_expense_paid(expense=a, paid_on=TODAY, payment_method='cash', marked_by=self.owner)  # the Admin pays a staff-assigned one
+        ctx = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk])).context
+        pnl = ctx['pnl']
+        self.assertEqual((pnl['staff_expenses'], pnl['owner_expenses'], pnl['expenses']), (Decimal('150.00'), Decimal('300.00'), Decimal('450.00')))
+        self.assertEqual((pnl['staff_expenses_unpaid'], pnl['owner_expenses_unpaid']), (Decimal('50.00'), Decimal('300.00')))
+        # the card links list exactly the same rows
+        month = f'&period=month&year={TODAY.year}&month={TODAY.month}'
+        staff_rows = self.client.get(ctx['period_pnl_urls']['staff_expenses'].split('?')[0] + '?paid_by=staff&villa=%d%s' % (self.villa.pk, month)).context['page_obj']
+        owner_rows = self.client.get(ctx['period_pnl_urls']['admin_expenses'].split('?')[0] + '?paid_by=owner&villa=%d%s' % (self.villa.pk, month)).context['page_obj']
+        self.assertEqual({e.pk for e in staff_rows}, {a.pk, c.pk})
+        self.assertEqual({e.pk for e in owner_rows}, {b.pk})

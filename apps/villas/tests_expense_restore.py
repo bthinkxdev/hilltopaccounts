@@ -5,7 +5,7 @@ from django.urls import reverse
 
 from apps.expenses.models import Expense
 from apps.expenses.services import cancel_expense, create_expense, get_or_create_category
-from .tests_villa_stats import LAST_MONTH, THIS_MONTH, VillaStatsBase
+from .tests_villa_stats import LAST_MONTH, THIS_MONTH, TODAY, VillaStatsBase
 
 
 class RestoreTests(VillaStatsBase):
@@ -206,3 +206,61 @@ class ListFilterTests(VillaStatsBase):
         for status in ('cancelled', ''):
             html = self.client.get(self.base + f'&status={status}').content.decode()
             self.assertIn('<option value="%s" selected>' % status, html)
+
+
+class ExpenseTotalBarTests(VillaStatsBase):
+    """The bar under the Expenses list totals exactly the rows the filters match, for the selected month and year."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.expenses.services import mark_expense_paid
+        self.login('owner')
+        cat = lambda n: get_or_create_category(name=n)
+        self.unpaid = create_expense(villa=self.villa, category=cat('Unpaid one'), amount=Decimal('10.00'), date=THIS_MONTH, due_date=THIS_MONTH, created_by=self.owner)
+        self.paid = create_expense(villa=self.villa, category=cat('Paid one'), amount=Decimal('20.00'), date=THIS_MONTH, created_by=self.owner)
+        mark_expense_paid(expense=self.paid, marked_by=self.owner, payment_method='cash', paid_on=THIS_MONTH)
+        self.admin_one = create_expense(villa=self.villa, category=cat('Admin one'), amount=Decimal('40.00'), date=THIS_MONTH, created_by=self.owner, assigned_to='owner')
+        self.gone = create_expense(villa=self.villa, category=cat('Gone one'), amount=Decimal('30.00'), date=THIS_MONTH, created_by=self.owner)
+        cancel_expense(expense=self.gone, cancelled_by=self.owner, reason='no longer needed')
+        self.last = create_expense(villa=self.villa, category=cat('Last month'), amount=Decimal('500.00'), date=LAST_MONTH, created_by=self.owner)
+        self.base = f'/expenses/?period=month&year={THIS_MONTH.year}&month={THIS_MONTH.month}'
+
+    def bar(self, query=''):
+        return self.client.get(self.base + query).context['totals_bar']
+
+    def test_totals_are_for_the_selected_month_and_exclude_cancelled(self):
+        bar = self.bar()
+        self.assertEqual((bar['total'], bar['paid'], bar['unpaid'], bar['count']), (Decimal('70.00'), Decimal('20.00'), Decimal('50.00'), 3))
+        self.assertEqual((bar['staff'], bar['owner']), (Decimal('30.00'), Decimal('40.00')))  # by assignment
+        self.assertEqual(bar['staff'] + bar['owner'], bar['total'])
+        last = self.client.get(f'/expenses/?period=month&year={LAST_MONTH.year}&month={LAST_MONTH.month}').context['totals_bar']
+        self.assertEqual(last['total'], Decimal('500.00'))
+
+    def test_the_bar_follows_the_filters(self):
+        self.assertEqual(self.bar('&due=paid')['total'], Decimal('20.00'))
+        self.assertEqual(self.bar('&due=unpaid')['total'], Decimal('50.00'))
+        self.assertEqual(self.bar('&staff=owner')['total'], Decimal('40.00'))
+        self.assertEqual(self.bar('&staff=staff')['total'], Decimal('30.00'))
+        self.assertEqual(self.bar(f'&villa={self.villa.pk}')['total'], Decimal('70.00'))
+
+    def test_cancelled_rows_are_totalled_apart(self):
+        bar = self.bar('&status=cancelled')
+        self.assertEqual((bar['kind'], bar['inactive'], bar['total']), ('inactive', Decimal('30.00'), Decimal('0.00')))
+        everything = self.bar('&status=')
+        self.assertEqual((everything['total'], everything['inactive'], everything['inactive_count']), (Decimal('70.00'), Decimal('30.00'), 1))
+
+    def test_the_scope_text_names_the_filters(self):
+        html = self.client.get(self.base + '&due=unpaid&staff=owner').content.decode()
+        self.assertIn('collections-total-bar', html)
+        self.assertIn('Outstanding', html)
+        self.assertIn('Admin expenses', html)
+
+    def test_overdue_counts_only_unpaid_rows_past_their_due_date(self):
+        bar = self.bar()
+        expected = (Decimal('10.00'), 1) if TODAY.day > 1 else (Decimal('0.00'), 0)
+        self.assertEqual((bar['overdue'], bar['overdue_count']), expected)
+
+    def test_the_bar_is_shown_to_staff_too(self):
+        self.login('staff')
+        self.assertEqual(self.bar()['total'], Decimal('70.00'))
+        self.assertContains(self.client.get(self.base), 'Total expenses')

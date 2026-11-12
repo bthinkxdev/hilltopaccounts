@@ -397,7 +397,7 @@ class ExpenseSideOnVillaCardsTests(VillaStatsBase):
         owner_card, staff_card, ctx = self.card_rows()
         self.assertEqual((owner_card, staff_card), ([], ['Wi-Fi']))
         self.assertEqual(ctx['staff_fixed_totals']['paid'], 300)
-        self.assertEqual(ctx['pnl']['owner_expenses'], 300)  # the P&L Admin figure is what the Admin actually paid
+        self.assertEqual((ctx['pnl']['staff_expenses'], ctx['pnl']['owner_expenses']), (300, 0))  # Expense Details follows the assignment
         r = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]))
         self.assertContains(r, 'Paid by Admin — scheduled as Staff')
 

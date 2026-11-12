@@ -1,9 +1,10 @@
 from datetime import date
+from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -28,6 +29,50 @@ def _can_manage_expense(user, expense):
             return False
         return selectors.can_manage_villa(user, expense.villa)
     return selectors.is_business_manager_of(user, expense.business)
+
+def _expense_total_bar(qs, *, today, status, due, villa_id, villas, staff_id, staff_users, payable, scheduled_total):
+    """The figures of the bar pinned under the list: sums over exactly the rows the filters match (every row, not one page),
+    for the selected month / year. Only active expenses count as expenses, the same rule as the profit and loss; cancelled and
+    reversed rows are totalled apart so they can never inflate a figure."""
+    from django.db.models import Count
+    live = Q(status=Expense.Status.ACTIVE)
+    unpaid = live & Q(paid_on__isnull=True)
+    row = qs.order_by().aggregate(
+        count=Count('pk'),
+        total=Sum('amount', filter=live),
+        paid=Sum('amount', filter=live & Q(paid_on__isnull=False)),
+        unpaid=Sum('amount', filter=unpaid),
+        overdue=Sum('amount', filter=unpaid & Q(due_date__lt=today)),
+        overdue_count=Count('pk', filter=unpaid & Q(due_date__lt=today)),
+        to_verify=Sum('amount', filter=live & Q(paid_on__isnull=False, verified_at__isnull=True)),
+        staff=Sum('amount', filter=live & Q(assigned_to=AssignedTo.STAFF)),
+        owner=Sum('amount', filter=live & Q(assigned_to=AssignedTo.OWNER)),
+        inactive=Sum('amount', filter=~live),
+        inactive_count=Count('pk', filter=~live),
+    )
+    zero = Decimal('0.00')
+    bar = {k: (v or zero) if k not in ('count', 'overdue_count', 'inactive_count') else v for k, v in row.items()}
+    bar['kind'] = 'inactive' if status in (Expense.Status.CANCELLED, Expense.Status.REVERSED) else 'active'
+    bar['scheduled'] = scheduled_total or zero
+    bar['status_label'] = dict(Expense.Status.choices).get(status, '')
+
+    summary = []
+    if villa_id.isdigit():
+        summary.append(next((v.name for v in villas if str(v.pk) == villa_id), 'one villa'))
+    if due in dict(DueBucket.FILTER_CHOICES):
+        summary.append(dict(DueBucket.FILTER_CHOICES)[due])
+    if status != Expense.Status.ACTIVE:
+        summary.append(bar['status_label'] or 'All statuses')
+    if staff_id == PaidBy.STAFF:
+        summary.append('Staff expenses')
+    elif staff_id == PaidBy.OWNER:
+        summary.append('Admin expenses')
+    elif staff_id.isdigit():
+        person = next((u for u in staff_users if str(u.pk) == staff_id), None)
+        summary.append(person.get_full_name() or person.username if person else 'one person')
+    if payable:
+        summary.append('Payable from cash')
+    return bar, summary
 
 @login_required
 def expense_list(request):
@@ -71,7 +116,7 @@ def expense_list(request):
         uid = int(staff_id)
         qs = qs.filter(Q(paid_by_user_id=uid) | Q(created_by_id=uid))
     elif staff_id in (PaidBy.STAFF, PaidBy.OWNER):
-        qs = qs.filter(paid_by=staff_id)
+        qs = qs.filter(assigned_to=staff_id)  # "Staff Expenses" / "Admin Expenses": who it is assigned to
     payable = request.GET.get('payable') == '1'
     if payable:
         # Bills staff may pay from collected cash (the dashboard's "Staff bills due"): not auto-debits, not villa rent.
@@ -83,7 +128,7 @@ def expense_list(request):
     if staff_id.isdigit():
         summary_base = summary_base.filter(Q(paid_by_user_id=int(staff_id)) | Q(created_by_id=int(staff_id)))
     elif staff_id in (PaidBy.STAFF, PaidBy.OWNER):
-        summary_base = summary_base.filter(paid_by=staff_id)
+        summary_base = summary_base.filter(assigned_to=staff_id)
 
     page_obj = paginate_queryset(request, qs.order_by('due_date', '-created_at', '-id') if due in (DueBucket.UNPAID, DueBucket.OVERDUE, DueBucket.TODAY, DueBucket.UPCOMING) else qs.order_by('-created_at', '-id'))
     scope = selectors.ManageScope(request.user)
@@ -127,7 +172,11 @@ def expense_list(request):
             can_pay = scope.can_manage_villa(villa.pk, villa.business_id)
             scheduled += [{'villa': villa, 'template': r['template'], 'amount': r['amount'], 'due_date': r['due_date'], 'can_pay': can_pay} for r in rows if r['status'] == expense_selectors.FixedStatus.NOT_CREATED]
 
+    totals_bar, filter_summary = _expense_total_bar(qs, today=today, status=status, due=due, villa_id=villa_id, villas=villas, staff_id=staff_id, staff_users=staff_users, payable=payable, scheduled_total=sum((s['amount'] for s in scheduled), 0))
+
     context = {
+        'totals_bar': totals_bar,
+        'filter_summary': filter_summary,
         'scheduled': scheduled,
         'scheduled_total': sum((s['amount'] for s in scheduled), 0),
         'page_obj': page_obj,

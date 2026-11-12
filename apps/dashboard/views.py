@@ -320,7 +320,7 @@ def _get_financial_export_data(request):
         from apps.expenses.models import Expense
 
         pay_rows = billing_selectors.income_payments(inv, s, e).values('invoice__partition__villa_id', 'collected_by__is_owner').annotate(total=Sum('amount'))
-        exp_rows = exp.filter(status=Expense.Status.ACTIVE, date__gte=s, date__lte=e).values('villa_id', 'paid_by').annotate(total=Sum('amount'))
+        exp_rows = exp.filter(status=Expense.Status.ACTIVE, date__gte=s, date__lte=e).values('villa_id', 'assigned_to').annotate(total=Sum('amount'))
 
         villa_map = {
             v.id: {'name': v.name, 'income': Decimal('0.00'), 'expenses': Decimal('0.00'), 'staff_c': Decimal('0.00'), 'admin_c': Decimal('0.00'), 'staff_e': Decimal('0.00'), 'admin_e': Decimal('0.00')}
@@ -341,7 +341,7 @@ def _get_financial_export_data(request):
             if vid in villa_map:
                 amt = r['total'] or Decimal('0.00')
                 villa_map[vid]['expenses'] += amt
-                if r['paid_by'] == 'staff':
+                if r['assigned_to'] == 'staff':
                     villa_map[vid]['staff_e'] += amt
                 else:
                     villa_map[vid]['admin_e'] += amt

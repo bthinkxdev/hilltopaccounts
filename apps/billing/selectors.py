@@ -125,8 +125,9 @@ def period_profit_loss(invoice_queryset, expense_queryset, start: date, end: dat
     expenses = valid_expense_total(in_period)
     from apps.expenses.models import PaidBy
     live_expenses = in_period.filter(status='active')
-    by_payer = {row['paid_by']: row['total'] for row in live_expenses.order_by().values('paid_by').annotate(total=Sum('amount'))}
-    unpaid_by_payer = {row['paid_by']: row['total'] for row in live_expenses.filter(paid_on__isnull=True).order_by().values('paid_by').annotate(total=Sum('amount'))}
+    # Staff / Admin expenses follow who each expense is assigned to (not who happened to pay it).
+    by_payer = {row['assigned_to']: row['total'] for row in live_expenses.order_by().values('assigned_to').annotate(total=Sum('amount'))}
+    unpaid_by_payer = {row['assigned_to']: row['total'] for row in live_expenses.filter(paid_on__isnull=True).order_by().values('assigned_to').annotate(total=Sum('amount'))}
     zero = Decimal('0.00')
 
     admin_collected = _total(live_payments.filter(collected_by__is_owner=True)) + _total(advances.filter(collected_by__is_owner=True))
