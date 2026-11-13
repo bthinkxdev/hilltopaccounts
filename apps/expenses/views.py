@@ -30,7 +30,7 @@ def _can_manage_expense(user, expense):
         return selectors.can_manage_villa(user, expense.villa)
     return selectors.is_business_manager_of(user, expense.business)
 
-def _expense_total_bar(qs, *, today, status, due, villa_id, villas, staff_id, staff_users, payable, scheduled_total):
+def _expense_total_bar(qs, *, today, status, due, villa_id='', villas=None, staff_id='', staff_users=None, payable=False, scheduled_total=0, selected_villa_ids=None):
     """The figures of the bar pinned under the list: sums over exactly the rows the filters match (every row, not one page),
     for the selected month / year. Only active expenses count as expenses, the same rule as the profit and loss; cancelled and
     reversed rows are totalled apart so they can never inflate a figure."""
@@ -57,8 +57,13 @@ def _expense_total_bar(qs, *, today, status, due, villa_id, villas, staff_id, st
     bar['status_label'] = dict(Expense.Status.choices).get(status, '')
 
     summary = []
-    if villa_id.isdigit():
-        summary.append(next((v.name for v in villas if str(v.pk) == villa_id), 'one villa'))
+    if selected_villa_ids:
+        if len(selected_villa_ids) == 1:
+            summary.append(next((v.name for v in villas if str(v.pk) == selected_villa_ids[0]), 'one villa'))
+        else:
+            summary.append(f'{len(selected_villa_ids)} villas')
+    elif villa_id and str(villa_id).isdigit():
+        summary.append(next((v.name for v in villas if str(v.pk) == str(villa_id)), 'one villa'))
     if due in dict(DueBucket.FILTER_CHOICES):
         summary.append(dict(DueBucket.FILTER_CHOICES)[due])
     if status != Expense.Status.ACTIVE:
@@ -101,9 +106,10 @@ def expense_list(request):
 
     visible = selectors.expenses_visible_to(request.user)
     qs = visible.select_related('business', 'villa', 'partition', 'category', 'paid_by_user').filter(date__gte=start, date__lte=end)
-    villa_id = request.GET.get('villa', '')
-    if villa_id.isdigit():
-        qs = qs.filter(villa_id=villa_id)
+    selected_villa_ids = [v for v in request.GET.getlist('villa') if v.isdigit()]
+    villa_id = selected_villa_ids[0] if len(selected_villa_ids) == 1 else ''
+    if selected_villa_ids:
+        qs = qs.filter(villa_id__in=selected_villa_ids)
     status = request.GET.get('status', Expense.Status.ACTIVE)
     if status:
         qs = qs.filter(status=status)
@@ -123,8 +129,8 @@ def expense_list(request):
         qs = qs.exclude(recurring__auto_debit=True).exclude(category__name__iregex=selectors.LANDLORD_RENT_REGEX)
 
     summary_base = visible.filter(date__gte=start, date__lte=end)
-    if villa_id.isdigit():
-        summary_base = summary_base.filter(villa_id=villa_id)
+    if selected_villa_ids:
+        summary_base = summary_base.filter(villa_id__in=selected_villa_ids)
     if staff_id.isdigit():
         summary_base = summary_base.filter(Q(paid_by_user_id=int(staff_id)) | Q(created_by_id=int(staff_id)))
     elif staff_id in (PaidBy.STAFF, PaidBy.OWNER):
@@ -149,11 +155,11 @@ def expense_list(request):
         staff_users = [request.user]
 
     villas = selectors.villas_visible_to(request.user).filter(is_archived=False, is_sold=False).select_related('business')
-    has_filters = bool(villa_id.isdigit() or (due in dict(DueBucket.CHOICES)) or ('status' in request.GET and status != Expense.Status.ACTIVE) or staff_id or payable)
+    has_filters = bool(selected_villa_ids or (due in dict(DueBucket.CHOICES)) or ('status' in request.GET and status != Expense.Status.ACTIVE) or staff_id or payable)
 
     keep = []
-    if villa_id.isdigit():
-        keep.append(('villa', villa_id))
+    for vid in selected_villa_ids:
+        keep.append(('villa', vid))
     if due in dict(DueBucket.CHOICES):
         keep.append(('due', due))
     if status and status != Expense.Status.ACTIVE:
@@ -167,12 +173,12 @@ def expense_list(request):
     # scheduled for it instead (read-only: nothing is created until it is paid ahead or the month starts).
     scheduled = []
     if period['period'] == 'month' and (period['year'], period['month']) > (today.year, today.month) and status == Expense.Status.ACTIVE and not (due or staff_id or payable):
-        for villa in villas.filter(pk=villa_id) if villa_id.isdigit() else villas:
+        for villa in (villas.filter(pk__in=selected_villa_ids) if selected_villa_ids else villas):
             rows, _ = expense_selectors.fixed_expense_checklist(villa, period['year'], period['month'], today)
             can_pay = scope.can_manage_villa(villa.pk, villa.business_id)
             scheduled += [{'villa': villa, 'template': r['template'], 'amount': r['amount'], 'due_date': r['due_date'], 'can_pay': can_pay} for r in rows if r['status'] == expense_selectors.FixedStatus.NOT_CREATED]
 
-    totals_bar, filter_summary = _expense_total_bar(qs, today=today, status=status, due=due, villa_id=villa_id, villas=villas, staff_id=staff_id, staff_users=staff_users, payable=payable, scheduled_total=sum((s['amount'] for s in scheduled), 0))
+    totals_bar, filter_summary = _expense_total_bar(qs, today=today, status=status, due=due, villa_id=villa_id, villas=villas, staff_id=staff_id, staff_users=staff_users, payable=payable, scheduled_total=sum((s['amount'] for s in scheduled), 0), selected_villa_ids=selected_villa_ids)
 
     context = {
         'totals_bar': totals_bar,
@@ -189,6 +195,7 @@ def expense_list(request):
         'is_field_staff': is_field_staff,
         'villas': villas,
         'selected_villa': villa_id,
+        'selected_villa_ids': selected_villa_ids,
         'has_filters': has_filters,
         'summary': expense_selectors.due_summary(summary_base, today),
         'can_add': selectors.manageable_villas(request.user).filter(is_archived=False, is_sold=False).exists(),

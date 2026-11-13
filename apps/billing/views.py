@@ -164,7 +164,8 @@ def payment_list(request):
         tab = 'all'
 
     q = request.GET.get('q', '').strip()
-    villa_id = request.GET.get('villa', '').strip()
+    selected_villa_ids = [v for v in request.GET.getlist('villa') if v.isdigit()]
+    villa_id = selected_villa_ids[0] if len(selected_villa_ids) == 1 else ''
     staff_id = request.GET.get('staff', '').strip()
     collector = request.GET.get('collector', '').strip()
     active_collector = collector or staff_id
@@ -190,8 +191,8 @@ def payment_list(request):
             active_collector_user = User.objects.filter(pk=uid).first()
 
     #filter by villa if selected
-    if villa_id.isdigit():
-        villas_qs = villas_qs.filter(pk=int(villa_id))
+    if selected_villa_ids:
+        villas_qs = villas_qs.filter(pk__in=selected_villa_ids)
 
     all_filter_villas = list(selectors.villas_visible_to(request.user).filter(is_archived=False, is_sold=False).order_by('name'))
     villas = list(villas_qs.distinct().order_by('name'))
@@ -393,8 +394,8 @@ def payment_list(request):
 
     def filtered(qs, tenant_path):
         """Apply the page filters to rent payments (tenant_path='invoice__') or advance collections (tenant_path='')."""
-        if villa_id.isdigit():
-            qs = qs.filter(**{f'{tenant_path}tenant__partition__villa_id': int(villa_id)})
+        if selected_villa_ids:
+            qs = qs.filter(**{f'{tenant_path}tenant__partition__villa_id__in': selected_villa_ids})
         if active_collector == 'staff':
             qs = qs.filter(collected_by__is_owner=False)
         elif active_collector == 'admin':
@@ -451,8 +452,10 @@ def payment_list(request):
         filter_summary.append('Admin collections')
     elif active_collector.isdigit() and active_collector_user:
         filter_summary.append(f'Collected by {active_collector_user.get_full_name() or active_collector_user.username}')
-    if villa_id.isdigit():
-        filter_summary.append(next((v.name for v in all_filter_villas if str(v.pk) == villa_id), 'one villa'))
+    if len(selected_villa_ids) == 1:
+        filter_summary.append(next((v.name for v in all_filter_villas if str(v.pk) == selected_villa_ids[0]), 'one villa'))
+    elif len(selected_villa_ids) > 1:
+        filter_summary.append(f'{len(selected_villa_ids)} villas')
     if q:
         filter_summary.append(f'\u201c{q}\u201d')
 
@@ -486,12 +489,13 @@ def payment_list(request):
     else:
         totals_bar = None  # the yearly view has no rent sheet: only the Collected tab has rows to total
 
-    has_filters = bool(q or active_collector or villa_id)
+    has_filters = bool(q or active_collector or selected_villa_ids)
 
     keep = []
     if q: keep.append(('q', q))
     if tab != 'all': keep.append(('tab', tab))
-    if villa_id: keep.append(('villa', villa_id))
+    for vid in selected_villa_ids:
+        keep.append(('villa', vid))
     if staff_id: keep.append(('staff', staff_id))
     if collector: keep.append(('collector', collector))
 
@@ -520,6 +524,7 @@ def payment_list(request):
         'active_collector_user': active_collector_user,
         'villas': all_filter_villas,
         'villa_id': villa_id,
+        'selected_villa_ids': selected_villa_ids,
         'q': q,
         'keep': keep,
         'has_filters': has_filters,
