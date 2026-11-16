@@ -45,10 +45,7 @@ class HomeView(LoginRequiredMixin, TemplateView):
         ctx['vacant_count'] = partition_count - occupied_count
         ctx.update(period_context(self.request, allow_future=True))
         ctx['keep'] = []
-        financial = selectors.financial_villas(user)
-        if not financial.exists() and (selectors.is_partner(user) or staff_view):
-            # Staff see income, expenses and profit of their own villas — the same figures as their villa pages.
-            financial = selectors.villas_visible_to(user)
+        financial = selectors.financial_villas(user)  # Admin, Business Manager, Accountant, or a partner on the villas where they hold a share
         financial_deposits = selectors.deposits_visible_to(user).filter(tenant__partition__villa__in=financial)
         ctx['period_pnl'] = billing_selectors.period_profit_loss(selectors.invoices_visible_to(user).filter(partition__villa__in=financial), selectors.expenses_visible_to(user).filter(villa__in=financial), ctx['period_start'], ctx['period_end'], deposits=financial_deposits) if financial.exists() else None
         if ctx['period_pnl']:
@@ -211,11 +208,11 @@ def _get_financial_export_data(request):
     e = parse_date(request.GET.get('end_date') or '') or date(sel_year, sel_month, calendar.monthrange(sel_year, sel_month)[1])
     s, e = min(s, e), max(s, e)
 
-    villas = selectors.financial_villas(user) or selectors.villas_visible_to(user)
+    villas = selectors.financial_villas(user)
     v_id = request.GET.get('villa')
     target_villa = None
     if v_id and v_id.isdigit():
-        filtered_villas = selectors.villas_visible_to(user).filter(pk=int(v_id))
+        filtered_villas = villas.filter(pk=int(v_id))
         if filtered_villas.exists():
             villas = filtered_villas
             target_villa = filtered_villas.first()

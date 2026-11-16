@@ -88,19 +88,16 @@ def period_bounds(year: int, month: int | None = None) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, calendar.monthrange(year, month)[1])
 
 def income_payments(invoice_queryset, start: date, end: date):
-    """Payments that are income of the period: rent FOR a month in the period, whenever it was collected.
-
-    Every month is isolated — last month's rent collected today is last month's income, next month's rent
-    collected today is next month's income. The collection date is only shown on the collection record.
-    """
-    live = invoice_queryset.filter(is_cancelled=False, billing_period_start__gte=start, billing_period_start__lte=end)
-    return Payment.objects.filter(invoice__in=live, is_cancelled=False)
+    """Payments that are income of the period: money counts in the month it was collected, except rent paid ahead for a
+    coming month, which counts in the month it is for. (`Payment.income_month` holds the later of the two, set once.)
+    Last month's rent collected today is therefore this month's income; next month's rent collected today is next month's."""
+    live = invoice_queryset.filter(is_cancelled=False)
+    return Payment.objects.filter(invoice__in=live, is_cancelled=False, income_month__gte=start, income_month__lte=end)
 
 def income_deposits(deposit_queryset, start: date, end: date):
-    """Advance (deposit) collections that are income of the period. Like rent, an advance belongs to the month it is
-    FOR — the month the tenancy starts (move-in) — never the day it was collected. An advance collected today for a
-    tenant who moved in last month is last month's income."""
-    return deposit_queryset.filter(tenant__move_in_date__gte=start, tenant__move_in_date__lte=end)
+    """Advance (deposit) collections that are income of the period. Same rule as rent: the month it was collected, except an
+    advance collected ahead of a later move-in, which counts in the move-in month (`income_month` holds the later of the two)."""
+    return deposit_queryset.filter(income_month__gte=start, income_month__lte=end)
 
 def _total(qs) -> Decimal:
     return qs.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
@@ -239,6 +236,17 @@ def unbilled_charges_details_by_partition(partition_pks, year: int, month: int, 
         res[c.partition_id].append({'name': name, 'amount': c.amount})
     return res
 
+def add_pending_through(rows):
+    """Give each row (one unpaid month of one tenant, with its `invoice` and `balance`) `pending_through`: its own balance plus
+    every earlier unpaid month of the same tenant - what one Collect for that month can take. Returns the rows."""
+    from collections import defaultdict
+    running = defaultdict(lambda: Decimal('0.00'))
+    for row in sorted(rows, key=lambda r: (r['partition'].pk, r['tenant'].pk, r['invoice'].billing_period_start, r['invoice'].pk)):
+        key = (row['partition'].pk, row['tenant'].pk)
+        running[key] += row['balance']
+        row['pending_through'] = running[key]
+    return rows
+
 def pending_collections(villa, today=None) -> dict:
     """Everything still to be collected for a villa as of today: unpaid rent of every month from move-in up to the current
     month, and the advance still pending on active tenants. It is the real outstanding amount: it does not depend on the
@@ -265,6 +273,7 @@ def pending_collections(villa, today=None) -> dict:
         })
     advance = [{'tenant': t, 'partition': t.partition, 'deposit': t.deposit, 'paid': t.deposit_paid, 'pending': t.deposit_pending}
                for t in Tenant.objects.filter(partition__villa=villa, status=Tenant.Status.ACTIVE).select_related('partition').order_by('partition__name') if t.deposit_pending > 0]
+    add_pending_through(rent)
     rent_total = sum((r['balance'] for r in rent), zero)
     advance_total = sum((a['pending'] for a in advance), zero)
     return {'rent': rent, 'advance': advance, 'rent_total': rent_total, 'advance_total': advance_total, 'total': rent_total + advance_total, 'count': len(rent) + len(advance), 'as_of_label': this_month.strftime('%B %Y')}
@@ -436,6 +445,8 @@ def rent_sheet(*, tenants, invoice_queryset, year: int, month: int, today: date)
             'charges': charges_breakdown,
             'prior_unpaid': prior_unpaid,
             'prior_unpaid_total': prior_unpaid_total,
+            # What one Collect can take: everything still unpaid up to and including this month (earlier months + this month).
+            'pending_through': (prior_unpaid_total if is_current else zero) + max(zero, due - paid),
             'rent_amount': rent_amount,
             'payments': live_payments,
             'staff_collected': staff_collected,

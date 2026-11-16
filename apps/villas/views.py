@@ -73,8 +73,6 @@ def villa_list(request):
         ensure_fixed_expenses(villa_ids=villa_ids, year=period['year'], month=period['month'])
     covers = _first_photo_by(Photo.objects.filter(villa_id__in=villa_ids, partition__isnull=True), lambda photo: photo.villa_id)
     financial_ids = set(selectors.financial_villas(request.user).filter(pk__in=villa_ids).values_list('pk', flat=True))
-    if is_staff:
-        financial_ids = financial_ids | set(villa_ids)
     pnl_by_villa = {}
     if financial_ids:
         pnl_by_villa = billing_selectors.profit_loss_by_villa(selectors.invoices_visible_to(request.user).filter(partition__villa__in=financial_ids), selectors.expenses_visible_to(request.user).filter(villa__in=financial_ids), period['period_start'], period['period_end'], deposits=selectors.deposits_visible_to(request.user).filter(tenant__partition__villa__in=financial_ids))
@@ -123,7 +121,7 @@ def villa_list(request):
         villa.vacant_total = villa.partition_total - villa.occupied_total
         villa.pnl = pnl_by_villa.get(villa.pk, billing_selectors.EMPTY_PROFIT_LOSS) if villa.pk in financial_ids else None
     totals = None
-    scoped_financial = (selectors.villas_visible_to(request.user) if is_staff else selectors.financial_villas(request.user)).filter(pk__in=base.values('pk'))
+    scoped_financial = selectors.financial_villas(request.user).filter(pk__in=base.values('pk'))
     if scoped_financial.exists():
         totals = billing_selectors.period_profit_loss(selectors.invoices_visible_to(request.user).filter(partition__villa__in=scoped_financial), selectors.expenses_visible_to(request.user).filter(villa__in=scoped_financial), period['period_start'], period['period_end'], deposits=selectors.deposits_visible_to(request.user).filter(tenant__partition__villa__in=scoped_financial))
     keep = [(name, value) for name, value in (('q', q), ('business', business_id or ''), ('staff', staff_id), ('status', status if status != 'active' else '')) if value]
@@ -176,7 +174,7 @@ def villa_detail(request, pk):
     invoices = selectors.invoices_visible_to(request.user).filter(partition__villa=villa)
     expenses = selectors.expenses_visible_to(request.user).filter(villa=villa)
     deposits = selectors.deposits_visible_to(request.user).filter(tenant__partition__villa=villa)
-    can_view_financials = True
+    can_view_financials = selectors.can_view_villa_financials(request.user, villa)  # Admin, partner of this villa, Business Manager, Accountant
     partition_pnl = billing_selectors.profit_loss_by_partition(invoices, expenses, start, end, deposits=deposits)
     rent_by_partition = billing_selectors.rent_schedules_by_partition(tenant_by_partition, today)
     for partition in all_partitions:

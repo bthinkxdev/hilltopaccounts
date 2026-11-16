@@ -71,7 +71,7 @@ class Tenant(models.Model):
 class DepositCollection(models.Model):
     """One collection of a tenant's advance (security deposit). Never edited; the tenant's deposit_paid is the sum
     of the live (not voided) collections. A wrong entry is voided with a reason, never deleted, and `objects` hides
-    voided rows from every total. The advance counts as income in the month it was collected."""
+    voided rows from every total. The advance counts as income in the month it was collected (or the move-in month, if later)."""
 
     class Method(models.TextChoices):
         CASH = ('cash', 'Cash')
@@ -82,6 +82,7 @@ class DepositCollection(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     method = models.CharField(max_length=20, choices=Method.choices, default=Method.CASH)
     collected_at = models.DateField()
+    income_month = models.DateField(db_index=True, editable=False, help_text='The month this advance counts as income of: the later of the move-in month and the month it was collected. Set once, when recorded.')
     collected_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
     created_at = models.DateTimeField(auto_now_add=True)
     voided_at = models.DateTimeField(null=True, blank=True)
@@ -98,6 +99,12 @@ class DepositCollection(models.Model):
     class Meta:
         ordering = ['-collected_at', '-id']
         constraints = [models.CheckConstraint(check=models.Q(amount__gt=0), name='deposit_collection_amount_positive')]
+
+    def save(self, *args, **kwargs):
+        if self.income_month is None:
+            from apps.shared.income import income_month_for
+            self.income_month = income_month_for(self.tenant.move_in_date, self.collected_at)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f'{self.amount} advance — {self.tenant.name} ({self.collected_at})'

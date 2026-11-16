@@ -158,11 +158,11 @@ class VillaMoneyViewTests(VerificationBase):
         self.login('staff')
         r = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]))
         self.assertIn('cash', r.context)
-        self.assertIn('pnl', r.context)  # income / expenses / profit of their own villa
+        self.assertNotIn('pnl', r.context)  # villa staff do not see profit and loss
         self.assertNotContains(r, 'Silent Partner')
         self.assertNotContains(r, 'Profit Sharing Breakdown')
         home = self.client.get(reverse('dashboard:home'))
-        self.assertIsNotNone(home.context['period_pnl'])  # same figures on their dashboard, their villas only
+        self.assertIsNone(home.context['period_pnl'])  # nor on their dashboard
         self.assertNotContains(home, 'Financial summary')
         self.assertNotContains(home, 'Silent Partner')
         self.assertNotContains(r, 'Income, expenses')

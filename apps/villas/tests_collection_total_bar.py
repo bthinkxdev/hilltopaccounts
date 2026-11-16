@@ -11,12 +11,13 @@ from apps.billing.services import cancel_payment
 from apps.tenancy.models import DepositCollection
 from apps.tenancy.services import collect_deposit, create_tenant, update_tenant
 from apps.villas.services import create_partition, create_villa
-from .tests_villa_stats import LAST_MONTH, RENT, THIS_MONTH, VillaStatsBase
+from .tests_villa_stats import IN_LAST_MONTH, LAST_MONTH, RENT, THIS_MONTH, VillaStatsBase
 
 ZERO = Decimal('0.00')
 
 
 class TotalBarBase(VillaStatsBase):
+    MOVE_IN = LAST_MONTH  # last month's rent is still unpaid when the collections below are made
 
     def setUp(self):
         super().setUp()
@@ -29,10 +30,10 @@ class TotalBarBase(VillaStatsBase):
         self.collect(self.p2, THIS_MONTH, amount=1000)                       # staff, partial
         self.login('owner')
         self.client.post(reverse('billing:rent_collect', args=[self.pb.pk]), {'year': THIS_MONTH.year, 'month': THIS_MONTH.month, 'method': 'bank_transfer', 'amount': '700', 'next': '/'})
-        self.collect(self.p2, LAST_MONTH)                                    # belongs to last month
+        self.collect(self.p2, LAST_MONTH, collected_at=IN_LAST_MONTH)       # collected back in last month: counts there
         tenant = self.p1.current_tenant
         update_tenant(tenant=tenant, updated_by=self.owner, deposit=3000)
-        collect_deposit(tenant=tenant, amount=1200, method='cash', collected_by=self.staff)  # advance: belongs to the move-in month
+        collect_deposit(tenant=tenant, amount=1200, method='cash', collected_by=self.staff)  # advance: counts in the month it is collected
 
     def bar(self, tab='all', **params):
         r = self.client.get(reverse('billing:payment_list'), {'tab': tab, **params})
@@ -43,7 +44,7 @@ class TotalBarBase(VillaStatsBase):
         return {'period': 'month', 'year': month.year, 'month': month.month, **extra}
 
     def paid_for(self, month, **flt):
-        return Payment.objects.filter(is_cancelled=False, invoice__billing_period_start=month, **flt).aggregate(t=Sum('amount'))['t'] or ZERO
+        return Payment.objects.filter(is_cancelled=False, income_month=month, **flt).aggregate(t=Sum('amount'))['t'] or ZERO
 
 
 class CollectedTabBarTests(TotalBarBase):
@@ -51,26 +52,28 @@ class CollectedTabBarTests(TotalBarBase):
     def test_the_total_is_what_was_collected_for_the_month_and_equals_its_rows(self):
         r, b = self.bar('collected', **self.month())
         self.assertEqual(b['kind'], 'collected')
-        self.assertEqual(b['total'], self.paid_for(THIS_MONTH))
+        self.assertEqual(b['total'], self.paid_for(THIS_MONTH) + Decimal('1200.00'))  # rent + the advance collected this month
         self.assertEqual(b['total'], sum((x['amount'] for x in r.context['received_payments']), ZERO))
         self.assertEqual(b['count'], len(r.context['received_payments']))
-        self.assertEqual((b['rent'], b['advance']), (b['total'], ZERO))  # the advance belongs to its move-in month
+        self.assertEqual((b['rent'], b['advance']), (b['total'] - Decimal('1200.00'), Decimal('1200.00')))  # the advance was collected this month
         self.assertContains(r, 'data-total-bar="collected"')
         self.assertContains(r, f'QAR {b["total"]:,.2f}')
 
-    def test_an_advance_counts_in_its_own_month(self):
-        _, b = self.bar('collected', **self.month(LAST_MONTH))
-        self.assertEqual((b['rent'], b['advance'], b['total']), (self.paid_for(LAST_MONTH), Decimal('1200.00'), self.paid_for(LAST_MONTH) + Decimal('1200.00')))
+    def test_an_advance_counts_in_the_month_it_was_collected(self):
+        _, this = self.bar('collected', **self.month())
+        _, last = self.bar('collected', **self.month(LAST_MONTH))
+        self.assertEqual(this['advance'], Decimal('1200.00'))
+        self.assertEqual((last['rent'], last['advance'], last['total']), (self.paid_for(LAST_MONTH), ZERO, self.paid_for(LAST_MONTH)))
 
     def test_each_filter_gives_exactly_the_matching_rows(self):
         m = self.month()
-        self.assertEqual(self.bar('collected', **m, villa=self.villa.pk)[1]['total'], self.paid_for(THIS_MONTH, invoice__partition__villa=self.villa))
+        self.assertEqual(self.bar('collected', **m, villa=self.villa.pk)[1]['total'], self.paid_for(THIS_MONTH, invoice__partition__villa=self.villa) + Decimal('1200.00'))  # villa A holds the advance too
         self.assertEqual(self.bar('collected', **m, villa=self.villa_b.pk)[1]['total'], Decimal('700.00'))
         self.assertEqual(self.bar('collected', **m, collector='admin')[1]['total'], self.paid_for(THIS_MONTH, collected_by__is_owner=True))
-        self.assertEqual(self.bar('collected', **m, collector='staff')[1]['total'], Decimal('1000.00'))
-        self.assertEqual(self.bar('collected', **m, collector=str(self.staff.pk))[1]['total'], Decimal('1000.00'))
-        self.assertEqual(self.bar('collected', **m, q='T 101')[1]['total'], self.paid_for(THIS_MONTH, invoice__partition=self.p1))
-        self.assertEqual(self.bar('collected', **m, villa=self.villa.pk, collector='staff')[1]['total'], Decimal('1000.00'))  # filters combine
+        self.assertEqual(self.bar('collected', **m, collector='staff')[1]['total'], Decimal('2200.00'))  # 1,000 rent + the 1,200 advance
+        self.assertEqual(self.bar('collected', **m, collector=str(self.staff.pk))[1]['total'], Decimal('2200.00'))
+        self.assertEqual(self.bar('collected', **m, q='T 101')[1]['total'], self.paid_for(THIS_MONTH, invoice__partition=self.p1) + Decimal('1200.00'))
+        self.assertEqual(self.bar('collected', **m, villa=self.villa.pk, collector='staff')[1]['total'], Decimal('2200.00'))  # filters combine (the advance is in villa A too)
         _, none = self.bar('collected', **m, q='no such tenant')
         self.assertEqual((none['total'], none['count']), (ZERO, 0))
 
@@ -104,15 +107,17 @@ class RentTabsBarTests(TotalBarBase):
     def test_due_collected_and_pending_match_the_invoices_of_the_month(self):
         r, b = self.bar('all', **self.month())
         due = sum((bs.invoice_total(i) for i in self.invoices()), ZERO)
-        paid = self.paid_for(THIS_MONTH)
-        self.assertEqual((b['due'], b['rent_collected'], b['pending']), (due, paid, due - paid))
+        paid_on_these = sum((bs.invoice_paid_amount(i) for i in self.invoices()), ZERO)
+        self.assertEqual((b['due'], b['pending']), (due, due - paid_on_these))  # this month's rent still to collect
+        self.assertEqual(b['rent_collected'], self.paid_for(THIS_MONTH))  # the rent that counts as this month's income
         self.assertEqual(b['count'], len(r.context['collection_rows']))
         self.assertContains(r, 'data-total-bar="rent"')
 
     def test_the_bar_agrees_with_the_header_figures_on_the_page_when_no_collector_is_chosen(self):
         r, b = self.bar('all', **self.month())
         c = r.context
-        self.assertEqual((b['due'], b['rent_collected'], b['pending']), (c['portfolio_rent_expected'], c['portfolio_rent_collected'], c['portfolio_rent_pending']))
+        self.assertEqual((b['due'], b['pending']), (c['portfolio_rent_expected'], c['portfolio_rent_pending']))
+        self.assertEqual(b['collected'], c['received_total'])  # what was collected in the month, the same list as the Collected tab
 
     def test_earlier_months_still_unpaid_are_totalled_and_counted(self):
         r, b = self.bar('all', **self.month())
@@ -139,7 +144,7 @@ class RentTabsBarTests(TotalBarBase):
         _, a = self.bar('all', **self.month(), villa=self.villa.pk)
         self.assertEqual((a['due'], a['rent_collected']), (RENT * 2, self.paid_for(THIS_MONTH, invoice__partition__villa=self.villa)))
         _, b = self.bar('all', **self.month(), villa=self.villa_b.pk)
-        self.assertEqual((b['due'], b['rent_collected'], b['pending']), (RENT, Decimal('700.00'), RENT - Decimal('700.00')))
+        self.assertEqual((b['due'], b['rent_collected'], b['pending']), (RENT, Decimal('700.00'), RENT))  # the 700 went to last month's rent
         _, one = self.bar('all', **self.month(), q='T 101')
         self.assertEqual((one['count'], one['due']), (1, RENT))
 
@@ -207,7 +212,7 @@ class LiveSyncTests(TotalBarBase):
         self.assertNotIn('collected for', self.message_area(self.refresh(url)))  # shown once, not on every refresh
 
     def test_an_advance_collection_is_refreshed_the_same_way(self):
-        url = reverse('billing:payment_list') + f'?tab=collected&period=month&year={LAST_MONTH.year}&month={LAST_MONTH.month}'
+        url = reverse('billing:payment_list') + f'?tab=collected&period=month&year={THIS_MONTH.year}&month={THIS_MONTH.month}'
         tenant = self.p2.current_tenant
         update_tenant(tenant=tenant, updated_by=self.owner, deposit=2000)
         mid = self.refresh(url).context['totals_bar']
@@ -215,7 +220,7 @@ class LiveSyncTests(TotalBarBase):
         self.assertEqual(r['X-Modal-Redirect'], url)
         after_r = self.refresh(url)
         after = after_r.context['totals_bar']
-        self.assertEqual(after['total'] - mid['total'], Decimal('600.00'))   # the advance counts in its move-in month (last month)
+        self.assertEqual(after['total'] - mid['total'], Decimal('600.00'))   # the advance counts in the month it is collected
         self.assertEqual(after['advance'] - mid['advance'], Decimal('600.00'))
         self.assertIn('Advance for', self.message_area(after_r))
 

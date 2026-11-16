@@ -28,10 +28,12 @@ THIS_MONTH = TODAY.replace(day=1)
 LAST_MONTH = (THIS_MONTH - timedelta(days=1)).replace(day=1)
 NEXT_MONTH = (THIS_MONTH + timedelta(days=32)).replace(day=1)
 RENT = Decimal('2300.00')
+IN_LAST_MONTH = LAST_MONTH.replace(day=5)  # collected back then, so it counts in last month
 ZERO = Decimal('0.00')
 
 
 class VillaStatsBase(TestCase):
+    MOVE_IN = THIS_MONTH  # tenants of p1 / p2 move in this month; a test class that needs earlier unpaid months sets LAST_MONTH
 
     def setUp(self):
         self.owner = User.objects.create_user('owner', password=PASSWORD, is_owner=True)
@@ -41,8 +43,8 @@ class VillaStatsBase(TestCase):
         self.villa = create_villa(business=self.business, name='Villa', created_by=self.owner)
         assign_business_manager(user=self.manager, business=self.business, assigned_by=self.owner)
         assign_villa_staff(user=self.staff, villa=self.villa, assigned_by=self.owner)
-        self.p1 = self.occupied('101', move_in=LAST_MONTH)
-        self.p2 = self.occupied('GF-02', move_in=LAST_MONTH)
+        self.p1 = self.occupied('101', move_in=self.MOVE_IN)
+        self.p2 = self.occupied('GF-02', move_in=self.MOVE_IN)
 
     def occupied(self, name, move_in, rent=RENT, **tenant_fields):
         partition = create_partition(villa=self.villa, name=name, created_by=self.owner)
@@ -55,6 +57,8 @@ class VillaStatsBase(TestCase):
 
     def collect(self, partition, month_start, collected_at=None, amount=None):
         data = {'year': month_start.year, 'month': month_start.month, 'method': 'cash', 'next': '/'}
+        if collected_at is None and month_start < THIS_MONTH:
+            collected_at = month_start.replace(day=5)  # an earlier month is collected back in that month, so it counts there
         if collected_at:
             data['collected_at'] = collected_at.isoformat()
         if amount is not None:
@@ -66,42 +70,41 @@ class VillaStatsBase(TestCase):
 
 
 class MonthIsolationTests(VillaStatsBase):
+    MOVE_IN = LAST_MONTH
 
-    def test_arrears_and_advance_are_income_of_their_own_month(self):
+    def test_money_counts_in_the_month_it_was_collected_and_rent_paid_ahead_in_its_own_month(self):
         self.login('owner')
-        self.collect(self.p1, THIS_MONTH)
-        self.collect(self.p2, LAST_MONTH)  # last month's rent, collected today
-        self.collect(self.p2, NEXT_MONTH)  # next month's rent, collected today
-        self.assertEqual(self.page(THIS_MONTH)['pnl']['income'], RENT)
-        self.assertEqual(self.page(LAST_MONTH)['pnl']['income'], RENT)
-        self.assertEqual(self.page(NEXT_MONTH)['pnl']['income'], RENT)
+        self.collect(self.p1, THIS_MONTH)  # last month's + this month's rent, collected today
+        self.collect(self.p2, LAST_MONTH, collected_at=IN_LAST_MONTH)  # last month's rent, collected back then
+        self.collect(self.p2, NEXT_MONTH)  # this month's + next month's rent, collected today
+        self.assertEqual(self.page(LAST_MONTH)['pnl']['income'], RENT)  # only what was collected in last month
+        self.assertEqual(self.page(THIS_MONTH)['pnl']['income'], RENT * 3)  # p1's two months + p2's this month, all collected today
+        self.assertEqual(self.page(NEXT_MONTH)['pnl']['income'], RENT)  # next month's rent, paid ahead
 
     def test_rent_card_reconciles_with_income(self):
         self.login('staff')
-        self.collect(self.p1, THIS_MONTH, amount=Decimal('1000.00'))
+        self.collect(self.p1, THIS_MONTH, amount=Decimal('1000.00'))  # goes to the oldest month (last month's rent)
         self.login('owner')
-        self.collect(self.p2, THIS_MONTH)
-        self.collect(self.p2, LAST_MONTH)
+        self.collect(self.p2, THIS_MONTH)  # last month's and this month's rent
         ctx = self.page(THIS_MONTH)
         rent, pnl = ctx['rent_totals'], ctx['pnl']
-        self.assertEqual((rent['expected'], rent['collected'], rent['pending']), (RENT * 2, RENT + Decimal('1000.00'), RENT - Decimal('1000.00')))
-        self.assertEqual(rent['expected'], rent['collected'] + rent['pending'])
-        self.assertEqual((rent['staff_collected'], rent['admin_collected']), (Decimal('1000.00'), RENT))
-        self.assertEqual((pnl['income'], pnl['staff_collected'], pnl['admin_collected']), (rent['collected'], rent['staff_collected'], rent['admin_collected']))
+        # The rent card is this month's rent status; the income is everything collected in the month.
+        self.assertEqual((rent['expected'], rent['collected'], rent['pending']), (RENT * 2, RENT, RENT))
+        self.assertEqual((pnl['income'], pnl['staff_collected'], pnl['admin_collected']), (Decimal('1000.00') + RENT * 2, Decimal('1000.00'), RENT * 2))
 
     def test_income_link_lists_exactly_that_months_rent_with_collection_dates(self):
         self.login('owner')
-        self.collect(self.p1, THIS_MONTH)
-        self.collect(self.p2, LAST_MONTH)  # collected today, but it is last month's income
+        self.collect(self.p1, THIS_MONTH)  # last month's and this month's rent, collected today
+        self.collect(self.p2, LAST_MONTH, collected_at=IN_LAST_MONTH)  # last month's rent, collected back then
         ctx = self.page(THIS_MONTH)
         r = self.client.get(ctx['period_pnl_urls']['income'])
         self.assertEqual((r.context['tab'], r.context['received_total']), ('collected', ctx['pnl']['income']))
-        self.assertEqual([row['partition'].pk for row in r.context['received_payments']], [self.p1.pk])
+        self.assertEqual([row['partition'].pk for row in r.context['received_payments']], [self.p1.pk, self.p1.pk])
         self.assertContains(r, TODAY.strftime('%d %b %Y'))
-        # Last month's rent, although collected today, is listed under last month.
+        # What was collected in last month is listed under last month.
         last = self.client.get(reverse('billing:payment_list'), {'tab': 'collected', 'year': LAST_MONTH.year, 'month': LAST_MONTH.month})
         self.assertEqual([row['partition'].pk for row in last.context['received_payments']], [self.p2.pk])
-        self.assertContains(last, TODAY.strftime('%d %b %Y'))
+        self.assertContains(last, IN_LAST_MONTH.strftime('%d %b %Y'))
         # The removed tabs fall back to the default instead of erroring.
         self.assertEqual(self.client.get(reverse('billing:payment_list'), {'tab': 'received'}).context['tab'], 'all')
 
@@ -124,11 +127,11 @@ class MonthIsolationTests(VillaStatsBase):
     def test_collected_list_shows_collection_time_for_same_day_entries(self):
         from django.utils import timezone
         self.login('owner')
-        self.collect(self.p1, LAST_MONTH)  # collected today, counted in last month
-        r = self.client.get(reverse('billing:payment_list'), {'tab': 'collected', 'year': LAST_MONTH.year, 'month': LAST_MONTH.month})
+        self.collect(self.p1, LAST_MONTH, collected_at=TODAY)  # last month's rent, collected today: counted in this month
+        r = self.client.get(reverse('billing:payment_list'), {'tab': 'collected', 'year': THIS_MONTH.year, 'month': THIS_MONTH.month})
         recorded = timezone.localtime(Payment.objects.get().created_at)
         self.assertContains(r, recorded.strftime('%I:%M %p').lstrip('0'))
-        self.assertContains(r, f"Collected for {LAST_MONTH.strftime('%B %Y')}")
+        self.assertContains(r, f"Collected for {THIS_MONTH.strftime('%B %Y')}")
 
     def test_yearly_income_link_keeps_the_year(self):
         self.login('owner')
@@ -140,7 +143,7 @@ class MonthIsolationTests(VillaStatsBase):
     def test_entered_collection_date_is_stored_and_future_is_rejected(self):
         self.login('owner')
         self.collect(self.p1, THIS_MONTH, collected_at=THIS_MONTH)
-        self.assertEqual(Payment.objects.get().collected_at, THIS_MONTH)
+        self.assertEqual({p.collected_at for p in Payment.objects.all()}, {THIS_MONTH})
         with self.assertRaises(DomainError):
             collect_rent(partition=self.p2, year=THIS_MONTH.year, month=THIS_MONTH.month, method='cash', collected_by=self.owner, collected_at=TODAY + timedelta(days=1))
 
@@ -204,13 +207,13 @@ class AdvanceTests(VillaStatsBase):
         tile = [t for t in self.page(THIS_MONTH)['partitions'] if t.pk == p.pk][0]
         self.assertEqual(tile.pnl['income'], Decimal('2500.00'))
 
-    def test_advance_collected_today_for_a_last_month_move_in_is_last_months_income(self):
+    def test_advance_collected_today_for_a_last_month_move_in_is_this_months_income(self):
         p = self.occupied('LATE', move_in=LAST_MONTH, deposit=Decimal('3000.00'))
         tenant = Tenant.objects.get(partition=p)
         collect_deposit(tenant=tenant, amount=Decimal('1200.00'), method='bank_transfer', collected_by=self.owner)  # collected today
         self.login('owner')
-        self.assertEqual(self.page(LAST_MONTH)['pnl']['advance_income'], Decimal('1200.00'))
-        self.assertEqual(self.page(THIS_MONTH)['pnl']['advance_income'], ZERO)
+        self.assertEqual(self.page(THIS_MONTH)['pnl']['advance_income'], Decimal('1200.00'))  # counted in the month it was collected
+        self.assertEqual(self.page(LAST_MONTH)['pnl']['advance_income'], ZERO)
 
     def test_income_list_includes_advance_and_matches_the_card(self):
         p = self.occupied('ADV', move_in=THIS_MONTH, deposit=Decimal('3000.00'), deposit_paid=Decimal('1000.00'))
@@ -264,6 +267,7 @@ class AdvanceTests(VillaStatsBase):
 
 
 class EveryMonthBilledTests(VillaStatsBase):
+    MOVE_IN = LAST_MONTH
 
     def test_untouched_months_are_billed_and_count_as_outstanding(self):
         self.assertFalse(Invoice.objects.exists())
@@ -284,6 +288,7 @@ class EveryMonthBilledTests(VillaStatsBase):
 
 
 class PartnerPayoutTests(VillaStatsBase):
+    MOVE_IN = LAST_MONTH
 
     def setUp(self):
         super().setUp()
@@ -298,17 +303,17 @@ class PartnerPayoutTests(VillaStatsBase):
         self.assertEqual(villa_period_payouts(self.villa, THIS_MONTH.year, THIS_MONTH.month), [])
 
     def test_only_that_months_staff_cash_blocks_its_payout(self):
-        [payment] = collect_rent(partition=self.p1, year=LAST_MONTH.year, month=LAST_MONTH.month, method='cash', collected_by=self.staff)
+        [payment] = collect_rent(partition=self.p1, year=LAST_MONTH.year, month=LAST_MONTH.month, method='cash', collected_by=self.staff, collected_at=IN_LAST_MONTH)
         self.assertEqual(cash_selectors.unhanded_staff_cash_for_month(self.villa, THIS_MONTH.year, THIS_MONTH.month), ZERO)
         self.assertEqual(cash_selectors.unhanded_staff_cash_for_month(self.villa, LAST_MONTH.year, LAST_MONTH.month), RENT)
         confirm_cash_handover(handover=submit_cash_handover(staff=self.staff, payments=[payment], submitted_by=self.staff), confirmed_amount=RENT, confirmed_by=self.owner)
         self.assertEqual(cash_selectors.unhanded_staff_cash_for_month(self.villa, LAST_MONTH.year, LAST_MONTH.month), ZERO)
 
     def test_alert_when_a_paid_month_later_earns_more(self):
-        collect_rent(partition=self.p1, year=LAST_MONTH.year, month=LAST_MONTH.month, method='bank_transfer', collected_by=self.owner)
+        collect_rent(partition=self.p1, year=LAST_MONTH.year, month=LAST_MONTH.month, method='bank_transfer', collected_by=self.owner, collected_at=IN_LAST_MONTH)
         PartnerPayout.objects.create(partner=self.partner, villa=self.villa, period_year=LAST_MONTH.year, period_month=LAST_MONTH.month, amount=RENT / 2, paid_on=TODAY, created_by=self.owner)
         self.assertEqual(partner_shares_due_after_payout(), [])
-        collect_rent(partition=self.p2, year=LAST_MONTH.year, month=LAST_MONTH.month, method='bank_transfer', collected_by=self.owner)  # arrears arrive later
+        collect_rent(partition=self.p2, year=LAST_MONTH.year, month=LAST_MONTH.month, method='bank_transfer', collected_by=self.owner, collected_at=IN_LAST_MONTH)  # arrears arrive later
         due = partner_shares_due_after_payout()
         self.assertEqual([(d['villa'], d['remaining']) for d in due], [(self.villa, RENT / 2)])
 
@@ -396,6 +401,7 @@ class ProfitSplitTests(VillaStatsBase):
 
 
 class CollectionsPageTests(VillaStatsBase):
+    MOVE_IN = LAST_MONTH
 
     def list_page(self, **params):
         return self.client.get(reverse('billing:payment_list'), {'year': THIS_MONTH.year, 'month': THIS_MONTH.month, **params})
@@ -491,7 +497,7 @@ class ExpenseAndStaffTests(VillaStatsBase):
         self.login('staff')
         ctx = self.client.get(reverse('dashboard:home')).context
         self.assertEqual((ctx['staff_bills_count'], ctx['staff_bills_due']), (2, Decimal('200.00')))
-        self.assertIsNotNone(ctx['period_pnl'])
+        self.assertIsNone(ctx['period_pnl'])  # villa staff do not see profit and loss
 
     def test_dashboard_expense_alerts_open_the_matching_all_time_list(self):
         from apps.expenses.services import create_expense, get_or_create_category

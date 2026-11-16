@@ -44,7 +44,7 @@ class FieldworkBase(TestCase):
         self.partitions = []
         for name, rent in RENTS:
             partition = create_partition(villa=self.villa, name=name, created_by=self.owner)
-            create_tenant(partition=partition, name=f'Tenant {name}', move_in_date=date(2026, 1, 1), monthly_rent=Decimal(rent), created_by=self.owner)
+            create_tenant(partition=partition, name=f'Tenant {name}', move_in_date=date(YEAR, MONTH, 1), monthly_rent=Decimal(rent), created_by=self.owner)
             self.partitions.append(partition)
         self.period = {'period': 'month', 'year': YEAR, 'month': MONTH}
 
@@ -111,6 +111,7 @@ class NotebookScenarioTests(FieldworkBase):
         self.assertEqual((service.paid_by, service.paid_by_user, service.awaiting_verification), ('staff', self.staff, True))
 
         # Income 16,850 - expenses 12,350 = profit 4,500, straight from the financial engine.
+        self.login('owner')  # profit and loss is the Admin's view
         pnl = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]), self.period).context['pnl']
         self.assertEqual((pnl['income'], pnl['expenses'], pnl['net']), (Decimal('16850.00'), Decimal('12350.00'), Decimal('4500.00')))
         row = [v for v in self.client.get(reverse('villas:villa_list'), self.period).context['page_obj'] if v.pk == self.villa.pk][0]
@@ -174,7 +175,7 @@ class RentCollectionTests(FieldworkBase):
     def test_vacant_partition_is_not_billed(self):
         from apps.tenancy.services import move_out_tenant
         partition = self.partitions[0]
-        move_out_tenant(tenant=partition.current_tenant, move_out_date=date(2026, 1, 31), moved_out_by=self.owner, reason='left')
+        move_out_tenant(tenant=partition.current_tenant, move_out_date=date(YEAR, MONTH, 1), moved_out_by=self.owner, reason='left')
         self.login('staff')
         self.collect(partition)
         self.assertEqual(Payment.objects.count(), 0)
@@ -197,7 +198,8 @@ class RentCollectionTests(FieldworkBase):
         page = self.client.get(reverse('villas:villa_list'), self.period).context
         self.assertEqual(page['staff_choices'], [])
         self.assertEqual([v.pk for v in page['page_obj']], [self.villa.pk])
-        self.assertEqual(page['totals']['income'], page['page_obj'][0].pnl['income'])
+        self.assertIsNone(page['totals'])  # villa staff do not see profit and loss
+        self.assertIsNone(page['page_obj'][0].pnl)
 
     def test_business_manager_sees_only_their_businesss_staff(self):
         self.login('manager')
@@ -324,7 +326,7 @@ class FieldworkQueryCountTests(FieldworkBase):
             assign_villa_staff(user=staff, villa=villa, assigned_by=self.owner)
             assign_villa_staff(user=self.staff, villa=villa, assigned_by=self.owner)
             partition = create_partition(villa=villa, name='P', created_by=self.owner)
-            create_tenant(partition=partition, name='T', move_in_date=date(2026, 1, 1), monthly_rent=Decimal('100.00'), created_by=self.owner)
+            create_tenant(partition=partition, name='T', move_in_date=date(YEAR, MONTH, 1), monthly_rent=Decimal('100.00'), created_by=self.owner)
             create_expense(villa=villa, category=get_or_create_category(name=f'E{offset + i}'), amount=Decimal('10.00'), date=date(YEAR, MONTH, 1), due_date=date(2026, 1, 5), created_by=self.owner)
 
     def test_pages_do_not_query_per_row(self):

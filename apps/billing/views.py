@@ -389,6 +389,7 @@ def payment_list(request):
             portfolio_arrears += inv._total - inv._paid
             total_all_count += 1
             total_pending_count += 1
+    billing_selectors.add_pending_through(arrears_rows)  # each earlier month's Collect takes it and the unpaid months before it
     if tab == 'collected':
         arrears_rows = []
 
@@ -412,11 +413,11 @@ def payment_list(request):
         for p in filtered(payments, 'invoice__'):
             month = p.invoice.billing_period_start
             rows.append({'kind': 'rent', 'pk': p.pk, 'can_revert': revert_scope.can_revert_collection(p.invoice.tenant.partition.villa_id, p.invoice.tenant.partition.villa.business_id, p.collected_by_id), 'collected_at': p.collected_at, 'created_at': p.created_at, 'tenant': p.invoice.tenant, 'partition': p.invoice.tenant.partition, 'villa': p.invoice.tenant.partition.villa,
-                         'for_label': f'{month:%B %Y}', 'for_flag': 'Arrears' if month < period['period_start'] else ('Advance rent' if month > period['period_end'] else ''),
+                         'for_label': f'{month:%B %Y}', 'for_flag': 'Arrears' if month < period['period_start'] else ('Advance rent' if p.collected_at < period['period_start'] else ''),
                          'collected_by': p.collected_by, 'method': p.get_method_display(), 'amount': p.amount})
         for d in filtered(deposits, ''):
             rows.append({'kind': 'advance', 'pk': d.pk, 'can_revert': revert_scope.can_revert_collection(d.tenant.partition.villa_id, d.tenant.partition.villa.business_id, d.collected_by_id), 'collected_at': d.collected_at, 'created_at': d.created_at, 'tenant': d.tenant, 'partition': d.tenant.partition, 'villa': d.tenant.partition.villa,
-                         'for_label': 'Advance / deposit', 'for_flag': ('Arrears' if d.tenant.move_in_date < period['period_start'] else ('Advance' if d.tenant.move_in_date > period['period_end'] else '')), 'collected_by': d.collected_by, 'method': d.get_method_display(), 'amount': d.amount})
+                         'for_label': 'Advance / deposit', 'for_flag': ('Arrears' if d.tenant.move_in_date < period['period_start'] else ('Advance' if d.collected_at < period['period_start'] else '')), 'collected_by': d.collected_by, 'method': d.get_method_display(), 'amount': d.amount})
         for row in rows:
             # Time is known only when it was recorded on the collection day itself (a back-dated entry has no real time).
             recorded = timezone.localtime(row['created_at'])
@@ -434,16 +435,6 @@ def payment_list(request):
     # The total bar pinned to the bottom of the page: sums of exactly the rows the current tab and filters show (every matching
     # row, not one page), taken from the same lists the tables render, so a figure can never disagree with its rows.
     zero = Decimal('0.00')
-
-    def collected_part(r):
-        """What a rent row contributes to 'collected' under the active collector filter (else everything paid on it)."""
-        if active_collector == 'staff':
-            return r.get('staff_collected', zero)
-        if active_collector == 'admin':
-            return r.get('admin_collected', zero)
-        if active_collector.isdigit():
-            return sum((p.amount for p in r.get('payments', []) if p.collected_by_id == int(active_collector)), zero)
-        return r['paid']
 
     filter_summary = []
     if active_collector == 'staff':
@@ -466,23 +457,14 @@ def payment_list(request):
             'advance': sum((r['amount'] for r in received_payments if r['kind'] == 'advance'), zero),
         }
     elif is_month:
-        # The advance recorded in the selected month (whenever the tenant moved in), from these rows' tenants, by the same collector filter as the rent.
-        from apps.tenancy.models import DepositCollection
-        dep = DepositCollection.objects.filter(tenant_id__in=[r['tenant'].pk for r in all_collection_rows], collected_at__range=(period['period_start'], period['period_end']))
-        if active_collector == 'staff':
-            dep = dep.filter(collected_by__is_owner=False)
-        elif active_collector == 'admin':
-            dep = dep.filter(collected_by__is_owner=True)
-        elif active_collector.isdigit():
-            dep = dep.filter(collected_by_id=int(active_collector))
-        advance_in_rows = dep.aggregate(t=Sum('amount'))['t'] or zero
         totals_bar = {
             'kind': 'rent', 'count': len(all_collection_rows),
             'due': sum((r['due'] for r in all_collection_rows), zero),
-            # Total collected = rent + the advance of the same rows (the Advance column's collected amount).
-            'rent_collected': sum((collected_part(r) for r in all_collection_rows), zero),
-            'collected': sum((collected_part(r) for r in all_collection_rows), zero) + advance_in_rows,
-            'advance_collected': advance_in_rows,
+            # Total collected = what counts as income of this month under the page's filters: money collected in the month (including
+            # earlier months' rent paid now) plus rent paid ahead for this month, with the advance shown in brackets. The same list as the Collected tab.
+            'rent_collected': sum((r['amount'] for r in received_payments if r['kind'] == 'rent'), zero),
+            'collected': received_total,
+            'advance_collected': sum((r['amount'] for r in received_payments if r['kind'] == 'advance'), zero),
             'pending': sum((max(zero, r['due'] - r['paid']) for r in all_collection_rows), zero),
             'arrears': portfolio_arrears, 'arrears_count': len(arrears_rows),
         }

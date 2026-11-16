@@ -271,7 +271,7 @@
                       data-rent="{{ row.rent_amount }}"
                       data-due="{{ row.due }}"
                       data-paid="{{ row.paid }}"
-                      data-balance="{{ row.balance }}"
+                      data-balance="{{ row.balance }}" data-pending-total="{{ row.pending_through }}"
                       data-charges='[{% for c in row.charges %}{"name":"{{ c.name|escapejs }}","amount":{{ c.amount }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
                       data-prior-unpaid='[{% for p in row.prior_unpaid %}{"period":"{{ p.period|escapejs }}","outstanding":{{ p.outstanding }},"paid":{{ p.paid }},"total":{{ p.total }},"charges":[{% for c in p.charges %}{"name":"{{ c.name|escapejs }}","amount":{{ c.amount }}}{% if not forloop.last %},{% endif %}{% endfor %}]}{% if not forloop.last %},{% endif %}{% endfor %}]'
                       onclick="openRentCollectModal(this)">Collect Due</button>
@@ -396,7 +396,7 @@
               data-rent="{{ row.rent_amount }}"
               data-due="{{ row.due }}"
               data-paid="{{ row.paid }}"
-              data-balance="{{ row.balance }}"
+              data-balance="{{ row.balance }}" data-pending-total="{{ row.pending_through }}"
               data-charges='[{% for c in row.charges %}{"name":"{{ c.name|escapejs }}","amount":{{ c.amount }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
               data-prior-unpaid='[{% for p in row.prior_unpaid %}{"period":"{{ p.period|escapejs }}","outstanding":{{ p.outstanding }},"paid":{{ p.paid }},"total":{{ p.total }},"charges":[{% for c in p.charges %}{"name":"{{ c.name|escapejs }}","amount":{{ c.amount }}}{% if not forloop.last %},{% endif %}{% endfor %}]}{% if not forloop.last %},{% endif %}{% endfor %}]'
               onclick="openRentCollectModal(this)">Collect Due</button>
@@ -451,7 +451,7 @@
                 data-tenant="{{ row.tenant.name }}"
                 data-due="{{ row.due }}"
                 data-paid="{{ row.paid }}"
-                data-balance="{{ row.balance }}"
+                data-balance="{{ row.balance }}" data-pending-total="{{ row.pending_through }}"
                 data-charges='[{% for c in row.charges %}{"name":"{{ c.name|escapejs }}","amount":{{ c.amount }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
                 data-prior-unpaid='[]'
                 onclick="openRentCollectModal(this)">Collect</button>

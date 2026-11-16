@@ -31,7 +31,7 @@ class DepositVoidTests(VillaStatsBase):
         return collect_deposit(tenant=self.tenant, amount=amount, method=method, collected_by=by or self.owner)
 
     def income(self):
-        return self.page(LAST_MONTH)['pnl']['income']  # the advance belongs to the tenant's move-in month
+        return self.page(THIS_MONTH)['pnl']['income']  # the advance counts in the month it is collected (and the tenant moves in this month)
 
     def test_void_removes_the_amount_from_received_income_and_reopens_pending(self):
         collection = self._collect(Decimal('600.00'))

@@ -208,7 +208,7 @@
                   data-action-url="{% url 'billing:rent_collect' item.partition.pk %}"
                   data-partition="{{ item.partition.name }}" data-tenant="{{ item.tenant.name }}"
                   data-year="{{ item.year }}" data-month="{{ item.month }}" data-period-label="{{ item.label }}"
-                  data-rent="{{ item.rent_amount }}" data-due="{{ item.total }}" data-paid="{{ item.paid }}" data-balance="{{ item.balance }}"
+                  data-rent="{{ item.rent_amount }}" data-due="{{ item.total }}" data-paid="{{ item.paid }}" data-balance="{{ item.balance }}" data-pending-total="{{ item.pending_through }}"
                   data-charges='[{% for c in item.charges %}{"name":"{{ c.name|escapejs }}","amount":{{ c.amount }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
                   data-prior-unpaid="[]"
                   onclick="document.getElementById('pending-modal').close(); openRentCollectModal(this)">Pay now</button>
@@ -362,7 +362,7 @@
                 data-rent="{{ row.rent_amount }}"
                 data-due="{{ row.due }}"
                 data-paid="{{ row.paid }}"
-                data-balance="{{ row.balance }}"
+                data-balance="{{ row.balance }}" data-pending-total="{{ row.pending_through }}"
                 data-charges='[{% for c in row.charges %}{"name":"{{ c.name|escapejs }}","amount":{{ c.amount }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
                 data-prior-unpaid='[{% for p in row.prior_unpaid %}{"period":"{{ p.period|escapejs }}","outstanding":{{ p.outstanding }},"paid":{{ p.paid }},"total":{{ p.total }},"charges":[{% for c in p.charges %}{"name":"{{ c.name|escapejs }}","amount":{{ c.amount }}}{% if not forloop.last %},{% endif %}{% endfor %}]}{% if not forloop.last %},{% endif %}{% endfor %}]'
                 onclick="openRentCollectModal(this)">Collect</button>

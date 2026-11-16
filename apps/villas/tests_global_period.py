@@ -94,6 +94,7 @@ class EveryRoleGetsTheSwitcherTests(VillaStatsBase):
 
 
 class QaRegressionTests(VillaStatsBase):
+    MOVE_IN = LAST_MONTH
     """The four QA failures: every page follows the navbar month, a villa expense can be dated in a past month, and a
     charge can be added to an existing tenant even though the only charge type is Rent."""
 

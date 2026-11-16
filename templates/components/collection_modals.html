@@ -24,7 +24,7 @@
     <div id="modal-prior-overdue-list" style="display: flex; flex-direction: column; gap: var(--space-2);">
       <!-- injected dynamically by JS -->
     </div>
-    <div style="font-size: 11px; color: var(--text-secondary); margin-top: var(--space-2);">This payment goes to the month shown below. Collect earlier months from "Earlier months still unpaid" on the Collections page.</div>
+    <div style="font-size: 11px; color: var(--text-secondary); margin-top: var(--space-2);">These earlier months are included in the total below. A smaller amount pays the oldest month first.</div>
   </div>
 
   <!-- current month charges breakdown box -->
@@ -45,6 +45,10 @@
       <span>Pending</span>
       <span id="modal-pending-amount" style="color: var(--warning, #f59e0b);"></span>
     </div>
+    <div id="modal-total-row" style="display: none; justify-content: space-between; font-size: 13px; font-weight: 700; margin-top: var(--space-1); border-top: 1px dashed var(--border-subtle); padding-top: var(--space-1);">
+      <span>Total pending incl. earlier months</span>
+      <span id="modal-total-amount" style="color: var(--danger, #ef4444);"></span>
+    </div>
     <div style="font-size: 11px; color: var(--text-secondary); margin-top: var(--space-2);">The rent is fixed for the tenant. To change it, edit the tenant.</div>
   </div>
 
@@ -57,7 +61,7 @@
     <div class="field" style="margin-bottom: var(--space-3);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-1);">
         <label for="modal-received-amount" style="font-size: 13px; font-weight: 600; margin-bottom: 0;">Amount Received Now (QAR)</label>
-        <button type="button" id="modal-fill-balance-btn" class="btn btn--ghost btn--sm" style="font-size: 11px; padding: 2px 8px; height: auto;" onclick="fillRemainingBalance()">Set to balance</button>
+        <button type="button" id="modal-fill-balance-btn" class="btn btn--ghost btn--sm" style="font-size: 11px; padding: 2px 8px; height: auto;" onclick="fillRemainingBalance()">Set to total</button>
       </div>
       <input type="number" step="0.01" min="0.01" id="modal-received-amount" name="amount" required>
       <div id="modal-calc-hint" style="font-size: 12px; margin-top: var(--space-1); font-weight: 500;"></div>
@@ -148,7 +152,7 @@
 </dialog>
 
 <script>
-  let rentModalState = { rent: 0, due: 0, paid: 0, balance: 0, charges: [], priorUnpaid: [] };
+  let rentModalState = { rent: 0, due: 0, paid: 0, balance: 0, total: 0, charges: [], priorUnpaid: [] };
 
   function openRentCollectModal(btn) {
     const g = attr => btn.getAttribute(attr);
@@ -162,6 +166,8 @@
       due: parseFloat(g('data-due')) || rent,
       paid: parseFloat(g('data-paid')) || 0,
       balance: parseFloat(g('data-balance')) || 0,
+      // Everything still unpaid up to and including this month (earlier months + this month): the most one Collect can take.
+      total: parseFloat(g('data-pending-total')) || parseFloat(g('data-balance')) || 0,
       charges,
       priorUnpaid: prior
     };
@@ -208,7 +214,12 @@
     if (rentModalState.paid > 0) document.getElementById('modal-paid-amount').textContent = `- QAR ${rentModalState.paid.toFixed(2)}`;
     document.getElementById('modal-charges-total').textContent = `QAR ${rentModalState.due.toFixed(2)}`;
     document.getElementById('modal-pending-amount').textContent = `QAR ${Math.max(0, rentModalState.due - rentModalState.paid).toFixed(2)}`;
-    document.getElementById('modal-received-amount').value = rentModalState.balance.toFixed(2);
+    const totalRow = document.getElementById('modal-total-row');
+    totalRow.style.display = rentModalState.total - Math.max(0, rentModalState.due - rentModalState.paid) > 0.009 ? 'flex' : 'none';
+    document.getElementById('modal-total-amount').textContent = `QAR ${rentModalState.total.toFixed(2)}`;
+    const received = document.getElementById('modal-received-amount');
+    received.max = rentModalState.total.toFixed(2);
+    received.value = rentModalState.total.toFixed(2);
 
     updateRentBalanceCalc();
     modal.showModal();
@@ -222,15 +233,14 @@
   }
 
   function fillRemainingBalance() {
-    document.getElementById('modal-received-amount').value = Math.max(0, rentModalState.due - rentModalState.paid).toFixed(2);
+    document.getElementById('modal-received-amount').value = rentModalState.total.toFixed(2);
     updateRentBalanceCalc();
   }
 
   function updateRentBalanceCalc() {
-    const total = rentModalState.due;
-    const balance = Math.max(0, total - rentModalState.paid);
+    const balance = rentModalState.total;
     const received = parseFloat(document.getElementById('modal-received-amount').value) || 0;
-    const rem = total - rentModalState.paid - received;
+    const rem = balance - received;
     const isOver = rem < -0.009;
 
     const hint = document.getElementById('modal-calc-hint');
@@ -238,13 +248,13 @@
     if (submitBtn) submitBtn.disabled = received <= 0 || isOver;
 
     if (isOver) {
-      hint.textContent = `Cannot record: Exceeds balance (Max: QAR ${balance.toFixed(2)}).`;
+      hint.textContent = `Cannot collect more than the total pending (QAR ${balance.toFixed(2)}).`;
       hint.style.color = 'var(--danger, #ef4444)';
     } else if (rem > 0.009) {
-      hint.textContent = `Partial payment: QAR ${rem.toFixed(2)} will remain pending.`;
+      hint.textContent = `Partial payment: the oldest month is paid first; QAR ${rem.toFixed(2)} will remain pending.`;
       hint.style.color = 'var(--warning, #f59e0b)';
     } else {
-      hint.textContent = received > 0 ? `Full payment: Clears balance.` : `Enter an amount to collect.`;
+      hint.textContent = received > 0 ? `Full payment: clears everything pending up to this month.` : `Enter an amount to collect.`;
       hint.style.color = received > 0 ? 'var(--success, #10b981)' : 'var(--text-secondary)';
     }
   }

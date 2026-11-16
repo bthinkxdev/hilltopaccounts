@@ -256,6 +256,7 @@ class ExpensePaymentRevertTests(VillaStatsBase):
 
 
 class RentCollectionRevertTests(VillaStatsBase):
+    MOVE_IN = LAST_MONTH
 
     def setUp(self):
         super().setUp()
@@ -392,6 +393,7 @@ class RentCollectionRevertTests(VillaStatsBase):
             self.assertNotContains(self.client.get(reverse('billing:payment_list'), {'tab': 'collected', 'period': 'month', 'year': THIS_MONTH.year, 'month': THIS_MONTH.month}), link, msg_prefix=username)
 
     def test_revert_is_a_visible_button_beside_the_status_with_one_button_per_partial_collection(self):
+        self.collect(self.p1, LAST_MONTH)  # last month's rent first, so the partial collections below fall on this month
         self.collect(self.p1, THIS_MONTH, amount=1500)
         self.collect(self.p1, THIS_MONTH, amount=800)
         first, second = self.payments(self.p1, THIS_MONTH)

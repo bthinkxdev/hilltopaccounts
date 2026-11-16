@@ -142,7 +142,7 @@ class StaffVillaScopeWorkflow(TestCase):
 
         r = self.client.get(reverse('villas:villa_detail', args=[self.villa.pk]), {'period': 'month', 'year': this_month.year, 'month': this_month.month})
         self.assertEqual(r.status_code, 200)
-        self.assertEqual((r.context['pnl']['income'], r.context['pnl']['expenses']), (Decimal('1000.00'), Decimal('300.00')))  # staff see their villa's figures
+        self.assertNotIn('pnl', r.context)  # villa staff do not see profit and loss
         self.assertNotContains(r, 'Financial summary')
         self.assertNotContains(r, 'Profit Sharing Breakdown')
         self.assertContains(r, 'Cleaner salary')
@@ -256,8 +256,8 @@ class VillaListPeriodAndPhotoTests(TestCase):
         self.client.logout()
         self.client.login(username='staff', password=PASSWORD)
         r = self.client.get(reverse('villas:villa_list'), {'period': 'month', 'year': 2026, 'month': 2})
-        self.assertEqual([(v.name, v.pnl['net']) for v in r.context['page_obj']], [('Villa A', Decimal('2300.00'))])
-        self.assertEqual(r.context['totals']['net'], Decimal('2300.00'))  # their villa only — never Villa B
+        self.assertEqual([(v.name, v.pnl) for v in r.context['page_obj']], [('Villa A', None)])  # their villa only, with no profit and loss
+        self.assertIsNone(r.context['totals'])
 
     def test_partition_page_has_its_own_profit_and_loss_and_expense_shortcut(self):
         self.client.login(username='owner', password=PASSWORD)

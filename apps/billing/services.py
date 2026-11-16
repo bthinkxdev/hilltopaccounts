@@ -239,11 +239,15 @@ def correct_payment(*, payment: Payment, new_amount, corrected_by, reason, metho
 
 
 def collect_rent(*, partition, year, month, method, collected_by, amount=None, collected_at=None) -> list[Payment]:
-    """Monthly rent collection for a partition.
+    """Rent collection for a partition, up to the selected month.
+
+    What can be collected is everything still unpaid up to and including the selected month: the earlier months and the
+    selected one. An amount left blank collects all of it; a smaller amount is applied to the oldest unpaid month first,
+    then the next (one payment record per month); more than the total is refused. Each payment counts as income of the month
+    it was collected, or of its own month when that is a coming month (see `Payment.income_month`).
 
     Creates the month's invoice on first use (and the rent charge from the tenant's monthly rent when the
-    partition has no charges yet), then records the amount received — partial payments leave the rest pending.
-    The rent itself is never changed here: it is set on the tenant (see change_rent).
+    partition has no charges yet). The rent itself is never changed here: it is set on the tenant (see change_rent).
     The partition row is locked, so concurrent staff actions cannot conflict.
     """
     from apps.villas.models import Partition
@@ -267,22 +271,26 @@ def collect_rent(*, partition, year, month, method, collected_by, amount=None, c
             generate_monthly_invoice(partition=locked, billing_period_start=start, billing_period_end=end, issue_date=start, due_date=min(end, start + timedelta(days=9)), generated_by=collected_by)
         except (DuplicateInvoicePeriod, NothingToBill):
             pass
-        open_invoices = [(inv, selectors.invoice_outstanding(inv)) for inv in month_invoices.order_by('issue_date', 'id')]
+        # Earlier months that were never billed get their bill now, so nothing unpaid is skipped (months not begun are left alone).
+        ensure_tenant_invoices(tenant, up_to=min(end, date.today()), generated_by=collected_by)
+        # Everything unpaid up to and including the selected month, oldest first.
+        up_to_month = Invoice.objects.filter(partition=locked, tenant=tenant, is_cancelled=False, billing_period_start__lte=end).order_by('billing_period_start', 'issue_date', 'id')
+        open_invoices = [(inv, selectors.invoice_outstanding(inv)) for inv in up_to_month]
         open_invoices = [(inv, due) for inv, due in open_invoices if due > 0]
         outstanding = sum((due for _, due in open_invoices), Decimal('0.00'))
         if outstanding <= Decimal('0.00'):
-            raise NothingToCollect(f'{locked.name}: rent for {start:%B %Y} is already fully collected, or there is nothing to bill.')
+            raise NothingToCollect(f'{locked.name}: everything up to {start:%B %Y} is already collected, or there is nothing to bill.')
 
         if amount is not None and str(amount).strip() != '':
             pay_amount = Decimal(str(amount))
             if pay_amount <= Decimal('0.00'):
                 raise DomainError('Received amount must be greater than zero.')
             if pay_amount > outstanding:
-                raise PaymentExceedsOutstanding(f'Cannot record payment: Amount (QAR {pay_amount}) exceeds remaining balance (QAR {outstanding}).')
+                raise PaymentExceedsOutstanding(f'Cannot collect more than the total pending: QAR {pay_amount} is more than QAR {outstanding} pending up to {start:%B %Y}.')
         else:
             pay_amount = outstanding
 
-        # One amount received can settle several bills of the month: oldest first, one payment record per bill.
+        # One amount received can settle several months: oldest first, one payment record per bill.
         payments, remaining = [], pay_amount
         for inv, due in open_invoices:
             if remaining <= 0:

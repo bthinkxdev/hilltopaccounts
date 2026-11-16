@@ -77,14 +77,14 @@ class PartnerLinkTests(TestCase):
         PartnerVillaShare.objects.create(partner=self.partner, villa=self.v1, percentage=Decimal('20.00'))
         self.login('shihab')
         page = lambda villa: self.client.get(reverse('villas:villa_detail', args=[villa.pk])).context
-        self.assertFalse(page(self.v1)['is_partner'])  # staff only: no partner section
+        self.assertFalse(page(self.v1).get('is_partner'))  # staff only: no partner section
         link_partner(user=self.staff, partner=self.partner, changed_by=self.owner)
         self.assertTrue(selectors.can_view_villa_financials(self.staff, self.v1))
         self.assertFalse(selectors.can_view_villa_financials(self.staff, self.v2))  # no share there
         with_share = page(self.v1)
         self.assertTrue(with_share['is_partner'])
         self.assertEqual(with_share['my_partner_share']['percentage'], Decimal('20.00'))
-        self.assertFalse(page(self.v2)['is_partner'])  # a villa of theirs where the partner has no share: staff view only
+        self.assertFalse(page(self.v2).get('is_partner'))  # a villa of theirs where the partner has no share: staff view only
         self.assertEqual(set(selectors.financial_villas(self.staff)), {self.v1})
 
     def test_unlinking_takes_the_partner_details_away_again(self):

@@ -330,6 +330,7 @@ class MonthlyExpenseStartsInTheSelectedMonthTests(VillaStatsBase):
 
 
 class VillaPendingTests(VillaStatsBase):
+    MOVE_IN = LAST_MONTH
     """The villa's Pending card: the real outstanding rent and advance up to the current month, whatever month is selected."""
 
     def setUp(self):
@@ -407,5 +408,5 @@ class ExpenseSideOnVillaCardsTests(VillaStatsBase):
         mark_expense_paid(expense=self.expense, paid_on=self.today, payment_method='cash', marked_by=self.staff)
         owner_card, staff_card, ctx = self.card_rows()
         self.assertEqual((owner_card, staff_card), ([], ['Wi-Fi']))
-        self.assertEqual(ctx['pnl']['staff_expenses'], 300)
+        self.assertNotIn('pnl', ctx)  # villa staff do not see profit and loss
         self.assertNotContains(self.client.get(reverse('villas:villa_detail', args=[self.villa.pk])), 'scheduled as')

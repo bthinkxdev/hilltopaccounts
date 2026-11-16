@@ -120,6 +120,7 @@ class Payment(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     method = models.CharField(max_length=20, choices=Method.choices)
     collected_at = models.DateField()
+    income_month = models.DateField(db_index=True, editable=False, help_text='The month this counts as income of: the later of the rent month and the month it was collected. Set once, when recorded.')
     reference = models.CharField(max_length=100, blank=True)
     notes = models.TextField(blank=True)
     collected_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='collections')
@@ -132,6 +133,12 @@ class Payment(models.Model):
     class Meta:
         ordering = ['-collected_at', '-id']
         constraints = [models.CheckConstraint(check=models.Q(amount__gt=0), name='payment_amount_positive')]
+
+    def save(self, *args, **kwargs):
+        if self.income_month is None:
+            from apps.shared.income import income_month_for
+            self.income_month = income_month_for(self.invoice.billing_period_start, self.collected_at)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f'{self.amount} — {self.invoice.invoice_number}'
