@@ -637,6 +637,10 @@ def rent_collect(request, partition_pk):
     except DomainError as exc:
         messages.error(request, str(exc))
     else:
-        messages.success(request, f'{partition.name}: QAR {sum(p.amount for p in payments)} collected for {date(year, month, 1):%B %Y}.')
+        if len(payments) > 1:
+            parts = ', '.join(f'{p.invoice.billing_period_start:%B %Y} QAR {p.amount}' for p in payments)
+            messages.success(request, f'{partition.name}: QAR {sum(p.amount for p in payments)} collected for {payments[0].invoice.billing_period_start:%B %Y} to {payments[-1].invoice.billing_period_start:%B %Y} ({parts}).')
+        else:
+            messages.success(request, f'{partition.name}: QAR {sum(p.amount for p in payments)} collected for {date(year, month, 1):%B %Y}.')
     return redirect(back)
 

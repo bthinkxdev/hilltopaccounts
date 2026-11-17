@@ -29,9 +29,9 @@ def staff_list(request):
     period = period_context(request, allow_future=True)
     start, end = period['period_start'], period['period_end']
     ids = [u.pk for u in page_obj]
-    # What each person collected for the selected month (rent for that month, advances of tenants who moved in then).
-    collected = {r['collected_by']: r['t'] for r in Payment.objects.filter(collected_by__in=ids, is_cancelled=False, invoice__billing_period_start__range=(start, end)).order_by().values('collected_by').annotate(t=Sum('amount'))}
-    for r in DepositCollection.objects.filter(collected_by__in=ids, tenant__move_in_date__range=(start, end)).order_by().values('collected_by').annotate(t=Sum('amount')):
+    # What each person collected that counts as income of the selected month (the same rule as Collections and the Income card).
+    collected = {r['collected_by']: r['t'] for r in Payment.objects.filter(collected_by__in=ids, is_cancelled=False, income_month__range=(start, end)).order_by().values('collected_by').annotate(t=Sum('amount'))}
+    for r in DepositCollection.objects.filter(collected_by__in=ids, income_month__range=(start, end)).order_by().values('collected_by').annotate(t=Sum('amount')):
         collected[r['collected_by']] = collected.get(r['collected_by'], 0) + r['t']
     for u in page_obj:
         u.role_labels = selectors.role_labels_for(u)

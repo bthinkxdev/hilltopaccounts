@@ -265,14 +265,17 @@ def collect_rent(*, partition, year, month, method, collected_by, amount=None, c
         month_invoices = Invoice.objects.filter(partition=locked, billing_period_start__lte=end, billing_period_end__gte=start, is_cancelled=False)
         if not month_invoices.exists():
             ensure_rent_charge(partition=locked, tenant=tenant, created_by=collected_by)
-        # Bill whatever of the month is not on a bill yet — the first bill, or a charge (e.g. Gas) added after the
-        # month was already billed — so the amount due here is exactly what the rent sheet shows.
-        try:
-            generate_monthly_invoice(partition=locked, billing_period_start=start, billing_period_end=end, issue_date=start, due_date=min(end, start + timedelta(days=9)), generated_by=collected_by)
-        except (DuplicateInvoicePeriod, NothingToBill):
-            pass
         # Earlier months that were never billed get their bill now, so nothing unpaid is skipped (months not begun are left alone).
         ensure_tenant_invoices(tenant, up_to=min(end, date.today()), generated_by=collected_by)
+        # Bill whatever of each month up to the selected one is not on a bill yet — the first bill, or a charge (e.g. Gas)
+        # added after the month was already billed — so the amount due here is exactly what the rent sheet and the popup show,
+        # earlier months included (the popup lists those as pending, so they must be collectable).
+        for month_start in _months_to_bill(tenant, start):
+            month_end = _month_end(month_start)
+            try:
+                generate_monthly_invoice(partition=locked, billing_period_start=month_start, billing_period_end=month_end, issue_date=month_start, due_date=min(month_end, month_start + timedelta(days=9)), generated_by=collected_by)
+            except (DuplicateInvoicePeriod, NothingToBill):
+                pass
         # Everything unpaid up to and including the selected month, oldest first.
         up_to_month = Invoice.objects.filter(partition=locked, tenant=tenant, is_cancelled=False, billing_period_start__lte=end).order_by('billing_period_start', 'issue_date', 'id')
         open_invoices = [(inv, selectors.invoice_outstanding(inv)) for inv in up_to_month]

@@ -19,10 +19,10 @@ from .services import confirm_cash_handover, reject_cash_handover, submit_cash_h
 def handover_list(request):
     qs = accounts_selectors.cash_handovers_visible_to(request.user).select_related('staff')
     period = period_context(request, allow_future=True)
-    # A handover belongs to the month of the cash in it (the rent month, the tenant's move-in month for an advance, the
-    # expense month) as well as to the month it was handed over in.
+    # A handover belongs to the month of the cash in it (the month a collection counts as income of, the expense month)
+    # as well as to the month it was handed over in.
     start, end = period['period_start'], period['period_end']
-    qs = qs.filter(Q(submitted_at__date__range=(start, end)) | Q(payments__invoice__billing_period_start__range=(start, end)) | Q(deposits__tenant__move_in_date__range=(start, end)) | Q(expenses__date__range=(start, end))).distinct()
+    qs = qs.filter(Q(submitted_at__date__range=(start, end)) | Q(payments__income_month__range=(start, end)) | Q(deposits__income_month__range=(start, end)) | Q(expenses__date__range=(start, end))).distinct()
     status = request.GET.get('status', '')
     if status:
         qs = qs.filter(status=status)

@@ -77,6 +77,22 @@ class CollectUpToTheSelectedMonthTests(VillaStatsBase):
         self.assertEqual(self.months_paid(), {LAST_MONTH: RENT, THIS_MONTH: RENT})
 
 
+    def test_a_charge_added_to_an_earlier_month_is_collectable_with_the_popup_total(self):
+        """The popup lists the charge of an earlier month as pending; Confirm with that total must be accepted."""
+        from apps.billing.selectors import rent_sheet
+        from apps.billing.services import create_charge, get_or_create_charge_type
+        from apps.billing.models import Charge
+        create_charge(partition=self.p2, charge_type=get_or_create_charge_type(name='Gas'), amount=Decimal('100.00'), start_date=LAST_MONTH, created_by=self.owner, frequency=Charge.Frequency.MONTHLY)
+        self.login('owner')
+        row = next(r for r in self.page(THIS_MONTH)['rent_rows'] if r['partition'].pk == self.p2.pk)
+        shown = row['pending_through']
+        self.assertEqual(shown, (RENT + Decimal('100.00')) * 2)
+        payments = self.collect(amount=shown)
+        self.assertEqual(sum(p.amount for p in payments), shown)
+        row = next(r for r in self.page(THIS_MONTH)['rent_rows'] if r['partition'].pk == self.p2.pk)
+        self.assertEqual(row['pending_through'], Decimal('0.00'))
+
+
 class CollectedIncomeMonthTests(VillaStatsBase):
     MOVE_IN = LAST_MONTH  # an earlier unpaid month exists
 
@@ -121,3 +137,33 @@ class CollectedIncomeMonthTests(VillaStatsBase):
         update_tenant(tenant=future.current_tenant, updated_by=self.owner, deposit=2000)
         collect_deposit(tenant=future.current_tenant, amount=Decimal('2000.00'), method='cash', collected_by=self.owner)
         self.assertEqual(future.current_tenant.deposit_collections.get().income_month, NEXT_MONTH)  # paid ahead of the move-in month
+
+
+class OtherPagesFollowTheIncomeMonthTests(VillaStatsBase):
+    """The staff list and the cash handover list use the same month as Collections and the Income card."""
+    MOVE_IN = LAST_MONTH
+
+    def test_the_staff_list_counts_what_was_collected_in_the_month(self):
+        collect_rent(partition=self.p1, year=LAST_MONTH.year, month=LAST_MONTH.month, method='cash', collected_by=self.staff)  # last month's rent, collected today
+        self.login('owner')
+        collected = lambda m: {u.username: u.collected_in_period for u in self.client.get(reverse('accounts:staff_list'), {'period': 'month', 'year': m.year, 'month': m.month}).context['page_obj']}
+        self.assertEqual(collected(THIS_MONTH)['staff'], RENT)  # counts in the month it was collected
+        self.assertEqual(collected(LAST_MONTH)['staff'], 0)
+
+    def test_a_handover_is_listed_under_the_month_its_cash_counts_in(self):
+        from apps.cash.models import CashHandover
+        from apps.cash.services import submit_cash_handover
+        [payment] = collect_rent(partition=self.p1, year=LAST_MONTH.year, month=LAST_MONTH.month, method='cash', collected_by=self.staff)
+        handover = submit_cash_handover(staff=self.staff, payments=[payment], submitted_by=self.staff)
+        self.login('owner')
+        listed = lambda m: [h.pk for h in self.client.get(reverse('cash:handover_list'), {'period': 'month', 'year': m.year, 'month': m.month}).context['page_obj']]
+        self.assertIn(handover.pk, listed(THIS_MONTH))
+        self.assertNotIn(handover.pk, listed(LAST_MONTH))
+
+    def test_the_collect_message_names_every_month_it_paid(self):
+        self.login('owner')
+        r = self.client.post(reverse('billing:rent_collect', args=[self.p1.pk]), {'year': THIS_MONTH.year, 'month': THIS_MONTH.month, 'method': 'cash', 'next': '/'}, follow=True)
+        text = ' '.join(str(m) for m in r.context['messages'])
+        self.assertIn('collected for', text)
+        self.assertIn(f'{LAST_MONTH:%B %Y} QAR {RENT}', text)
+        self.assertIn(f'{THIS_MONTH:%B %Y} QAR {RENT}', text)
